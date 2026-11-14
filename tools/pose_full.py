@@ -1,4 +1,4 @@
-import sys,subprocess,numpy as np,mediapipe as mp,cv2
+import os,sys,subprocess,numpy as np,mediapipe as mp,cv2
 from mediapipe.tasks.python import vision, BaseOptions
 src,model,out=sys.argv[1:4]
 c=cv2.VideoCapture(src); W,H=int(c.get(cv2.CAP_PROP_FRAME_WIDTH)),int(c.get(cv2.CAP_PROP_FRAME_HEIGHT)); c.release()  # 540x960 or 960x540
@@ -14,4 +14,4 @@ while True:
     wrows.append([[q.x,q.y,q.z] for q in r.pose_world_landmarks[0]] if r.pose_world_landmarks else np.full((33,3),np.nan))
     n+=1
     if n%6000==0: print(n,flush=True)
-np.save(out.replace("pose.npy","pose_world.npy"),np.array(wrows,dtype=np.float32)); np.save(out,np.array(rows,dtype=np.float32)); print("done",n)  # world: meters, hip-centred, same frames x33x3
+np.save(os.path.join(os.path.dirname(out),"pose_world.npy"),np.array(wrows,dtype=np.float32)); np.save(out,np.array(rows,dtype=np.float32)); print("done",n)  # world: meters, hip-centred, same frames x33x3

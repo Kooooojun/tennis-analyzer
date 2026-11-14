@@ -276,7 +276,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
         <span><i style="background:var(--s3)"></i>肩膀轉開度</span>
         <span>點圖表可跳轉</span>
       </div>
-      <p class="caveat">膝蓋越小越蹲。轉肩 0% = 完全側身，100% = 胸口正對球網。擊球高度 0 = 髖部，100 = 肩膀。下方小字是同類擊球整場的中位數。膝蓋用 3D 骨架算（不受拍攝角度影響），若 3D 與 2D 差太多會標「這拍角度不準」。手肘不管 2D、3D 都不可靠，所以不顯示數字。</p>
+      <p class="caveat">膝蓋越小越蹲。轉肩 0% = 完全側身，100% = 胸口正對球網。擊球高度 0 = 髖部，100 = 肩膀。下方小字是同類擊球整場的中位數。膝蓋用 3D 骨架算（理論上較不受拍攝角度影響，尚未用雙機資料證實），若 3D 與 2D 差太多會標「這拍角度不準」。手肘不管 2D、3D 都不可靠，所以不顯示數字。</p>
     </div>
 
     <div class="card">
@@ -315,7 +315,7 @@ const byKind = k => ALL.filter(s=>s.kind===k);
 const feedFH = () => ALL.filter(s=>s.kind==="FH"&&s.drill==="feed");
 const rallyFH = () => ALL.filter(s=>s.kind==="FH"&&s.drill==="rally");
 const kneeColor = a => a==null ? "#fff" : a<=130 ? "#4ade80" : a<=150 ? "#fbbf24" : "#f87171";
-const stats = g => ({knee:median(g.map(s=>s.knee)), open:median(g.map(s=>s.open_min)), h:median(g.map(s=>s.contact_h*100)), elbow:median(g.map(s=>s.elbow)), openC:median(g.map(s=>s.open_contact))});
+const stats = g => ({knee:median(g.map(s=>s.knee)), open:median(g.map(s=>s.open_min)), h:median(g.map(s=>s.contact_h*100)), openC:median(g.map(s=>s.open_contact))});
 const dayStats = data => { const k=(kind,drill)=>data.filter(s=>s.kind===kind&&(!drill||s.drill===drill)); return {FH:stats(k("FH")), BH:stats(k("BH")), SV:stats(k("SV")), feed:stats(k("FH","feed")), rally:stats(k("FH","rally"))}; };
 let MED = dayStats(ALL);
 const byNo = n => ALL[n-1];
@@ -339,7 +339,7 @@ const SER = new Map();
 function series(s){
   if(SER.has(s)) return SER.get(s);
   const fr=s.frames, ar=s.size ? s.size[1]/s.size[0] : 16/9;  // strokes from before landscape support have no size
-  const wd=s.world, kR=fr.map((p,i)=>p?(wd&&wd[i]?angle3(wd[i],24,26,28):angle(p,24,26,28,ar)):null), kL=fr.map((p,i)=>p?(wd&&wd[i]?angle3(wd[i],23,25,27):angle(p,23,25,27,ar)):null);
+  const wd=s.world, kR=fr.map((p,i)=>!p?null:wd?(wd[i]?angle3(wd[i],24,26,28):null):angle(p,24,26,28,ar)), kL=fr.map((p,i)=>!p?null:wd?(wd[i]?angle3(wd[i],23,25,27):null):angle(p,23,25,27,ar));  // never mix 3D and 2D in one curve
   const out={
     knee: smooth(kR.map((r,i)=>r==null?null:Math.min(r,kL[i]))),
     kneeSide: kR.map((r,i)=>r==null?null:(r<=kL[i]?"R":"L")),

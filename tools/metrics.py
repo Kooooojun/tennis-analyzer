@@ -40,7 +40,7 @@ def _core(xy, vis, c, J, world=None):
     k2 = _knee(xy, J, c)
     ok3 = bool(np.isfinite(k3))
     return dict(knee=round(k2, 1), knee3d=round(k3, 1) if ok3 else None,
-                knee_warn=bool(ok3 and abs(k3 - k2) > KNEE_GAP_MAX) if ok3 else None,
+                knee_warn=bool(abs(k3 - k2) > KNEE_GAP_MAX) if ok3 else None,
                 open_min=round(float(np.nanpercentile(openp[c - 48:c - 5], 10)), 1),
                 open_contact=round(_med(openp[c - 2:c + 3]), 1),
                 contact_h=round(_med((hip - xy[c - 2:c + 3, J['rw'], 1]) / L[c - 2:c + 3]), 2),
