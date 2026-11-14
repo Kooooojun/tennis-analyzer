@@ -22,7 +22,7 @@ def _match(actual, cited):
 def _usable(s, field):
     """The stroke's value for `field`, or None when a quality gate drops it (same gates as score.py, docs/scoring.md §3)."""
     if field in ("knee", "knee3d") and s.get("knee_warn"): return None
-    if field == "contact_h" and not (_num(s.get("vis")) and s["vis"] >= 0.5): return None
+    if field in ("contact_h", "contact_fwd") and not (_num(s.get("vis")) and s["vis"] >= 0.5): return None
     v = s.get(field)
     return v if _num(v) else None
 
@@ -70,7 +70,7 @@ def check(notes, strokes, scores):
         text = f.get("text", "")
         for m in re.finditer(r"(\d+(?:\.\d+)?)\s*°", text):
             if not any(abs(float(m.group(1)) - v) <= 0.5 + 1e-9 for v in vals): errs.append(f"文字裡的 {m.group(0)} 沒有對應的引用")
-        refs = {int(x) for x in re.findall(r"#(\d+)", text)} | {j[0] for j in f.get("jump", []) if isinstance(j, (list, tuple)) and j and isinstance(j[0], int)}
+        refs = {int(x) for x in re.findall(r"#(\d+)", text)} | {j[0] for j in (f.get("jump") or []) if isinstance(j, (list, tuple)) and j and isinstance(j[0], int)}
         errs += [f"拍 #{n} 不存在" for n in sorted(refs) if not 1 <= n <= len(strokes)]
         errs = list(dict.fromkeys(errs))
         if errs: out.append(f"#{i} {f.get('title', '')}: " + "；".join(errs))

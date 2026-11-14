@@ -116,3 +116,15 @@ assert check_session([sv(True)] * 2)[0]["status"] == "資料不足"  # < 3 decid
 assert check_session([st("FH"), st("BH")]) == []  # old strokes without the new fields, FH, two-handed BH: no checks at all
 assert score_session([sv(True), st()], False) == score_session([st()], False)  # SV rows do not change FH/BH scores
 print("ok")
+
+# prep-contact（testset/results/prep-contact_pred.md）：準備時間越長越好；擊球前後位置只評一致性、不評好壞
+from score import METRICS
+assert lin(0.8, *METRICS["prep"]["lin"]) == 10 and lin(0.1, *METRICS["prep"]["lin"]) == 1 and close(lin(0.45, *METRICS["prep"]["lin"]), 5.5)
+g = grp(score_session([st(knee=120, prep=0.7, contact_fwd=f) for f in (0.5, 0.5, 0.5, 0.5, 0.5, 0.9)], False))
+cf = g["metrics"]["contact_fwd"]
+assert cf["score"] is None and cf["cons"] == 10 and cf["status"] == "ok" and cf["inputs"]["anchors"] is None
+assert g["metrics"]["prep"]["score"] == 10 and g["form"] == 10  # a consistency-only metric does not drag the form score
+g = grp(score_session([st(contact_fwd=0.5, vis=0.2)] * 6, False))
+assert g["metrics"]["contact_fwd"]["n"] == 0 and g["metrics"]["contact_fwd"]["status"] == "資料不足"
+assert SCORE_VERSION == 3
+print("prep-contact score tests ok")

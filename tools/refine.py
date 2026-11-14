@@ -8,7 +8,7 @@ from metrics import measure_clip, arm_checks
 
 s = session(); D = web(s); C = load(work(s) / "refine.json", {})
 d = load(D / "strokes_raw.json")
-err = max(abs(measure_clip(r["frames"], r["contact"], r.get("size"), r.get("world"))[k] - r[k]) for r in d for k in ("knee", "knee3d", "contact_h", "elbow") if r.get(k) is not None)
+err = max(abs((measure_clip(r["frames"], r["contact"], r.get("size"), r.get("world"))[k] or 0) - r[k]) for r in d for k in ("knee", "knee3d", "contact_h", "contact_fwd", "prep", "elbow") if r.get(k) is not None)
 print(f"clip vs full-video metrics at the raw contact: max diff {err:.1f} (a few degrees is coordinate rounding; much more means strokes_raw.json is stale)")
 out = []
 for r in d:
