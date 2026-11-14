@@ -50,4 +50,5 @@ assert errs(f([dict(stroke=1, field="knee", value=120)], "看 #01", jump=[[1, "x
 # which finding failed is named
 e = errs(f([dict(stroke=1, field="knee", value=120)]), f([]))
 assert len(e) == 1 and e[0].startswith("#2")
+assert errs(f([dict(stroke=1, field="contact_h", value=0)]))  # integer cite cannot swallow a 0.5-scale value
 print("ok")

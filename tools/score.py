@@ -52,10 +52,9 @@ def _mean(xs):
 def _r(x, d=1): return None if x is None else round(x, d)
 
 
-def _explain(cfg, n, total, med, sp):
+def _explain(cfg, n, total, med, sp, ok):
     """Why the metric got (or did not get) a score: status, formula text and the inputs that fed it."""
     cover = n / total if total else 0
-    ok = n >= MIN_N and cover >= MIN_COVER
     if "lin" in cfg: g, b = cfg["lin"]; f = f"10 − 9 × clip((中位數 − {g}) / ({b} − {g}), 0, 1)"
     else: lo, hi, lb, hb = cfg["band"]; f = f"中位數在 {lo}–{hi} 內 10 分；外側往 {lb} / {hb} 線性降到 1 分"
     cg, cb = cfg["cons"]; f += f"；一致性 = 10 − 9 × clip((穩健SD − {cg}) / ({cb} − {cg}), 0, 1)"
@@ -75,7 +74,7 @@ def score_group(strokes, show_open):
         med = float(np.median(vals)) if enough else None
         sp = spread(vals) if enough and len(vals) >= MIN_N_CONS else None
         sc = lin(med, *cfg["lin"]) if "lin" in cfg else band(med, *cfg["band"])
-        out[m] = dict(median=_r(med, 2), spread=_r(sp, 2), n=len(vals), score=_r(sc), cons=_r(lin(sp, *cfg["cons"])), **_explain(cfg, len(vals), len(strokes), med, sp))
+        out[m] = dict(median=_r(med, 2), spread=_r(sp, 2), n=len(vals), score=_r(sc), cons=_r(lin(sp, *cfg["cons"])), **_explain(cfg, len(vals), len(strokes), med, sp, enough))
     form = _mean([x["score"] for x in out.values()]); cons = _mean([x["cons"] for x in out.values()])
     total = None if form is None else form if cons is None else 0.75 * form + 0.25 * cons
     return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), metrics=out, knee_src=knee_src, score_version=SCORE_VERSION)
