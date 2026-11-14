@@ -67,3 +67,56 @@ def measure_clip(frames, c, size=None, world=None):
     P = np.array([nan if fr is None else fr for fr in frames], float)
     Wd = np.array([nan if w is None else w for w in world], float) if world else None
     return _core(P[:, :, :2] * _scale(size), P[:, :, 2], c, CLIP, Wd)
+
+
+# --- arm shape checks (docs/scoring.md §7): pass/fail with a confidence gate, never a degree score ---
+ARM_STRAIGHT = 135.0  # deg, mean of 2D and 3D elbow angle (180 = straight): >= this passes. Meta-analysis impact flexion 30 +/- 16 deg; 3D reads ~20 deg more bent than 2D on straight arms, so 135 is loose on purpose
+ARM_BENT = 120.0      # deg: mean below this fails; the band between is "cannot tell"
+ARM_GAP_MAX = 35.0    # deg; |elbow 3D - elbow 2D| above this = view or tracking is off, say "cannot tell" (straight arms show a 14-31 deg gap, see testset/results/elbow-shape.md)
+ARM_DEPTH_MAX = 0.75  # |depth| / length of upper arm and forearm; 0.75 = segment 49 deg out of the image plane
+ARM_VIS_MIN = 0.5
+FRONT_MIN = 0.1       # m; one-hand BH contact: wrist ahead of the leading shoulder along the shoulder line
+_ARM = dict(R=(2, 4, 6), L=(1, 3, 5))  # CLIP indices (shoulder, elbow, wrist) per racket hand
+
+
+def arm_checks(frames, c, size=None, world=None, kind=None, hand="R", one_hand=False):
+    """Racket-arm shape at contact on the CLIP layout (frames/world as in measure_clip), window c-2..c+2.
+    serve_arm_straight (kind SV) and bh_elbow_ok / bh_front_ok (kind BH with one_hand) are True / False / None (None = cannot tell).
+    *_conf = min(wrist-chain visibility, 1 - arm depth fraction, 1 - 2D/3D gap / 70), 0-1. FH, OH and two-handed BH get None."""
+    out = dict(serve_arm_straight=None, serve_arm_conf=None, bh_elbow_ok=None, bh_elbow_conf=None, bh_front_ok=None)
+    want_elbow = kind == "SV" or (kind == "BH" and one_hand)
+    if not want_elbow or world is None: return out
+    s, e, w = _ARM.get(hand, _ARM["R"]); sc = _scale(size); e2, e3, vis, dep = [], [], [], []
+    for i in range(c - 2, c + 3):
+        if i < 0 or i >= len(frames) or frames[i] is None or world[i] is None: continue
+        P = np.array(frames[i], float); W = np.array(world[i], float)
+        xy = P[:, :2] * sc
+        e2.append(_angle(xy[None], 0, s, e, w)); e3.append(_angle(W[None], 0, s, e, w)); vis.append(P[[s, e, w], 2].min())
+        dep.append(max(abs(W[b, 2] - W[a, 2]) / (np.linalg.norm(W[b] - W[a]) or np.nan) for a, b in ((s, e), (e, w))))
+    if len(e2) < 3 or not (np.isfinite(e2).any() and np.isfinite(e3).any()): return out
+    a2, a3, v, d = _med(e2), _med(e3), _med(vis), _med(dep)
+    if None in (a2, a3, v, d): return out
+    gap = abs(a3 - a2); conf = round(float(max(0, min(v, 1 - d, 1 - gap / 70))), 2)
+    ok = v >= ARM_VIS_MIN and d <= ARM_DEPTH_MAX and gap <= ARM_GAP_MAX
+    m = (a2 + a3) / 2; verdict = None if not ok else True if m >= ARM_STRAIGHT else False if m < ARM_BENT else None
+    if kind == "SV": out.update(serve_arm_straight=verdict, serve_arm_conf=conf)
+    else:
+        out.update(bh_elbow_ok=verdict, bh_elbow_conf=conf)
+        out["bh_front_ok"] = _front(frames, world, c, s, w, hand, ok)
+    return out
+
+
+def _front(frames, world, c, s, w, hand, ok):
+    """One-hand BH: is the wrist ahead of the racket-side shoulder along the shoulder line (3D, metres)? None if the shoulders are not both visible/wide enough."""
+    if not ok: return None
+    ds = []
+    for i in range(c - 2, c + 3):
+        if i < 0 or i >= len(world) or world[i] is None or frames[i] is None: continue
+        W = np.array(world[i], float); P = np.array(frames[i], float)
+        u = W[2, [0, 2]] - W[1, [0, 2]]
+        if hand == "L": u = -u
+        n = np.linalg.norm(u)
+        if n < 0.2 or P[[1, 2], 2].min() < ARM_VIS_MIN: continue
+        ds.append(float(np.dot(W[w, [0, 2]] - W[s, [0, 2]], u / n)))
+    m = _med(ds)
+    return None if m is None else bool(m >= FRONT_MIN)

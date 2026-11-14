@@ -66,7 +66,7 @@ def check(notes, strokes, scores):
         if not isinstance(cites, list): cites = []
         if not cites: errs.append("沒有引用（cite）")
         errs += [r for r in (_cite(c, strokes, scores.get("groups", [])) for c in cites) if r]
-        vals = [c["value"] for c in cites if _num(c.get("value"))]
+        vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
         text = f.get("text", "")
         for m in re.finditer(r"(\d+(?:\.\d+)?)\s*°", text):
             if not any(abs(float(m.group(1)) - v) <= 0.5 + 1e-9 for v in vals): errs.append(f"文字裡的 {m.group(0)} 沒有對應的引用")
