@@ -3,7 +3,7 @@
 # and labels.txt with one "<idx> ? ?" line per candidate for you to fill in.
 import cv2, numpy as np
 import warnings; warnings.filterwarnings("ignore")
-from common import session, work, videos, save, W, H
+from common import session, work, videos, save
 
 OFF = [-45, -25, -8, 0, 12]
 PER_SHEET = 24
@@ -11,8 +11,9 @@ PER_SHEET = 24
 
 def tile(cap, P, f, label):
     cap.set(cv2.CAP_PROP_POS_FRAMES, f); ok, im = cap.read()
+    H, W = im.shape[:2] if ok else (960, 540)
     c = np.nanmean(P[max(0, f - 5):f + 6, [11, 12, 23, 24], :2], axis=(0, 1))
-    cx, cy = (W // 2, 600) if np.isnan(c).any() else (int(c[0] * W), int(c[1] * H))
+    cx, cy = (W // 2, H * 5 // 8) if np.isnan(c).any() else (int(c[0] * W), int(c[1] * H))
     x0 = min(max(cx - 110, 0), W - 220); y0 = min(max(cy - 130, 0), H - 220)
     t = cv2.resize(im[y0:y0 + 220, x0:x0 + 220], (200, 200)) if ok else np.zeros((200, 200, 3), np.uint8)
     cv2.putText(t, label, (3, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
