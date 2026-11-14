@@ -5,7 +5,7 @@ import numpy as np
 
 WEAK, STRONG, STEP, BASE_N = 6, 8, 1.0, 3
 MIN_N = 10  # fewer strokes than this: same-day retest moved the total 1.6, too noisy to compare (docs/scoring.md §6)
-NAMES = {"total": "總分", "consistency": "一致性", "knee": "膝蓋", "contact_h": "擊球高度", "open_min": "轉肩"}
+NAMES = {"total": "總分", "consistency": "一致性", "knee": "膝蓋", "contact_h": "擊球高度", "contact_fwd": "擊球前後", "prep": "準備時間", "open_min": "轉肩"}
 
 
 def compare(history):
@@ -13,7 +13,7 @@ def compare(history):
     if not history or history[-1]["n"] < MIN_N: return []
     history = [h for h in history if h["n"] >= MIN_N]
     if len(history) < 2: return []
-    last = history[-1]; prev = [h for h in history[:-1] if last["camera"] and h["camera"] == last["camera"] and h.get("knee_src") == last.get("knee_src")]
+    last = history[-1]; prev = [h for h in history[:-1] if last["camera"] and h["camera"] == last["camera"] and h.get("knee_src") == last.get("knee_src") and h.get("score_version") == last.get("score_version")]
     out = []
     for item, v in last["items"].items():
         # total / consistency average over whichever metrics were scored, so only compare sessions that scored the same set
@@ -33,14 +33,17 @@ def _items(g):
 
 if __name__ == "__main__":
     from common import ROOT, load, save
+    from score import SCORE_VERSION
     S = ROOT / "web" / "sessions"
     runs = sorted((load(p) for p in S.glob("*/scores.json")), key=lambda r: (str(r.get("date", r["session"])), r["session"]))
     H = {}
     for r in runs:
         for g in r["groups"]:
-            H.setdefault((g["player"], g["kind"]), []).append(dict(session=r["session"], date=r.get("date"), camera=r.get("camera") or "", n=g["n"], knee_src=g.get("knee_src"), items=_items(g)))
+            H.setdefault((g["player"], g["kind"]), []).append(dict(session=r["session"], date=r.get("date"), camera=r.get("camera") or "", n=g["n"], knee_src=g.get("knee_src"), score_version=g.get("score_version"), items=_items(g)))
     # only YYYY-MM-DD dates sort correctly as text; undated sessions are listed but never compared
     dated = lambda h: [x for x in h if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(x["date"]))]
+    old = sorted({r["session"] for r in runs if r.get("score_version") != SCORE_VERSION})
+    if old: print("注意：這些場次的 scores.json 版本不是", SCORE_VERSION, "，只會跟同版本的場次比，請重跑 tools/score.py：", ", ".join(old))
     out = [dict(player=p, kind=k, history=h, flags=compare(dated(h))) for (p, k), h in sorted(H.items())]
     save(S / "trend.json", out)
     for t in out:

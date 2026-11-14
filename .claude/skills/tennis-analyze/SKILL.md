@@ -35,7 +35,7 @@ If one row shows two different people, the tracker swapped them partway. Name th
 
 This writes `work/<s>/sheet0.jpg`… with 24 candidates per sheet. Each row shows 5 crops around one hit sound (-45, -25, -8, 0, +12 frames at 60 fps), labeled `<idx> v<video> m:ss`. Read every sheet. Fill `work/<s>/labels.txt`, one line per idx, in the form `idx kind drill [comment]`:
 
-- With several players each line is prefilled `idx ? ? @name`: the person whose wrist swung most at that hit sound, named from players.txt. The sheet label shows the same `@name`, and the crops follow that person. If the crops show a different person than the name says (a tracker swap), change the name. If the crops show someone who is not hitting, use `x`.
+- With several players each line is prefilled `idx ? ? @name`: the person whose wrist swung most at that hit sound, named from players.txt. The sheet label shows the same `@name`, and the crops follow that person. If the crops show a different person than the name says (a tracker swap), change the name. If the crops show someone who is not hitting, use `x`. The crops show only the prefilled person, so a partner's shadow swing or ball bounce can look like a stroke while the other player really hit. When the wrist moves but you see no ball on the strings, look at the whole frame (`ffmpeg -v error -y -ss <t> -i work/<s>/<video>/proxy.mp4 -frames:v 1 work/<s>/frame.jpg`) before you keep it.
 - `kind` is FH, BH, SV (serve), OH (overhead), or `x`. Use `x` when it is not a player (another person the tracker jumped to), not a stroke (a bounce, a pickup, a practice swing with no ball), or a duplicate of the stroke just before (the follow-through of the previous candidate).
 - `drill` is `feed` if the user tossed the ball to themselves (look at -45 / -25: the ball is in their hand or a free hand is releasing it), `rally` if it came from the other side, `high` if it was self-fed high, `unsure` if you can't tell. SV takes no drill.
 - Solo sessions (people 1, or one person in frame): first ask the user, or work out from the sheets, which person they are. If the tracker follows someone else for a stretch, mark those runs `x other-player`.
@@ -78,6 +78,9 @@ Compute what matters from `web/sessions/<s>/strokes.json`. Each stroke has these
 - `knee`: the 10th-percentile knee angle 0.8–0.1 s before contact. Lower means more bent. ≤130 is good, >150 is nearly straight.
 - `contact_h`: the wrist height at contact, with hip = 0 and shoulder = 1. 0.3–0.8 is the waist-to-chest target.
 - `knee3d` (same window on the 3D skeleton, null for sessions without `pose_world.npy`) and `knee_warn` (true when |knee3d - knee| > 20°, so the angle is unreliable for that stroke). The web page and reel show `knee3d` when present. Thresholds above were set on 2D `knee`; 3D reads about 9° lower on average.
+- `prep`: seconds from backswing end (hitting wrist furthest back relative to the hips, searched up to 1.0 s before contact) to contact. Longer means the racket was ready earlier. On wall-1 it matched hand-picked frames within 2 frames (median); a backswing finished more than 1.0 s before contact is cut to the window.
+- `contact_fwd`: wrist ahead of the hip centre along the swing direction at contact, in torso lengths (same unit as `contact_h`). Its spread across strokes is the contact-point consistency. It moves about 0.1 per frame of contact error, so set refine.json contacts carefully before reading the spread, and compare only same-camera sessions.
+- `serve_arm_straight` (SV) and `bh_elbow_ok` / `bh_front_ok` (one-handed BH, set `"one_hand_bh": true` in refine.json; `"hand": "L"` for lefties): true / false / null (null = cannot tell from this view). They are checks, not scores; rules in docs/scoring.md §9. Forehands get none.
 - `elbow`, `open_min` (shoulder turn, 0% is fully side-on), and `vis` (wrist visibility).
 
 Good comparisons are self-fed vs rally forehand medians, the best and worst examples by number, and other sessions shot from the same camera position.
@@ -93,8 +96,9 @@ Write `web/sessions/<s>/notes.json`:
  "showOpen": false,
  "caveat": "數字的限制：鏡頭位置、被排除的片段、骨架抓錯的拍號。",
  "findings": [
-  {"title": "自拋還是比對打站得直", "text": "自拋 33 拍膝蓋中位數 155°，對打 135°。", "jump": [[5, "好球：#05"], [41, "問題：#41"]]},
-  {"good": true, "title": "...", "text": "...", "jump": [[17, "看 #17"]]}
+  {"title": "自拋還是比對打站得直", "text": "自拋 33 拍膝蓋中位數 155°，對打 135°。", "cite": [{"kind": "FH", "drill": "feed", "field": "knee3d", "stat": "median", "value": 155}, {"kind": "FH", "drill": "rally", "field": "knee3d", "stat": "median", "value": 135}], "jump": [[5, "好球：#05"], [41, "問題：#41"]]},
+  {"good": true, "title": "#17 蹲得最低", "text": "#17 膝蓋 118°。", "cite": [{"stroke": 17, "field": "knee3d", "value": 118}], "jump": [[17, "看 #17"]]},
+  {"info": true, "title": "這場正拍拍數", "text": "可用的正拍有 40 拍。", "cite": [{"kind": "FH", "field": "knee3d", "stat": "n", "value": 40}]}
  ],
  "presets": [{"a": 5, "b": 41, "label": "對打 #05 vs 自拋 #41"}, {"a": ["2026-10-27", 23], "b": 17, "label": "跨場比較"}]
 }
@@ -102,7 +106,8 @@ Write `web/sessions/<s>/notes.json`:
 
 - `camera` decides comparability. Sessions with the same camera text can be compared in absolute numbers. A phone on the ground close to the player makes knees read about 15° straighter than a raised phone behind the baseline.
 - Set `showOpen` to true only when the camera is roughly behind the player at hip height or higher.
-- Keep 3–5 findings, each tied to stroke numbers the user can click. Mark the good ones `good: true`. Use `info: true` for neutral notes.
+- Every finding needs `cite`: the numbers it states (single stroke, group stat or score), checked by the script below. Formats: `docs/scoring.md` §8.
+- Keep 3–5 findings, each tied to stroke numbers the user can click. Mark the good ones `good: true`. Use `info: true` for neutral notes. Good and info findings need `cite` too: every finding is checked, with no exemption.
 
 Then score the session and update the long-term trend:
 
@@ -111,7 +116,13 @@ Then score the session and update the long-term trend:
 .venv/bin/python tools/trend.py        # -> web/sessions/trend.json, flags 缺點改善 / 優點退步 vs earlier same-camera sessions
 ```
 
-Anchors, sources and which metrics each camera excludes are in `docs/scoring.md`. Add trend flags to the findings (re-save `notes.json` after running these) only when they compare sessions with the same `camera` text.
+After writing or editing `notes.json` and running score.py, always run the check. If it fails, fix the finding (the number or the cite), never loosen the check:
+
+```
+.venv/bin/python tools/check_findings.py <s>    # exit 1 + the failing findings
+```
+
+Anchors, sources, coverage gate and which metrics each camera excludes are in `docs/scoring.md`. Add trend flags to the findings (re-save `notes.json` after running these) only when they compare sessions with the same `camera` text.
 
 Highlight reel (optional, when asked or when the session has clear examples). Write `work/<s>/reel.json`. The format is in the header of `tools/highlights.py`: cards plus one- or two-up clips by final stroke number. Then:
 

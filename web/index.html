@@ -62,7 +62,7 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:10px 0 2px}
 .strokes button.cur{border-color:var(--ink);background:var(--panel)}
 .phases{display:flex;flex-wrap:wrap;gap:6px}
 .phases button{background:var(--chip);border-color:transparent;font-size:13px}
-.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
 @media (max-width:520px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .metric{background:var(--chip);border-radius:8px;padding:8px 10px}
 .metric .k{font-size:12px;color:var(--muted)}
@@ -187,6 +187,8 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
       <div id="findings"></div>
       <div class="strip" id="stripKnee"></div>
       <div class="strip" id="stripHeight"></div>
+      <div class="strip" id="stripPrep"></div>
+      <div class="strip" id="contactPlot"></div>
       <div class="strip" id="stripOpen"></div>
       <div class="legend"><span><i class="dot" style="background:var(--fh)"></i>對打正拍</span><span><i class="ring"></i>自己拋球的正拍</span><span><i class="dot" style="background:var(--bh)"></i>反拍</span><span>點圓點直接看那一拍</span></div>
       <p class="caveat" id="caveatDay"></p>
@@ -268,7 +270,8 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
         <div class="metric"><div class="k">準備時膝蓋</div><div class="v" id="mKnee">–</div><div class="cmp" id="cKnee"></div></div>
         <div class="metric"><div class="k">引拍轉肩</div><div class="v" id="mOpen">–</div><div class="cmp" id="cOpen"></div></div>
         <div class="metric"><div class="k">擊球高度</div><div class="v" id="mHeight">–</div><div class="cmp" id="cHeight"></div></div>
-        <div class="metric"><div class="k">擊球手肘</div><div class="v" id="mElbow">–</div><div class="cmp" id="cElbow"></div></div>
+        <div class="metric"><div class="k">準備時間</div><div class="v" id="mPrep">–</div><div class="cmp" id="cPrep"></div></div>
+        <div class="metric"><div class="k">手臂姿勢檢查</div><div class="v" id="mElbow">–</div><div class="cmp" id="cElbow"></div></div>
       </div>
       <div style="margin-top:12px"><canvas id="chart"></canvas></div>
       <div class="legend">
@@ -334,6 +337,12 @@ function angle3(w, a, b, c){  // world landmarks, metres: no aspect fix needed
   const A=w[K[a]], B=w[K[b]], C=w[K[c]], u=[0,1,2].map(i=>A[i]-B[i]), v=[0,1,2].map(i=>C[i]-B[i]), d=Math.hypot(...u)*Math.hypot(...v);
   return d ? Math.acos(Math.max(-1,Math.min(1,(u[0]*v[0]+u[1]*v[1]+u[2]*v[2])/d)))*180/Math.PI : null;
 }
+const armCheck = s => {  // [headline, detail] or null when no check applies to this stroke
+  const T=(v,y,n)=>v===true?("✓ "+y).trim():v===false?("✗ "+n).trim():"？看不出來";
+  if(s.serve_arm_conf!=null) return [T(s.serve_arm_straight,"手臂接近伸直","手臂偏彎"), "發球擊球瞬間；角度看不出來＝視角或可見度不夠，不下結論"];
+  if(s.bh_elbow_conf!=null) return [T(s.bh_elbow_ok,"手肘沒彎","手肘偏彎"), "單手反拍：手肘"+T(s.bh_elbow_ok,"","")+" · 擊球點在身前"+T(s.bh_front_ok,"","")];
+  return null;
+};
 const kneeWarn = s => s.knee_warn ? `這拍角度不準（3D ${Math.round(s.knee3d)}° 與 2D ${Math.round(s.knee2d)}° 差太多）` : "";
 const SER = new Map();
 function series(s){
@@ -436,6 +445,8 @@ function drawSummary(){
   if(DAYS[DAY].reel){ const v=document.createElement("video"); v.src=DAYS[DAY].reel; v.controls=true; v.playsInline=true; v.preload="metadata"; v.className="reel"; $("findings").append(v); }
   strip("stripKnee","準備時膝蓋角度","越左越蹲",s=>s.knee,90,180,"°",[90,110,130,150,170]);
   strip("stripHeight","擊球高度","髖部 = 0、肩膀 = 100",s=>s.contact_h*100,-40,100,"",[-40,-20,0,20,40,60,80,100]);
+  $("stripPrep").hidden=!ALL.some(s=>s.prep!=null); $("contactPlot").hidden=$("stripPrep").hidden;  // sessions before prep-contact have neither field
+  if(!$("stripPrep").hidden){ strip("stripPrep","準備時間","引拍完成到擊球，越右越早拉好",s=>s.prep,0,1,"s",[0,0.2,0.4,0.6,0.8,1],v=>v.toFixed(1)); drawContact(); }
   $("stripOpen").hidden=!DAYS[DAY].showOpen;
   if(DAYS[DAY].showOpen) strip("stripOpen","引拍時轉肩","越左越側身",s=>s.open_min,0,60,"%",[0,10,20,30,40,50,60]);
   $("caveatDay").textContent=DAYS[DAY].caveat;
@@ -456,7 +467,7 @@ function drawTrend(){
   $("trend").innerHTML=`<thead><tr><th></th>${keys.map(k=>`<th>${DAYS[k].label}</th>`).join("")}</tr></thead><tbody>`+
     rows.map(([lab,f])=>`<tr><td>${lab}</td>${keys.map(k=>`<td class="${k===DAY?"cur":""}">${f(k)}</td>`).join("")}</tr>`).join("")+"</tbody>";
 }
-function strip(id,title,hint,get,lo,hi,unit,ticks){
+function strip(id,title,hint,get,lo,hi,unit,ticks,fmt=Math.round){
   const el=$(id); el.innerHTML=`<div class="lbl">${title}<span>${hint}</span></div>`;
   const NS="http://www.w3.org/2000/svg", W=600, H=64, pad=14;
   const svg=document.createElementNS(NS,"svg"); svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.setAttribute("preserveAspectRatio","none");
@@ -464,7 +475,7 @@ function strip(id,title,hint,get,lo,hi,unit,ticks){
   const rows={FH:16,BH:38};
   const mk=(tag,attrs)=>{ const e=document.createElementNS(NS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); svg.append(e); return e; };
   for(const k of ["FH","BH"]) mk("line",{x1:pad,x2:W-pad,y1:rows[k],y2:rows[k],stroke:"var(--line)","stroke-width":1});
-  for(const val of ticks){ const t=mk("text",{x:x(val),y:H-2,"text-anchor":"middle","font-size":10,fill:"var(--muted)"}); t.textContent=Math.round(val)+unit; }
+  for(const val of ticks){ const t=mk("text",{x:x(val),y:H-2,"text-anchor":"middle","font-size":10,fill:"var(--muted)"}); t.textContent=fmt(val)+unit; }
   for(const k of ["FH","BH"]){ const m=median(byKind(k).map(get)); if(m!=null) mk("line",{x1:x(m),x2:x(m),y1:rows[k]-9,y2:rows[k]+9,stroke:`var(--${k.toLowerCase()})`,"stroke-width":2.5}); }
   for(const s of ALL){
     if(!(s.kind in rows)) continue;
@@ -472,7 +483,29 @@ function strip(id,title,hint,get,lo,hi,unit,ticks){
     const col=`var(--${s.kind.toLowerCase()})`, hollow=s.kind==="FH"&&s.drill==="feed";
     const c=mk("circle",{cx:x(val),cy:rows[s.kind]+((s.id*37)%7-3)*0.9,r:4.2,fill:hollow?"var(--panel)":col,"fill-opacity":hollow?1:0.6,stroke:hollow?col:"var(--panel)","stroke-width":hollow?1.6:1});
     c.dataset.id=s.id; c.dataset.hollow=hollow?1:0;
-    const tt=document.createElementNS(NS,"title"); tt.textContent=`${strokeLabel(s)}${drillName(s)?"（"+drillName(s)+"）":""}：${Math.round(val)}${unit}`; c.append(tt);
+    const tt=document.createElementNS(NS,"title"); tt.textContent=`${strokeLabel(s)}${drillName(s)?"（"+drillName(s)+"）":""}：${fmt(val)}${unit}`; c.append(tt);
+    c.addEventListener("click",()=>load(s.id,true));
+  }
+  el.append(svg);
+}
+// contact point relative to the body: x = ahead of the hips along the swing (torso lengths), y = height (hip 0, shoulder 100)
+function drawContact(){
+  const el=$("contactPlot"), NS="http://www.w3.org/2000/svg", W=600, H=220, pad=26, X=[-0.5,1.5], Y=[-40,120];
+  const sd=a=>{ a=a.filter(v=>v!=null).sort((p,q)=>p-q); if(a.length<5) return null; const q=f=>{ const i=f*(a.length-1), k=Math.floor(i); return a[k]+(a[Math.min(k+1,a.length-1)]-a[k])*(i-k); }; return (q(.75)-q(.25))/1.349; };
+  const note=["FH","BH"].map(k=>{ const g=byKind(k), ok=g.filter(s=>s.vis>=0.5), h=sd(ok.map(s=>s.contact_h)), f=sd(ok.map(s=>s.contact_fwd)); return h==null||f==null?"":`${NAMES[k]} ${ok.length} 拍：高度散 ${Math.round(h*100)}、前後散 ${f.toFixed(2)}`; }).filter(Boolean).join("；");
+  el.innerHTML=`<div class="lbl">擊球點（相對身體）<span>${note||"拍數不到 5，不算散佈"}</span></div>`;
+  const svg=document.createElementNS(NS,"svg"); svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.style.height="220px";
+  const x=v=>pad+(Math.max(X[0],Math.min(X[1],v))-X[0])/(X[1]-X[0])*(W-2*pad), y=v=>H-pad-(Math.max(Y[0],Math.min(Y[1],v))-Y[0])/(Y[1]-Y[0])*(H-2*pad);
+  const mk=(tag,a)=>{ const e=document.createElementNS(NS,tag); for(const k in a) e.setAttribute(k,a[k]); svg.append(e); return e; };
+  mk("rect",{x:x(X[0]),y:y(80),width:x(X[1])-x(X[0]),height:y(30)-y(80),fill:"rgba(74,222,128,.15)"});
+  for(const v of [0,100]){ mk("line",{x1:x(X[0]),x2:x(X[1]),y1:y(v),y2:y(v),stroke:"var(--line)"}); mk("text",{x:2,y:y(v)+4,"font-size":10,fill:"var(--muted)"}).textContent=v?"肩":"髖"; }
+  mk("line",{x1:x(0),x2:x(0),y1:y(Y[0]),y2:y(Y[1]),stroke:"var(--line)"});
+  mk("text",{x:x(0)+4,y:H-6,"font-size":10,fill:"var(--muted)"}).textContent="身體 →（往前）";
+  for(const s of ALL){
+    if(!(s.kind==="FH"||s.kind==="BH")||s.contact_fwd==null||s.contact_h==null||!(s.vis>=0.5)) continue;  // same vis gate as score.py
+    const c=mk("circle",{cx:x(s.contact_fwd),cy:y(s.contact_h*100),r:4.2,fill:`var(--${s.kind.toLowerCase()})`,"fill-opacity":0.6,stroke:"var(--panel)","stroke-width":1});
+    c.dataset.id=s.id; c.dataset.hollow=0;
+    const tt=document.createElementNS(NS,"title"); tt.textContent=`${strokeLabel(s)}：前 ${s.contact_fwd.toFixed(2)}、高 ${Math.round(s.contact_h*100)}`; c.append(tt);
     c.addEventListener("click",()=>load(s.id,true));
   }
   el.append(svg);
@@ -532,7 +565,7 @@ let S=null, cur=0, N=150, rate=0.25;
 const clipSrc=s=>s.src;
 function load(id, scroll){
   S=ALL[id]; N=S.frames.length; seek.max=N-1;
-  S.phases=[{f:S.contact-48,name:"準備"},{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}];
+  S.phases=[{f:S.contact-48,name:"準備"},...(S.prep!=null?[{f:S.contact-Math.round(S.prep*FPS),name:"引拍完成"}]:[]),{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}].sort((a,b)=>a.f-b.f);  // 引拍完成 can fall before 準備 or after 向前揮拍
   $("phases").innerHTML=""; for(const p of S.phases){ const b=document.createElement("button"); b.textContent=p.name; b.onclick=()=>goto(p.f); $("phases").append(b); }
   const dn=drillName(S);
   $("nowTitle").textContent=strokeLabel(S)+(dn?" · "+dn:"");
@@ -542,7 +575,9 @@ function load(id, scroll){
   $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${Math.round(m.knee)}°`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"");
   $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${Math.round(m.open)}%`:"這場鏡頭角度不適合看轉肩，參考就好";
   $("mHeight").innerHTML=fmt(S.contact_h*100,""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
-  $("mElbow").textContent="–"; $("cElbow").textContent="手肘角度太不準，暫不顯示數字";
+  $("mPrep").innerHTML=S.prep==null?"–":`${S.prep.toFixed(2)}<small>s</small>`; $("cPrep").textContent=S.prep==null?"":`${grp}中位數 ${median(ALL.filter(x=>x.kind===S.kind&&(!(S.kind==="FH"&&dn)||x.drill===S.drill)).map(x=>x.prep))?.toFixed(2)??"–"}s`;  // same group as the cards beside it
+  const arm=armCheck(S);  // pass/fail checks, not degrees (docs/scoring.md §9)
+  $("mElbow").textContent=arm?arm[0]:"–"; $("cElbow").textContent=arm?arm[1]:S.kind==="SV"?"發球：缺 3D 骨架或視角不夠，這拍沒有結論":"正手與雙手反拍不評手肘；手肘角度太不準，不顯示數字";
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage
   $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]);
   v.src=clipSrc(S); v.playbackRate=rate;

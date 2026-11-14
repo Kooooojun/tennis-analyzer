@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from score import lin, band, spread, score_session
+from score import lin, band, spread, score_session, check_session, SCORE_VERSION
 from trend import compare
 
 
@@ -60,7 +60,7 @@ assert grp(G)["metrics"]["knee"]["score"] == 10 and grp(G, player="A")["metrics"
 g = grp(score_session([st(knee=160, knee3d=k) for k in (110, 115, 120, 125, 130)] + [st(knee=160)] * 4, False))
 assert g["knee_src"] == "knee3d" and g["metrics"]["knee"]["median"] == 120 and g["metrics"]["knee"]["n"] == 5
 # strokes dropped by knee_warn do not count toward the source vote
-g = grp(score_session([st(knee3d=120, knee_warn=True)] * 4 + [st(knee=130)] * 3, False))
+g = grp(score_session([st(knee3d=120, knee_warn=True)] * 4 + [st(knee=130)] * 5, False))
 assert g["knee_src"] == "knee" and g["metrics"]["knee"]["median"] == 130
 
 # trend.compare(history): history = [{"session", "camera", "items": {name: score|None}}] oldest first
@@ -99,4 +99,32 @@ assert grp(score_session([st(vis=nan)] * 6, False))["metrics"]["contact_h"]["n"]
 assert grp(score_session([st(player=None)] * 3 + [st()] * 3, False))["n"] == 6
 # knee from 3D in one session and 2D in another is not comparable (2D shifts with view angle)
 assert compare([h("a", knee=9), dict(h("b", knee=3), knee_src="knee3d")]) == []
+# coverage gate (docs/scoring.md §1): 3 usable of 10 strokes is not enough, 6 of 10 is; version and formula are output
+g = grp(score_session([st(vis=0.2)] * 7 + [st()] * 3, False))
+m = g["metrics"]["contact_h"]; assert m["score"] is None and m["status"] == "資料不足" and m["n"] == 3 and close(m["coverage"], 0.3)
+g = grp(score_session([st(vis=0.2)] * 4 + [st()] * 6, False)); assert g["metrics"]["contact_h"]["score"] is not None
+m = grp(score_session([st()] * 6, False))["metrics"]["knee"]
+assert m["status"] == "ok" and "125" in m["formula"] and m["inputs"]["anchors"] == [125, 160] and g["score_version"] == SCORE_VERSION
+assert grp(score_session([st(knee_warn=True)] * 6, False))["metrics"]["knee"]["status"] == "資料不足"
+# arm shape checks (docs/scoring.md §9): pass/fail counts only, never mixed into the 1-10 score
+def sv(v, **kw): return dict(kind="SV", serve_arm_straight=v, serve_arm_conf=0.6, **kw)
+C = check_session([sv(True)] * 4 + [sv(False)] + [sv(None)] * 2)
+c = [x for x in C if x["kind"] == "SV" and x["field"] == "serve_arm_straight"][0]
+assert (c["n"], c["passed"], c["failed"], c["unclear"]) == (7, 4, 1, 2) and c["status"] == "ok" and abs(c["coverage"] - 5 / 7) < 0.01 and "135" in c["formula"], c
+assert check_session([sv(None)] * 6)[0]["status"] == "資料不足"  # nothing decided
+assert check_session([sv(True)] * 2)[0]["status"] == "資料不足"  # < 3 decided
+assert check_session([st("FH"), st("BH")]) == []  # old strokes without the new fields, FH, two-handed BH: no checks at all
+assert score_session([sv(True), st()], False) == score_session([st()], False)  # SV rows do not change FH/BH scores
 print("ok")
+
+# prep-contact（testset/results/prep-contact_pred.md）：準備時間越長越好；擊球前後位置只評一致性、不評好壞
+from score import METRICS
+assert lin(0.8, *METRICS["prep"]["lin"]) == 10 and lin(0.1, *METRICS["prep"]["lin"]) == 1 and close(lin(0.45, *METRICS["prep"]["lin"]), 5.5)
+g = grp(score_session([st(knee=120, prep=0.7, contact_fwd=f) for f in (0.5, 0.5, 0.5, 0.5, 0.5, 0.9)], False))
+cf = g["metrics"]["contact_fwd"]
+assert cf["score"] is None and cf["cons"] == 10 and cf["status"] == "ok" and cf["inputs"]["anchors"] is None
+assert g["metrics"]["prep"]["score"] == 10 and g["form"] == 10  # a consistency-only metric does not drag the form score
+g = grp(score_session([st(contact_fwd=0.5, vis=0.2)] * 6, False))
+assert g["metrics"]["contact_fwd"]["n"] == 0 and g["metrics"]["contact_fwd"]["status"] == "資料不足"
+assert SCORE_VERSION == 3
+print("prep-contact score tests ok")
