@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from score import lin, band, spread, score_session
+from score import lin, band, spread, score_session, SCORE_VERSION
 from trend import compare
 
 
@@ -60,7 +60,7 @@ assert grp(G)["metrics"]["knee"]["score"] == 10 and grp(G, player="A")["metrics"
 g = grp(score_session([st(knee=160, knee3d=k) for k in (110, 115, 120, 125, 130)] + [st(knee=160)] * 4, False))
 assert g["knee_src"] == "knee3d" and g["metrics"]["knee"]["median"] == 120 and g["metrics"]["knee"]["n"] == 5
 # strokes dropped by knee_warn do not count toward the source vote
-g = grp(score_session([st(knee3d=120, knee_warn=True)] * 4 + [st(knee=130)] * 3, False))
+g = grp(score_session([st(knee3d=120, knee_warn=True)] * 4 + [st(knee=130)] * 5, False))
 assert g["knee_src"] == "knee" and g["metrics"]["knee"]["median"] == 130
 
 # trend.compare(history): history = [{"session", "camera", "items": {name: score|None}}] oldest first
@@ -99,4 +99,11 @@ assert grp(score_session([st(vis=nan)] * 6, False))["metrics"]["contact_h"]["n"]
 assert grp(score_session([st(player=None)] * 3 + [st()] * 3, False))["n"] == 6
 # knee from 3D in one session and 2D in another is not comparable (2D shifts with view angle)
 assert compare([h("a", knee=9), dict(h("b", knee=3), knee_src="knee3d")]) == []
+# coverage gate (docs/scoring.md §1): 3 usable of 10 strokes is not enough, 6 of 10 is; version and formula are output
+g = grp(score_session([st(vis=0.2)] * 7 + [st()] * 3, False))
+m = g["metrics"]["contact_h"]; assert m["score"] is None and m["status"] == "資料不足" and m["n"] == 3 and close(m["coverage"], 0.3)
+g = grp(score_session([st(vis=0.2)] * 4 + [st()] * 6, False)); assert g["metrics"]["contact_h"]["score"] is not None
+m = grp(score_session([st()] * 6, False))["metrics"]["knee"]
+assert m["status"] == "ok" and "125" in m["formula"] and m["inputs"]["anchors"] == [125, 160] and g["score_version"] == SCORE_VERSION
+assert grp(score_session([st(knee_warn=True)] * 6, False))["metrics"]["knee"]["status"] == "資料不足"
 print("ok")
