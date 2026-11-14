@@ -6,8 +6,10 @@
 import sys
 from pathlib import Path
 import numpy as np
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import FPS, size
 
-FPS, GAP, K = 60, 4, 4            # fill ball gaps up to 4 frames; velocity compared over 4 frames each side
+GAP, K = 4, 4            # fill ball gaps up to 4 frames; velocity compared over 4 frames each side
 DV_MIN = 0.008                    # min velocity change, frame heights per frame (~3 m/s, a rally ball is 8+ m/s; gravity adds ~0.0013 per 4 frames)
 NEAR = 0.15                       # ball-to-wrist distance in frame heights (arm + racket reach ~0.7 body heights, body ~0.25 frame)
 SOUND_WIN = 0.15                  # seconds
@@ -46,8 +48,6 @@ def merge(onsets, evs):
 
 if __name__ == "__main__":
     if len(sys.argv) != 5: sys.exit("usage: events.py <onsets.npy> <ball.npy> <pose.npy> <events.npy>")
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from common import size
     on, ball, pose = np.load(sys.argv[1]), np.load(sys.argv[2]), np.load(sys.argv[3]).astype(np.float64)
     w, h = size(Path(sys.argv[3]).parent / "proxy.mp4"); n = min(len(ball), len(pose))
     wr = np.where((pose[:n, [15, 16], 2] > 0.2)[..., None], pose[:n, [15, 16], :2], np.nan)  # wrists seen by the pose model

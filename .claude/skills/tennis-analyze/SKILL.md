@@ -17,7 +17,7 @@ Reply to the user in the language they write in. The page and reel text are Trad
 tools/prep.sh <s>
 ```
 
-This makes the proxy, audio, pose, onsets, ball track (`ball.npy`, RacketVision), hit events (`events.npy` = sound onsets plus ball turns near the tracked wrist) and match files per video in `work/<s>/<video>/`, plus `videos.json`, which fixes the order (video 1, 2, 3 by filename). Pose runs about real time and the ball tracker adds about 2.4 s per second of video on an Apple GPU (portrait is 3x that), so 40 minutes of video takes about 2.5 hours. Run it in the background and tell the user how long it will take. It resumes where it stopped.
+This makes the proxy, audio, pose, onsets, ball track (`ball.npy`, RacketVision), hit events (`events.npy` = sound onsets plus ball turns near the tracked wrist) and match files per video in `work/<s>/<video>/`, plus `videos.json`, which fixes the order (video 1, 2, 3 by filename). Pose runs about real time and the ball tracker adds about 2.4 s per second of video on an Apple GPU (portrait is 4x that), so 40 minutes of video takes about 2.5 hours. Run it in the background and tell the user how long it will take. It resumes where it stopped.
 
 Portrait and landscape 16:9 video both work (proxy is 540x960 or 960x540; each stroke stores its `size`). The tracker follows one body, so with two or more people in frame expect runs on the wrong person and mark them `x other-player`.
 

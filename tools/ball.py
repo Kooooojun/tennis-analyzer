@@ -2,8 +2,8 @@
 # The network is the TrackNetV3-style UNet from RacketVision BallTrack (github.com/OrcustD/RacketVision, MIT, Copyright (c) 2025
 # Linfeng Dong; license text in third_party/RacketVision-LICENSE), rewritten without mmengine. Weights: models/balltrack_best.pth.
 # Input per frame: median background + the last 4 frames (BGR, 512x288); output: heatmap of the newest frame.
-# Landscape proxies run as one crop. Portrait proxies run as 3 stacked 16:9 crops (a stretched portrait frame is out of the
-# training distribution) and the most confident ball wins.
+# Landscape proxies run as one crop. Portrait proxies run as 4 stacked, overlapping 16:9 crops (a stretched portrait frame is out
+# of the training distribution; 3 would leave 24 px gaps) and the most confident ball wins.
 import sys, subprocess, time, pickle, types
 from pathlib import Path
 import numpy as np, cv2, torch, torch.nn as nn
@@ -60,8 +60,8 @@ def load_weights(net, path):  # original names: down_block_1.conv_1.conv/bn -> o
 
 def crops_for(W, H):  # (x, y, w, h) windows of 16:9 that cover the frame
     if W >= H: return [(0, 0, W, H)]
-    ch = round(W * 9 / 16)
-    return [(0, y, W, ch) for y in sorted({round(i * (H - ch) / 2) for i in range(3)})]
+    ch = round(W * 9 / 16); n = -(-H // ch)  # ceil: n crops of height ch cover H only if n * ch >= H
+    return [(0, y, W, ch) for y in sorted({round(i * (H - ch) / (n - 1)) for i in range(n)})]
 
 
 def locate(hm):  # center of the largest blob above THRE, as in the original inference.py
@@ -117,6 +117,8 @@ def main(src, out, device=None):
         first = False
         if len(bufs[0]) >= BATCH + SEQ - 1: flush(BATCH)
     if len(bufs[0]) > SEQ - 1: flush(len(bufs[0]) - (SEQ - 1))
+    p.stdout.close()
+    if p.wait(): sys.exit(f"ffmpeg failed decoding {src} after {got} frames")  # a truncated ball.npy would be cached by prep.sh forever
     res = res[:got]
     np.save(out, res)
     ok = ~np.isnan(res[:, 0])
