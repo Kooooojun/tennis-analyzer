@@ -70,6 +70,7 @@ Compute what matters from `web/sessions/<s>/strokes.json`. Each stroke has these
 - `knee`: the 10th-percentile knee angle 0.8–0.1 s before contact. Lower means more bent. ≤130 is good, >150 is nearly straight.
 - `contact_h`: the wrist height at contact, with hip = 0 and shoulder = 1. 0.3–0.8 is the waist-to-chest target.
 - `knee3d` (same window on the 3D skeleton, null for sessions without `pose_world.npy`) and `knee_warn` (true when |knee3d - knee| > 20°, so the angle is unreliable for that stroke). The web page and reel show `knee3d` when present. Thresholds above were set on 2D `knee`; 3D reads about 9° lower on average.
+- `serve_arm_straight` (SV) and `bh_elbow_ok` / `bh_front_ok` (one-handed BH, set `"one_hand_bh": true` in refine.json; `"hand": "L"` for lefties): true / false / null (null = cannot tell from this view). They are checks, not scores; rules in docs/scoring.md §9. Forehands get none.
 - `elbow`, `open_min` (shoulder turn, 0% is fully side-on), and `vis` (wrist visibility).
 
 Good comparisons are self-fed vs rally forehand medians, the best and worst examples by number, and other sessions shot from the same camera position.
