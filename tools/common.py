@@ -32,6 +32,26 @@ def videos(s):
     return json.loads((work(s) / "videos.json").read_text())
 
 
+def tracks(d):
+    """Tracked people in one video's work dir d: [0, 1, ..]. pose.npy is track 0, pose_t1.npy track 1 (see pose_full.py)."""
+    return [0] + sorted(int(p.stem[6:]) for p in d.glob("pose_t*.npy"))
+
+
+def track_file(d, kind, k=0):
+    """kind 'pose', 'pose_world' or 'match' -> d/pose.npy for track 0, d/pose_t2.npy for track 2."""
+    return d / f"{kind}{f'_t{k}' if k else ''}.npy"
+
+
+def players(s):
+    """work/<s>/players.txt -> {(video no, track): name}. One line per tracked person: '<video no> <track> <name>', name x = ignore."""
+    p = work(s) / "players.txt"
+    if not p.exists(): return {}
+    rows = [l.split("#")[0].split() for l in p.read_text().splitlines()]; rows = [r for r in rows if r]
+    bad = [r for r in rows if len(r) != 3 or not (r[0].isdigit() and r[1].isdigit()) or r[2] == "?"]
+    if bad: sys.exit(f"players.txt lines must be '<video no> <track> <name>' (fill in every ?): {bad[:5]}")
+    return {(int(r[0]), int(r[1])): r[2] for r in rows}
+
+
 def size(proxy):
     """(width, height) of a proxy.mp4: 540x960 portrait or 960x540 landscape."""
     import cv2

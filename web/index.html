@@ -321,7 +321,7 @@ const dayStats = data => { const k=(kind,drill)=>data.filter(s=>s.kind===kind&&(
 let MED = dayStats(ALL);
 const byNo = n => ALL[n-1];
 const dayNo = (day,n) => DAYS[day].data[n-1];
-function strokeLabel(s){ return `#${String(s.id+1).padStart(2,"0")} ${NAMES[s.kind]} · ${s.clock}`; }
+function strokeLabel(s){ return `#${String(s.id+1).padStart(2,"0")}${s.player&&s.player!=="me"?" "+s.player:""} ${NAMES[s.kind]} · ${s.clock}`; }
 const drillName = s => s.kind!=="FH" ? "" : s.drill==="feed" ? "自己拋球" : s.drill==="rally" ? "對打" : s.drill==="high" ? "高拋" : "";
 
 // ---------- per-stroke series ----------
@@ -505,9 +505,10 @@ function drawTabs(){
   $("tabs").innerHTML="";
   const tabs=[["ALL",`全部 ${ALL.length}`],["FH",`正拍 ${byKind("FH").length}`],["BH",`反拍 ${byKind("BH").length}`]];
   if(byKind("SV").length) tabs.push(["SV",`發球 ${byKind("SV").length}`]);
+  const ppl=[...new Set(ALL.map(s=>s.player||"me"))]; if(ppl.length>1) for(const p of ppl) tabs.push(["@"+p,`${p} ${ALL.filter(s=>(s.player||"me")===p).length}`]);
   for(const [k,label] of tabs){ const b=document.createElement("button"); b.textContent=label; b.classList.toggle("on",filter===k); b.onclick=()=>{ filter=k; drawTabs(); drawList(); }; $("tabs").append(b); }
 }
-function visible(){ return ALL.filter(s=>filter==="ALL"||s.kind===filter); }
+function visible(){ return ALL.filter(s=>filter==="ALL"||s.kind===filter||filter==="@"+(s.player||"me")); }
 function drawList(){
   const box=$("strokes"); box.innerHTML="";
   for(const s of visible()){

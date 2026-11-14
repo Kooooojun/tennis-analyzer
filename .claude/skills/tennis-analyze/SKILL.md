@@ -5,7 +5,7 @@ description: Analyze a tennis practice session from phone videos in videos/<date
 
 # Tennis session analysis
 
-The pipeline is half scripts, half your eyes. Scripts find hit sounds, track one body with MediaPipe, and measure angles. You decide which candidates are the user's real strokes, whether each was self-fed or in a rally, where contact really is, and what the session means. Do every judgment step by looking at the images. Never label from the numbers alone.
+The pipeline is half scripts, half your eyes. Scripts find hit sounds, track up to N bodies with MediaPipe, and measure angles. You decide who each tracked person is, which candidates are real strokes and by whom, whether each was self-fed or in a rally, where contact really is, and what the session means. Do every judgment step by looking at the images. Never label from the numbers alone.
 
 Run everything from the repo root with `.venv/bin/python tools/<script>`. If `.venv` is missing, run `./setup.sh`. A session is a folder name under `videos/`, conventionally the date (`2026-11-05`).
 
@@ -14,12 +14,18 @@ Reply to the user in the language they write in. The page and reel text are Trad
 ## 1. Prepare
 
 ```
-tools/prep.sh <s>
+tools/prep.sh <s> [people]
 ```
 
-This makes the proxy, audio, pose, onsets and match files per video in `work/<s>/<video>/`, plus `videos.json`, which fixes the order (video 1, 2, 3 by filename). Pose runs about real time, so 40 minutes of video takes about 40 minutes. Run it in the background and tell the user how long it will take. It resumes where it stopped.
+`people` is how many people to track (default 2; use 1 for a solo session, up to 4 for doubles). This makes the proxy, audio, pose, onsets and match files per video in `work/<s>/<video>/`, plus `videos.json`, which fixes the order (video 1, 2, 3 by filename). Pose runs about real time, so 40 minutes of video takes about 40 minutes. Run it in the background and tell the user how long it will take. It resumes where it stopped.
 
-Portrait and landscape 16:9 video both work (proxy is 540x960 or 960x540; each stroke stores its `size`). The tracker follows one body, so with two or more people in frame expect runs on the wrong person and mark them `x other-player`.
+Portrait and landscape 16:9 video both work (proxy is 540x960 or 960x540; each stroke stores its `size`). Each tracked person gets a track per video (`pose.npy` is track 0, the person seen most; `pose_t1.npy` track 1, and so on). The tracker keeps identities by position and shirt colour. It works well for 2 people near the camera (wall practice). Far-away doubles players are often not detected at all, and people in the same colour can swap tracks.
+
+## 1b. Who is who (judgment, only when more than one person was tracked)
+
+The first run of `candidates.py` stops and writes `work/<s>/players.jpg`: one row per tracked person per video (`v<video> t<track>`), 10 crops spread over the video. It also writes `work/<s>/players.txt` with one `<video no> <track> ?` line per row. Ask the user what to call each friend (or use shirt colour, e.g. `white`, `black`), look at the sheet and replace each `?` with a name. Use the same name for the same person in every video, and `x` for a track that is nobody (a passer-by, a ghost skeleton). Names are one word without spaces.
+
+If one row shows two different people, the tracker swapped them partway. Name the row after the person it shows most; you fix the strokes after the swap one by one in labels.txt (next step).
 
 ## 2. Candidates and labels (judgment)
 
@@ -29,9 +35,10 @@ Portrait and landscape 16:9 video both work (proxy is 540x960 or 960x540; each s
 
 This writes `work/<s>/sheet0.jpg`… with 24 candidates per sheet. Each row shows 5 crops around one hit sound (-45, -25, -8, 0, +12 frames at 60 fps), labeled `<idx> v<video> m:ss`. Read every sheet. Fill `work/<s>/labels.txt`, one line per idx, in the form `idx kind drill [comment]`:
 
-- `kind` is FH, BH, SV (serve), OH (overhead), or `x`. Use `x` when it is not the user (another player the tracker jumped to), not a stroke (a bounce, a pickup, a practice swing with no ball), or a duplicate of the stroke just before (the follow-through of the previous candidate).
+- With several players each line is prefilled `idx ? ? @name`: the person whose wrist swung most at that hit sound, named from players.txt. The sheet label shows the same `@name`, and the crops follow that person. If the crops show a different person than the name says (a tracker swap), change the name. If the crops show someone who is not hitting, use `x`.
+- `kind` is FH, BH, SV (serve), OH (overhead), or `x`. Use `x` when it is not a player (another person the tracker jumped to), not a stroke (a bounce, a pickup, a practice swing with no ball), or a duplicate of the stroke just before (the follow-through of the previous candidate).
 - `drill` is `feed` if the user tossed the ball to themselves (look at -45 / -25: the ball is in their hand or a free hand is releasing it), `rally` if it came from the other side, `high` if it was self-fed high, `unsure` if you can't tell. SV takes no drill.
-- First ask the user, or work out from the sheets, which person they are (shirt colour, side of court). If several people appear, the tracker may follow someone else for whole stretches. Mark those runs `x other-player`.
+- Solo sessions (people 1, or one person in frame): first ask the user, or work out from the sheets, which person they are. If the tracker follows someone else for a stretch, mark those runs `x other-player`.
 - A rally shows a gap of roughly 3–6 s between candidates. A run of feeds shows toss motions. Use the timing to settle doubtful feed / rally calls.
 
 Then build the stroke list:
@@ -67,6 +74,7 @@ It always starts from `strokes_raw.json`, so you can edit refine.json and re-run
 
 Compute what matters from `web/sessions/<s>/strokes.json`. Each stroke has these fields:
 
+- `player`: who hit it (`me` for single-player sessions). Compare and score each player separately.
 - `knee`: the 10th-percentile knee angle 0.8–0.1 s before contact. Lower means more bent. ≤130 is good, >150 is nearly straight.
 - `contact_h`: the wrist height at contact, with hip = 0 and shoulder = 1. 0.3–0.8 is the waist-to-chest target.
 - `elbow`, `open_min` (shoulder turn, 0% is fully side-on), and `vis` (wrist visibility).
