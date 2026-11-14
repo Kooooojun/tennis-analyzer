@@ -486,7 +486,7 @@ function strip(id,title,hint,get,lo,hi,unit,ticks,fmt=Math.round){
 function drawContact(){
   const el=$("contactPlot"), NS="http://www.w3.org/2000/svg", W=600, H=220, pad=26, X=[-0.5,1.5], Y=[-40,120];
   const sd=a=>{ a=a.filter(v=>v!=null).sort((p,q)=>p-q); if(a.length<5) return null; const q=f=>{ const i=f*(a.length-1), k=Math.floor(i); return a[k]+(a[Math.min(k+1,a.length-1)]-a[k])*(i-k); }; return (q(.75)-q(.25))/1.349; };
-  const note=["FH","BH"].map(k=>{ const g=byKind(k), h=sd(g.map(s=>s.contact_h)), f=sd(g.map(s=>s.contact_fwd)); return h==null?"":`${NAMES[k]} ${g.length} 拍：高度散 ${Math.round(h*100)}、前後散 ${f.toFixed(2)}`; }).filter(Boolean).join("；");
+  const note=["FH","BH"].map(k=>{ const g=byKind(k), ok=g.filter(s=>s.vis>=0.5), h=sd(ok.map(s=>s.contact_h)), f=sd(ok.map(s=>s.contact_fwd)); return h==null||f==null?"":`${NAMES[k]} ${ok.length} 拍：高度散 ${Math.round(h*100)}、前後散 ${f.toFixed(2)}`; }).filter(Boolean).join("；");
   el.innerHTML=`<div class="lbl">擊球點（相對身體）<span>${note||"拍數不到 5，不算散佈"}</span></div>`;
   const svg=document.createElementNS(NS,"svg"); svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.style.height="220px";
   const x=v=>pad+(Math.max(X[0],Math.min(X[1],v))-X[0])/(X[1]-X[0])*(W-2*pad), y=v=>H-pad-(Math.max(Y[0],Math.min(Y[1],v))-Y[0])/(Y[1]-Y[0])*(H-2*pad);
@@ -496,7 +496,7 @@ function drawContact(){
   mk("line",{x1:x(0),x2:x(0),y1:y(Y[0]),y2:y(Y[1]),stroke:"var(--line)"});
   mk("text",{x:x(0)+4,y:H-6,"font-size":10,fill:"var(--muted)"}).textContent="身體 →（往前）";
   for(const s of ALL){
-    if(!(s.kind==="FH"||s.kind==="BH")||s.contact_fwd==null||s.contact_h==null) continue;
+    if(!(s.kind==="FH"||s.kind==="BH")||s.contact_fwd==null||s.contact_h==null||!(s.vis>=0.5)) continue;  // same vis gate as score.py
     const c=mk("circle",{cx:x(s.contact_fwd),cy:y(s.contact_h*100),r:4.2,fill:`var(--${s.kind.toLowerCase()})`,"fill-opacity":0.6,stroke:"var(--panel)","stroke-width":1});
     c.dataset.id=s.id; c.dataset.hollow=0;
     const tt=document.createElementNS(NS,"title"); tt.textContent=`${strokeLabel(s)}：前 ${s.contact_fwd.toFixed(2)}、高 ${Math.round(s.contact_h*100)}`; c.append(tt);
@@ -568,7 +568,7 @@ function load(id, scroll){
   $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${Math.round(m.knee)}°`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"");
   $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${Math.round(m.open)}%`:"這場鏡頭角度不適合看轉肩，參考就好";
   $("mHeight").innerHTML=fmt(S.contact_h*100,""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
-  $("mPrep").innerHTML=S.prep==null?"–":`${S.prep.toFixed(2)}<small>s</small>`; $("cPrep").textContent=S.prep==null?"":`引拍完成到擊球 · 中位數 ${median(ALL.filter(x=>x.kind===S.kind).map(x=>x.prep))?.toFixed(2)??"–"}s`;
+  $("mPrep").innerHTML=S.prep==null?"–":`${S.prep.toFixed(2)}<small>s</small>`; $("cPrep").textContent=S.prep==null?"":`${grp}中位數 ${median(ALL.filter(x=>x.kind===S.kind&&(!(S.kind==="FH"&&dn)||x.drill===S.drill)).map(x=>x.prep))?.toFixed(2)??"–"}s`;  // same group as the cards beside it
   $("mElbow").textContent="–"; $("cElbow").textContent="手肘角度太不準，暫不顯示數字";
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage
   $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]);

@@ -2,7 +2,7 @@
 measure_full() on a whole-video pose.npy (33 landmarks), measure_clip() on the 150-frame web clip (KEEP landmarks)."""
 import numpy as np
 import warnings; warnings.filterwarnings("ignore")
-from common import PORTRAIT
+from common import PORTRAIT, FPS
 
 
 def _scale(size):
@@ -29,7 +29,7 @@ def _knee(xy, J, c):
     return float(np.nanpercentile(ks, 10))
 
 
-PREP_WIN = 60  # frames searched before contact; 84 caught the previous rally stroke (testset/results/prep-contact.md)
+PREP_WIN = FPS  # frames (1.0 s) searched before contact; 84 caught the previous rally stroke (testset/results/prep-contact.md)
 
 
 def _swing_dir(xy, J, c):
@@ -46,7 +46,7 @@ def _prep(xy, J, c, d):
     back = d * (xy[a:c - 3, J['rw'], 0] - (xy[a:c - 3, J['lh'], 0] + xy[a:c - 3, J['rh'], 0]) / 2)
     sm = np.array([np.nanmedian(back[max(0, i - 2):i + 3]) if np.isfinite(back[max(0, i - 2):i + 3]).any() else np.nan for i in range(len(back))])
     if not np.isfinite(sm).any(): return None
-    return round((c - a - int(np.nanargmin(sm))) / 60, 3)
+    return round((c - a - int(np.nanargmin(sm))) / FPS, 3)
 
 
 def _core(xy, vis, c, J, world=None):

@@ -66,11 +66,11 @@ def check(notes, strokes, scores):
         if not isinstance(cites, list): cites = []
         if not cites: errs.append("沒有引用（cite）")
         errs += [r for r in (_cite(c, strokes, scores.get("groups", [])) for c in cites) if r]
-        vals = [c["value"] for c in cites if _num(c.get("value"))]
+        vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
         text = f.get("text", "")
         for m in re.finditer(r"(\d+(?:\.\d+)?)\s*°", text):
             if not any(abs(float(m.group(1)) - v) <= 0.5 + 1e-9 for v in vals): errs.append(f"文字裡的 {m.group(0)} 沒有對應的引用")
-        refs = {int(x) for x in re.findall(r"#(\d+)", text)} | {j[0] for j in f.get("jump", []) if isinstance(j, (list, tuple)) and j and isinstance(j[0], int)}
+        refs = {int(x) for x in re.findall(r"#(\d+)", text)} | {j[0] for j in (f.get("jump") or []) if isinstance(j, (list, tuple)) and j and isinstance(j[0], int)}
         errs += [f"拍 #{n} 不存在" for n in sorted(refs) if not 1 <= n <= len(strokes)]
         errs = list(dict.fromkeys(errs))
         if errs: out.append(f"#{i} {f.get('title', '')}: " + "；".join(errs))
