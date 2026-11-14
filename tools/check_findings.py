@@ -81,7 +81,7 @@ if __name__ == "__main__":
     import sys
     from common import session, web, load
     D = web(session())
-    if not (D / "scores.json").exists(): sys.exit("缺 scores.json：先跑 tools/score.py " + D.name)
+    if not (D / "scores.json").exists(): sys.exit(f"缺 scores.json：先跑 .venv/bin/python tools/score.py {D.name}")
     errs = check(load(D / "notes.json"), load(D / "strokes.json"), load(D / "scores.json"))
     print("\n".join(errs) if errs else f"ok：{len(load(D / 'notes.json').get('findings', []))} 條 findings 的引用都對得上")
     sys.exit(1 if errs else 0)

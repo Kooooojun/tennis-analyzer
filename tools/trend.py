@@ -43,7 +43,7 @@ if __name__ == "__main__":
     # only YYYY-MM-DD dates sort correctly as text; undated sessions are listed but never compared
     dated = lambda h: [x for x in h if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(x["date"]))]
     old = sorted({r["session"] for r in runs if r.get("score_version") != SCORE_VERSION})
-    if old: print("注意：這些場次的 scores.json 版本不是", SCORE_VERSION, "，不會拿來比，請重跑 tools/score.py：", ", ".join(old))
+    if old: print("注意：這些場次的 scores.json 版本不是", SCORE_VERSION, "，只會跟同版本的場次比，請重跑 tools/score.py：", ", ".join(old))
     out = [dict(player=p, kind=k, history=h, flags=compare(dated(h))) for (p, k), h in sorted(H.items())]
     save(S / "trend.json", out)
     for t in out:
