@@ -96,6 +96,15 @@ Write `web/sessions/<s>/notes.json`:
 - Set `showOpen` to true only when the camera is roughly behind the player at hip height or higher.
 - Keep 3–5 findings, each tied to stroke numbers the user can click. Mark the good ones `good: true`. Use `info: true` for neutral notes.
 
+Then score the session and update the long-term trend:
+
+```
+.venv/bin/python tools/score.py <s>    # -> scores.json, one 1–10 per player and kind (FH/BH)
+.venv/bin/python tools/trend.py        # -> web/sessions/trend.json, flags 缺點改善 / 優點退步 vs earlier same-camera sessions
+```
+
+Anchors, sources and which metrics each camera excludes are in `docs/scoring.md`. Add trend flags to the findings (re-save `notes.json` after running these) only when they compare sessions with the same `camera` text.
+
 Highlight reel (optional, when asked or when the session has clear examples). Write `work/<s>/reel.json`. The format is in the header of `tools/highlights.py`: cards plus one- or two-up clips by final stroke number. Then:
 
 ```
