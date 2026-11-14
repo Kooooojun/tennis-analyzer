@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from score import lin, band, spread, score_session, SCORE_VERSION
+from score import lin, band, spread, score_session, check_session, SCORE_VERSION
 from trend import compare
 
 
@@ -106,6 +106,15 @@ g = grp(score_session([st(vis=0.2)] * 4 + [st()] * 6, False)); assert g["metrics
 m = grp(score_session([st()] * 6, False))["metrics"]["knee"]
 assert m["status"] == "ok" and "125" in m["formula"] and m["inputs"]["anchors"] == [125, 160] and g["score_version"] == SCORE_VERSION
 assert grp(score_session([st(knee_warn=True)] * 6, False))["metrics"]["knee"]["status"] == "資料不足"
+# arm shape checks (docs/scoring.md §9): pass/fail counts only, never mixed into the 1-10 score
+def sv(v, **kw): return dict(kind="SV", serve_arm_straight=v, serve_arm_conf=0.6, **kw)
+C = check_session([sv(True)] * 4 + [sv(False)] + [sv(None)] * 2)
+c = [x for x in C if x["kind"] == "SV" and x["field"] == "serve_arm_straight"][0]
+assert (c["n"], c["passed"], c["failed"], c["unclear"]) == (7, 4, 1, 2) and c["status"] == "ok" and abs(c["coverage"] - 5 / 7) < 0.01 and "135" in c["formula"], c
+assert check_session([sv(None)] * 6)[0]["status"] == "資料不足"  # nothing decided
+assert check_session([sv(True)] * 2)[0]["status"] == "資料不足"  # < 3 decided
+assert check_session([st("FH"), st("BH")]) == []  # old strokes without the new fields, FH, two-handed BH: no checks at all
+assert score_session([sv(True), st()], False) == score_session([st()], False)  # SV rows do not change FH/BH scores
 print("ok")
 
 # prep-contact（testset/results/prep-contact_pred.md）：準備時間越長越好；擊球前後位置只評一致性、不評好壞

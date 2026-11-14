@@ -90,11 +90,30 @@ def score_session(strokes, show_open):
             for p, k in keys]
 
 
+# arm shape checks: (kind, field, conf field that is not None when the check applied, 中文名, 規則文字). Pass/fail counts only; docs/scoring.md §9.
+CHECKS = [("SV", "serve_arm_straight", "serve_arm_conf", "發球擊球時手臂接近伸直", "2D、3D 肘角平均 ≥ 135° 通過，< 120° 不通過，其餘與信心閘門不過者為看不出來"),
+          ("BH", "bh_elbow_ok", "bh_elbow_conf", "單手反拍擊球時手肘不明顯彎曲", "同上"),
+          ("BH", "bh_front_ok", "bh_elbow_conf", "單手反拍擊球點在身體前方", "手腕在持拍側肩膀之前 ≥ 0.1 m（3D，沿肩線）")]
+MIN_DECIDED = 3
+
+
+def check_session(strokes):
+    """One row per (player, kind, check) that applied to at least one stroke. Not part of the 1-10 score, so no score_version change."""
+    who = lambda s: s.get("player") or "me"; out = []
+    for kind, field, conf, name, rule in CHECKS:
+        for p in sorted({who(s) for s in strokes if s.get("kind") == kind and _num(s.get(conf))}):
+            g = [s for s in strokes if who(s) == p and s.get("kind") == kind and _num(s.get(conf))]
+            ps, fl = sum(s.get(field) is True for s in g), sum(s.get(field) is False for s in g); n = len(g)
+            out.append(dict(player=p, kind=kind, field=field, name=name, n=n, passed=ps, failed=fl, unclear=n - ps - fl, coverage=_r((ps + fl) / n, 2),
+                            status="ok" if ps + fl >= MIN_DECIDED and (ps + fl) / n >= MIN_COVER else "資料不足", formula=rule))
+    return out
+
+
 if __name__ == "__main__":
     from common import session, web, load, save
     s = session(); D = web(s); notes = load(D / "notes.json", {})
     G = score_session(load(D / "strokes.json"), notes.get("showOpen") is True)
-    save(D / "scores.json", dict(score_version=SCORE_VERSION, session=s, date=notes.get("date", s), camera=notes.get("camera") or "", show_open=notes.get("showOpen") is True, groups=G))
+    save(D / "scores.json", dict(score_version=SCORE_VERSION, session=s, date=notes.get("date", s), camera=notes.get("camera") or "", show_open=notes.get("showOpen") is True, groups=G, checks=check_session(load(D / "strokes.json"))))
     for g in G:
         ms = "  ".join(f"{m} {x['score']}（中位 {x['median']}，{x['n']} 拍，一致 {x['cons']}）" for m, x in g["metrics"].items())
         print(f"{g['player']} {g['kind']} {g['n']} 拍  總分 {g['total']}  技術 {g['form']}  一致性 {g['consistency']}  | {ms}")
