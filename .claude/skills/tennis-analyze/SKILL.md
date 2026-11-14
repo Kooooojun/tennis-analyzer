@@ -70,6 +70,8 @@ Compute what matters from `web/sessions/<s>/strokes.json`. Each stroke has these
 - `knee`: the 10th-percentile knee angle 0.8–0.1 s before contact. Lower means more bent. ≤130 is good, >150 is nearly straight.
 - `contact_h`: the wrist height at contact, with hip = 0 and shoulder = 1. 0.3–0.8 is the waist-to-chest target.
 - `knee3d` (same window on the 3D skeleton, null for sessions without `pose_world.npy`) and `knee_warn` (true when |knee3d - knee| > 20°, so the angle is unreliable for that stroke). The web page and reel show `knee3d` when present. Thresholds above were set on 2D `knee`; 3D reads about 9° lower on average.
+- `prep`: seconds from backswing end (hitting wrist furthest back relative to the hips, searched up to 1.0 s before contact) to contact. Longer means the racket was ready earlier. On wall-1 it matched hand-picked frames within 2 frames (median); a backswing finished more than 1.0 s before contact is cut to the window.
+- `contact_fwd`: wrist ahead of the hip centre along the swing direction at contact, in torso lengths (same unit as `contact_h`). Its spread across strokes is the contact-point consistency. It moves about 0.1 per frame of contact error, so set refine.json contacts carefully before reading the spread, and compare only same-camera sessions.
 - `elbow`, `open_min` (shoulder turn, 0% is fully side-on), and `vis` (wrist visibility).
 
 Good comparisons are self-fed vs rally forehand medians, the best and worst examples by number, and other sessions shot from the same camera position.

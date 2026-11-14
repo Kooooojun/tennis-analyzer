@@ -22,7 +22,7 @@ def _match(actual, cited):
 def _usable(s, field):
     """The stroke's value for `field`, or None when a quality gate drops it (same gates as score.py, docs/scoring.md §3)."""
     if field in ("knee", "knee3d") and s.get("knee_warn"): return None
-    if field == "contact_h" and not (_num(s.get("vis")) and s["vis"] >= 0.5): return None
+    if field in ("contact_h", "contact_fwd") and not (_num(s.get("vis")) and s["vis"] >= 0.5): return None
     v = s.get(field)
     return v if _num(v) else None
 
