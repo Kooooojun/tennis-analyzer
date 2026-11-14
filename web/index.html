@@ -119,6 +119,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   main{grid-template-columns:minmax(0,1fr);gap:12px;padding-top:4px}
   .player{position:sticky;top:env(safe-area-inset-top, 0px);z-index:5;width:100%;max-width:none;min-width:0;margin:0;background:var(--bg);padding:8px 0 6px;border-bottom:1px solid var(--line)}
   .player .stage{width:auto;height:38vh;height:38svh;margin:0 auto;border-radius:10px;touch-action:pan-y}
+  .player .stage.wide{width:100%;height:auto}
   .duo .stage{max-height:none;width:100%}
   input[type=range]{margin:6px 0 0}
   .now{margin-top:6px}
@@ -540,6 +541,7 @@ function load(id, scroll){
   $("mHeight").innerHTML=fmt(S.contact_h*100,""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
   $("mElbow").innerHTML=fmt(S.elbow,"°"); $("cElbow").textContent=`中位數 ${Math.round(m.elbow)}°`+(S.vis<0.5?" · 偵測信心低":"");
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage
+  $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]);
   v.src=clipSrc(S); v.playbackRate=rate;
   const start=()=>goto(S.contact-48);
   if(v.readyState>=1 && v.currentSrc.endsWith(clipSrc(S))) start(); else v.addEventListener("loadedmetadata",start,{once:true});

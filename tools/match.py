@@ -2,8 +2,9 @@ import sys,warnings,numpy as np,json,cv2; warnings.filterwarnings("ignore")
 from pathlib import Path
 P=np.load(sys.argv[1]).astype(np.float64); O=np.load(sys.argv[2]); N=len(P)
 c=cv2.VideoCapture(str(Path(sys.argv[1]).parent/"proxy.mp4")); A=np.array([c.get(cv2.CAP_PROP_FRAME_WIDTH),c.get(cv2.CAP_PROP_FRAME_HEIGHT)])/540; c.release()
+if not A.all(): sys.exit(f"cannot read {Path(sys.argv[1]).parent/'proxy.mp4'}")
 xy=P[:,:,:2]*A; vis=P[:,:,2]
-h=np.nanmean(P[:,[27,28],1],1)-P[:,0,1]
+h=(np.nanmean(P[:,[27,28],1],1)-P[:,0,1])*A[1]*9/16  # nose-to-ankle in portrait-frame heights, so 0.11 = 106 px either way
 L=np.linalg.norm((xy[:,11]+xy[:,12])/2-(xy[:,23]+xy[:,24])/2,axis=1)
 valid=(h>0.11)&(vis[:,16]>0.2)
 w=xy[:,16].copy(); w[~valid]=np.nan

@@ -2,6 +2,7 @@ import sys,subprocess,numpy as np,mediapipe as mp,cv2
 from mediapipe.tasks.python import vision, BaseOptions
 src,model,out=sys.argv[1:4]
 c=cv2.VideoCapture(src); W,H=int(c.get(cv2.CAP_PROP_FRAME_WIDTH)),int(c.get(cv2.CAP_PROP_FRAME_HEIGHT)); c.release()  # 540x960 or 960x540
+if not (W and H): sys.exit(f"cannot read {src}")
 p=subprocess.Popen(["ffmpeg","-v","error","-i",src,"-an","-f","rawvideo","-pix_fmt","rgb24","-"],stdout=subprocess.PIPE)
 lm=vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(base_options=BaseOptions(model_asset_path=model),running_mode=vision.RunningMode.VIDEO,min_pose_detection_confidence=0.3,min_tracking_confidence=0.3))
 rows=[];n=0
