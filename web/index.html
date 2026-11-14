@@ -272,12 +272,11 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
       </div>
       <div style="margin-top:12px"><canvas id="chart"></canvas></div>
       <div class="legend">
-        <span><i style="background:var(--s1)"></i>持拍手肘</span>
         <span><i style="background:var(--s2)"></i>較彎的膝蓋</span>
         <span><i style="background:var(--s3)"></i>肩膀轉開度</span>
         <span>點圖表可跳轉</span>
       </div>
-      <p class="caveat">膝蓋越小越蹲。轉肩 0% = 完全側身，100% = 胸口正對球網。擊球高度 0 = 髖部，100 = 肩膀。下方小字是同類擊球整場的中位數。</p>
+      <p class="caveat">膝蓋越小越蹲。轉肩 0% = 完全側身，100% = 胸口正對球網。擊球高度 0 = 髖部，100 = 肩膀。下方小字是同類擊球整場的中位數。膝蓋用 3D 骨架算（理論上較不受拍攝角度影響，尚未用雙機資料證實），若 3D 與 2D 差太多會標「這拍角度不準」。手肘不管 2D、3D 都不可靠，所以不顯示數字。</p>
     </div>
 
     <div class="card">
@@ -298,7 +297,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
 const FPS = 60, NAMES = {FH:"正拍", BH:"反拍", SV:"發球"};
 // one entry per practice session (built by tools/build_site.py); strokes carry their day so compare can mix sessions
 const DAYS = Object.fromEntries((window.SESSIONS||[]).map(d=>[d.id,{...d,data:d.strokes}]));
-for(const [k,d] of Object.entries(DAYS)) d.data.forEach(s=>s.day=k);
+for(const [k,d] of Object.entries(DAYS)) d.data.forEach(s=>{ s.day=k; if(s.knee3d!=null){ s.knee2d=s.knee; s.knee=s.knee3d; } });  // knee = 3D when the session has world data (else the old 2D value)
 const DAY_KEYS = Object.keys(DAYS);
 if(!DAY_KEYS.length){ document.querySelector("main").innerHTML='<p style="padding:24px">還沒有分析好的練習。在這個資料夾開 Claude Code，說「幫我分析 videos/ 裡的新練習」。</p>'; throw new Error("no sessions"); }
 let DAY = DAY_KEYS[DAY_KEYS.length-1], ALL = DAYS[DAY].data;
@@ -316,7 +315,7 @@ const byKind = k => ALL.filter(s=>s.kind===k);
 const feedFH = () => ALL.filter(s=>s.kind==="FH"&&s.drill==="feed");
 const rallyFH = () => ALL.filter(s=>s.kind==="FH"&&s.drill==="rally");
 const kneeColor = a => a==null ? "#fff" : a<=130 ? "#4ade80" : a<=150 ? "#fbbf24" : "#f87171";
-const stats = g => ({knee:median(g.map(s=>s.knee)), open:median(g.map(s=>s.open_min)), h:median(g.map(s=>s.contact_h*100)), elbow:median(g.map(s=>s.elbow)), openC:median(g.map(s=>s.open_contact))});
+const stats = g => ({knee:median(g.map(s=>s.knee)), open:median(g.map(s=>s.open_min)), h:median(g.map(s=>s.contact_h*100)), openC:median(g.map(s=>s.open_contact))});
 const dayStats = data => { const k=(kind,drill)=>data.filter(s=>s.kind===kind&&(!drill||s.drill===drill)); return {FH:stats(k("FH")), BH:stats(k("BH")), SV:stats(k("SV")), feed:stats(k("FH","feed")), rally:stats(k("FH","rally"))}; };
 let MED = dayStats(ALL);
 const byNo = n => ALL[n-1];
@@ -331,13 +330,17 @@ function angle(fr, a, b, c, ar){  // ar = frame height / width
   return d ? Math.acos(Math.max(-1,Math.min(1,(ax*cx+ay*cy)/d)))*180/Math.PI : null;
 }
 function smooth(arr,k=3){ return arr.map((_,i)=>{ if(arr[i]==null) return null; const w=[]; for(let j=i-k;j<=i+k;j++) if(arr[j]!=null) w.push(arr[j]); w.sort((a,b)=>a-b); return w[w.length>>1]; }); }
+function angle3(w, a, b, c){  // world landmarks, metres: no aspect fix needed
+  const A=w[K[a]], B=w[K[b]], C=w[K[c]], u=[0,1,2].map(i=>A[i]-B[i]), v=[0,1,2].map(i=>C[i]-B[i]), d=Math.hypot(...u)*Math.hypot(...v);
+  return d ? Math.acos(Math.max(-1,Math.min(1,(u[0]*v[0]+u[1]*v[1]+u[2]*v[2])/d)))*180/Math.PI : null;
+}
+const kneeWarn = s => s.knee_warn ? `這拍角度不準（3D ${Math.round(s.knee3d)}° 與 2D ${Math.round(s.knee2d)}° 差太多）` : "";
 const SER = new Map();
 function series(s){
   if(SER.has(s)) return SER.get(s);
   const fr=s.frames, ar=s.size ? s.size[1]/s.size[0] : 16/9;  // strokes from before landscape support have no size
-  const kR=fr.map(p=>p?angle(p,24,26,28,ar):null), kL=fr.map(p=>p?angle(p,23,25,27,ar):null);
+  const wd=s.world, kR=fr.map((p,i)=>!p?null:wd?(wd[i]?angle3(wd[i],24,26,28):null):angle(p,24,26,28,ar)), kL=fr.map((p,i)=>!p?null:wd?(wd[i]?angle3(wd[i],23,25,27):null):angle(p,23,25,27,ar));  // never mix 3D and 2D in one curve
   const out={
-    elbow: smooth(fr.map(p=>p?angle(p,12,14,16,ar):null)),
     knee: smooth(kR.map((r,i)=>r==null?null:Math.min(r,kL[i]))),
     kneeSide: kR.map((r,i)=>r==null?null:(r<=kL[i]?"R":"L")),
     open: smooth(fr.map(p=>{ if(!p) return null; const hx=(p[K[23]][0]+p[K[24]][0])/2, hy=(p[K[23]][1]+p[K[24]][1])/2;
@@ -413,7 +416,6 @@ function paint(cv, vid, s, f, opt){
       label(Math.round(ka)+"°",X(Kn)+(side==="R"?10:-34),Y(Kn)+4,col);
     }
   }
-  const e=ser.elbow[f]; if(opt.skel && e!=null && !small){ const q=fr[K[14]]; label(Math.round(e)+"°",X(q)+8,Y(q)); }
 }
 
 // ---------- session summary ----------
@@ -491,7 +493,7 @@ function drawChecks(){
   const bh=[
     ["準備","左手扶拍喉，一起把拍子帶到左後方，背對來球方向。", you(`你：反拍轉肩中位數 ${r(MED.BH.open)}%`,MED.BH.open<=35)],
     ["蓄力","前腳（右腳）踩出去，膝蓋彎。", you(`你：反拍膝蓋中位數 ${r(MED.BH.knee)}°`,MED.BH.knee<=140)],
-    ["擊球","擊球點在前腳前方，手臂接近伸直。左手往後展開，讓肩膀在擊球時維持側身。", you(`你：擊球時肩膀打開中位數 ${r(MED.BH.openC)}%、手肘 ${r(MED.BH.elbow)}°`,MED.BH.openC<=35)],
+    ["擊球","擊球點在前腳前方，手臂接近伸直。左手往後展開，讓肩膀在擊球時維持側身。", you(`你：擊球時肩膀打開中位數 ${r(MED.BH.openC)}%`,MED.BH.openC<=35)],
     ["收拍","持拍手往前上方延伸，胸口最後才轉向球網。",""],
   ];
   if(byKind("BH").length<3) bh.splice(0,bh.length,["這場",`反拍只抓到 ${byKind("BH").length} 拍，數字不夠參考。`,""]);
@@ -515,7 +517,7 @@ function drawList(){
     const b=document.createElement("button"); b.dataset.id=s.id;
     const bad = s.kind==="FH" && s.knee>150;
     const dn=drillName(s);
-    b.innerHTML=`<span class="row"><span class="tag ${s.kind}">${NAMES[s.kind]}</span><span class="clock">${s.clock}</span></span><span class="mini ${bad?"bad":""}">膝 ${Math.round(s.knee)}°${dn?" · "+dn:""}</span>`;
+    b.innerHTML=`<span class="row"><span class="tag ${s.kind}">${NAMES[s.kind]}</span><span class="clock">${s.clock}</span></span><span class="mini ${bad?"bad":""}">膝 ${Math.round(s.knee)}°${s.knee_warn?"⚠":""}${dn?" · "+dn:""}</span>`;
     b.title=strokeLabel(s);
     b.onclick=()=>load(s.id,false); box.append(b);
   }
@@ -537,10 +539,10 @@ function load(id, scroll){
   $("detailTitle").textContent=`這一拍：${strokeLabel(S)}${dn?"（"+dn+"）":""}`;
   const m=S.kind==="FH"?(S.drill==="feed"?MED.feed:S.drill==="rally"?MED.rally:MED.FH):MED[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
   const fmt=(x,u)=>x==null?"–":`${Math.round(x)}<small>${u}</small>`;
-  $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${Math.round(m.knee)}°`;
+  $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${Math.round(m.knee)}°`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"");
   $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${Math.round(m.open)}%`:"這場鏡頭角度不適合看轉肩，參考就好";
   $("mHeight").innerHTML=fmt(S.contact_h*100,""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
-  $("mElbow").innerHTML=fmt(S.elbow,"°"); $("cElbow").textContent=`中位數 ${Math.round(m.elbow)}°`+(S.vis<0.5?" · 偵測信心低":"");
+  $("mElbow").textContent="–"; $("cElbow").textContent="手肘角度太不準，暫不顯示數字";
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage
   $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]);
   v.src=clipSrc(S); v.playbackRate=rate;
@@ -560,7 +562,7 @@ function drawChart(f){
   for(const p of S.phases){ g.fillStyle=p.key?css("--warn"):css("--line"); g.fillRect(x(p.f)-0.5,pad.t,p.key?2:1,H-pad.t-pad.b); }
   g.fillStyle=css("--muted");
   for(const s of [-1.5,-1,-0.5,0,0.5,1]){ const i=S.contact+s*FPS; if(i<0||i>N-1) continue; const t=(s===0?"擊球":(s>0?"+":"")+s+"s"); g.fillText(t,x(i)-g.measureText(t).width/2,H-4); }
-  for(const [arr,col,lo,hi] of [[ser.elbow,"--s1",40,185],[ser.knee,"--s2",40,185],[ser.open,"--s3",-40,105]]){
+  for(const [arr,col,lo,hi] of [[ser.knee,"--s2",40,185],[ser.open,"--s3",-40,105]]){
     g.strokeStyle=css(col); g.lineWidth=2; g.beginPath(); let pen=false;
     for(let i=0;i<N;i++){ const val=arr[i]; if(val==null){pen=false;continue;} const X=x(i),Y=y(val,lo,hi); pen?g.lineTo(X,Y):g.moveTo(X,Y); pen=true; }
     g.stroke();
@@ -603,7 +605,7 @@ let A=null, B=null, cmpCur=0, cmpRate=0.25;
 const PRESETS=Object.values(DAYS).flatMap(d=>(d.presets||[]).map(p=>{ const a=Array.isArray(p.a)?p.a:[d.id,p.a], b=Array.isArray(p.b)?p.b:[d.id,p.b]; return {day:a[0]===b[0]&&a[0]===d.id?d.id:"*",a,b,label:p.label}; })).filter(p=>p.a[0] in DAYS&&p.b[0] in DAYS);
 const sKey=s=>s.day+":"+s.id, fromKey=k=>{ const [d,i]=k.split(":"); return DAYS[d].data[+i]; };
 function fillSelect(sel){ sel.innerHTML=Object.entries(DAYS).map(([k,d])=>`<optgroup label="${d.label}">`+d.data.map(s=>`<option value="${sKey(s)}">${d.label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</option>`).join("")+"</optgroup>").join(""); }
-function capFor(s){ const r=Math.round; return `<b>${DAYS[s.day].label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${r(s.knee)}° · 轉肩 ${r(s.open_min)}% · 擊球高度 ${r(s.contact_h*100)}</span>`; }
+function capFor(s){ const r=Math.round; return `<b>${DAYS[s.day].label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${r(s.knee)}°${s.knee_warn?"⚠不準":""} · 轉肩 ${r(s.open_min)}% · 擊球高度 ${r(s.contact_h*100)}</span>`; }
 function drawPresets(){
   $("presets").innerHTML="";
   for(const p of PRESETS.filter(p=>p.day===DAY||p.day==="*")){ const b=document.createElement("button"); b.textContent=p.label; b._p=p; b.onclick=()=>cmpLoad(dayNo(...p.a),dayNo(...p.b)); $("presets").append(b); }

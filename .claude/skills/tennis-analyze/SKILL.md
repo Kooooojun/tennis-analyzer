@@ -17,7 +17,7 @@ Reply to the user in the language they write in. The page and reel text are Trad
 tools/prep.sh <s> [people]
 ```
 
-`people` is how many people to track (default 2; use 1 for a solo session, up to 4 for doubles). This makes the proxy, audio, pose, onsets and match files per video in `work/<s>/<video>/`, plus `videos.json`, which fixes the order (video 1, 2, 3 by filename). Pose runs about real time, so 40 minutes of video takes about 40 minutes. Run it in the background and tell the user how long it will take. It resumes where it stopped.
+`people` is how many people to track (default 2; use 1 for a solo session, up to 4 for doubles). This makes the proxy, audio, pose, onsets, ball track (`ball.npy`, RacketVision), hit events (`events.npy` = sound onsets plus ball turns near any tracked wrist) and match files per video in `work/<s>/<video>/`, plus `videos.json`, which fixes the order (video 1, 2, 3 by filename). Pose runs about real time and the ball tracker adds about 2.4 s per second of video on an Apple GPU (portrait is 4x that), so 40 minutes of video takes about 2.5 hours. Run it in the background and tell the user how long it will take. It resumes where it stopped.
 
 Portrait and landscape 16:9 video both work (proxy is 540x960 or 960x540; each stroke stores its `size`). Each tracked person gets a track per video (`pose.npy` is track 0, the person seen most; `pose_t1.npy` track 1, and so on). The tracker keeps identities by position and shirt colour. It works well for 2 people near the camera (wall practice). Far-away doubles players are often not detected at all, and people in the same colour can swap tracks.
 
@@ -77,6 +77,7 @@ Compute what matters from `web/sessions/<s>/strokes.json`. Each stroke has these
 - `player`: who hit it (`me` for single-player sessions). Compare and score each player separately.
 - `knee`: the 10th-percentile knee angle 0.8–0.1 s before contact. Lower means more bent. ≤130 is good, >150 is nearly straight.
 - `contact_h`: the wrist height at contact, with hip = 0 and shoulder = 1. 0.3–0.8 is the waist-to-chest target.
+- `knee3d` (same window on the 3D skeleton, null for sessions without `pose_world.npy`) and `knee_warn` (true when |knee3d - knee| > 20°, so the angle is unreliable for that stroke). The web page and reel show `knee3d` when present. Thresholds above were set on 2D `knee`; 3D reads about 9° lower on average.
 - `elbow`, `open_min` (shoulder turn, 0% is fully side-on), and `vis` (wrist visibility).
 
 Good comparisons are self-fed vs rally forehand medians, the best and worst examples by number, and other sessions shot from the same camera position.
@@ -102,6 +103,15 @@ Write `web/sessions/<s>/notes.json`:
 - `camera` decides comparability. Sessions with the same camera text can be compared in absolute numbers. A phone on the ground close to the player makes knees read about 15° straighter than a raised phone behind the baseline.
 - Set `showOpen` to true only when the camera is roughly behind the player at hip height or higher.
 - Keep 3–5 findings, each tied to stroke numbers the user can click. Mark the good ones `good: true`. Use `info: true` for neutral notes.
+
+Then score the session and update the long-term trend:
+
+```
+.venv/bin/python tools/score.py <s>    # -> scores.json, one 1–10 per player and kind (FH/BH)
+.venv/bin/python tools/trend.py        # -> web/sessions/trend.json, flags 缺點改善 / 優點退步 vs earlier same-camera sessions
+```
+
+Anchors, sources and which metrics each camera excludes are in `docs/scoring.md`. Add trend flags to the findings (re-save `notes.json` after running these) only when they compare sessions with the same `camera` text.
 
 Highlight reel (optional, when asked or when the session has clear examples). Write `work/<s>/reel.json`. The format is in the header of `tools/highlights.py`: cards plus one- or two-up clips by final stroke number. Then:
 

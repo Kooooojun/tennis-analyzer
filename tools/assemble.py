@@ -15,13 +15,15 @@ who = {int(r[0]): next((w[1:] for w in r[2:4] if w.startswith("@")), None) for r
 if typo := [(i, n) for i, n in who.items() if n is not None and n not in NAMES]:
     sys.exit(f"labels.txt names a player that is not in players.txt {sorted(NAMES)}: {typo[:5]}")
 
-P = {}; SZ = {}; out = []
+P = {}; WD = {}; SZ = {}; out = []
 for r in sorted(rows, key=lambda r: int(r[0])):
     if r[1] == "x": continue
     c = C[int(r[0])]; k = c.get("track", 0); key = (c["v"], k)  # the track that swung; '@' only renames, it keeps that body
-    if key not in P: P[key] = np.load(track_file(Wd / c["v"], "pose", k)).astype(float)
+    if key not in P:
+        P[key] = np.load(track_file(Wd / c["v"], "pose", k)).astype(float)
+        wp = track_file(Wd / c["v"], "pose_world", k); WD[key] = np.load(wp).astype(float) if wp.exists() else None  # old sessions: no 3D
     if c["v"] not in SZ: SZ[c["v"]] = size(Wd / c["v"] / "proxy.mp4")
-    m = measure_full(P[key], c["t"], SZ[c["v"]])
+    m = measure_full(P[key], c["t"], SZ[c["v"]], WD[key])
     out.append(dict(t=round(c["t"], 3), video=c["v"], vn=c["vn"], cand=int(r[0]), arc=round(c["arc"], 2), track=k,
                     player=who[int(r[0])] or c.get("player", "me"),
                     size=SZ[c["v"]], kind=r[1], drill=None if r[1] == "SV" or r[2] == "-" else r[2], **m))

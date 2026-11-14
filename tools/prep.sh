@@ -1,6 +1,6 @@
 #!/bin/zsh
 # usage: tools/prep.sh <session> [people]   e.g. tools/prep.sh 2026-11-05   (people = max people to track, default 2)
-# For every video in videos/<session>/: 60fps proxy (540x960 portrait, 960x540 landscape), high-passed audio, pose, hit sounds, wrist motion per hit.
+# For every video in videos/<session>/: 60fps proxy (540x960 portrait, 960x540 landscape), high-passed audio, pose (one file per tracked person), hit sounds, ball track, hit events (sound + ball), wrist motion per hit per person.
 # Re-running skips finished steps, so it is safe to resume after an interruption.
 set -e -o pipefail
 R=${0:A:h:h}; S=$1; N=${2:-2}; PY=$R/.venv/bin/python
@@ -19,8 +19,10 @@ for V in $R/videos/$S/*.(mov|MOV|mp4|MP4|m4v)(N); do
   [ -f $D/audio_hp.f32 ] || ffmpeg -v error -y -i $V -vn -ac 1 -ar 16000 -af "highpass=f=1500" -f f32le $D/audio_hp.f32
   [ -f $D/pose.npy ] || $PY -I $R/tools/pose_full.py $D/proxy.mp4 $R/models/pose_heavy.task $D/pose.npy $N 2>$D/pose.log
   [ -f $D/onsets.npy ] || $PY -I $R/tools/hits.py $D/audio_hp.f32 $D/onsets.npy
+  [ -f $D/ball.npy ] || $PY -I $R/tools/ball.py $D/proxy.mp4 $D/ball.npy >$D/ball.log
+  [ -f $D/events.npy ] || $PY -I $R/tools/events.py $D/onsets.npy $D/ball.npy $D/pose.npy $D/events.npy >/dev/null
   for P in $D/pose{,_t<->}.npy(N); do  # one match file per tracked person: pose_t1.npy -> match_t1.npy
-    M=$D/${${P:t}/pose/match}; [ -f $M ] || $PY -I $R/tools/match.py $P $D/onsets.npy $M >/dev/null
+    M=$D/${${P:t}/pose/match}; [ -f $M ] || $PY -I $R/tools/match.py $P $D/events.npy $M >/dev/null
   done
 done
 (( ${#names} )) || { echo "no videos in videos/$S"; exit 1; }

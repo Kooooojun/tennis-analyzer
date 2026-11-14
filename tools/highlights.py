@@ -39,6 +39,9 @@ def box(s,aspect):
 def ang(f,a,b,c,size):
     A,B,C=[np.array(f[i][:2])*size for i in (a,b,c)]; v1,v2=A-B,C-B; n=np.linalg.norm(v1)*np.linalg.norm(v2)
     return np.degrees(np.arccos(np.clip(v1@v2/n,-1,1))) if n else None
+def ang3(w,a,b,c):
+    A,B,C=[np.array(w[i]) for i in (a,b,c)]; v1,v2=A-B,C-B; n=np.linalg.norm(v1)*np.linalg.norm(v2)
+    return np.degrees(np.arccos(np.clip(v1@v2/n,-1,1))) if n else None
 def panel(s,im,i,size,bx):
     x0,y0,w,h=bx; k=size[0]/w
     crop=cv2.resize(im[y0:y0+h,x0:x0+w],size,interpolation=cv2.INTER_CUBIC)
@@ -48,7 +51,8 @@ def panel(s,im,i,size,bx):
         sw,sh=s.get('size',PORTRAIT); P=lambda j:((f[j][0]*sw-x0)*k,(f[j][1]*sh-y0)*k)
         for a,b in EDGES: d.line([P(a),P(b)],fill=(255,140,70) if a%2==0 and b%2==0 else (90,180,255),width=5)
         for j in range(13): x,y=P(j); d.ellipse([x-5,y-5,x+5,y+5],fill=(255,255,255))
-        kr,kl=ang(f,8,10,12,(sw,sh)),ang(f,7,9,11,(sw,sh))
+        w=s['world'][i] if s.get('world') and i<len(s['world']) else None  # 3D when the session has world data
+        kr,kl=(ang3(w,8,10,12),ang3(w,7,9,11)) if w else (ang(f,8,10,12,(sw,sh)),ang(f,7,9,11,(sw,sh)))
         if kr and kl:
             a,j=(kr,10) if kr<=kl else (kl,9); x,y=P(j)
             d.text((x+14,y-18),f"{a:.0f}°",font=F(34),fill=kc(a),stroke_width=4,stroke_fill=(0,0,0))
@@ -61,7 +65,9 @@ def header(title,sub,lines=()):
     return im,d
 def label(d,x,y,s,tag,col):
     d.text((x,y),tag,font=F(34),fill=INK,stroke_width=3,stroke_fill=(0,0,0))
-    d.text((x,y+44),f"準備時膝蓋 {s['knee']:.0f}°",font=F(30),fill=col,stroke_width=3,stroke_fill=(0,0,0))
+    k=s['knee3d'] if s.get('knee3d') is not None else s['knee']
+    d.text((x,y+44),f"準備時膝蓋 {k:.0f}°",font=F(30),fill=col,stroke_width=3,stroke_fill=(0,0,0))
+    if s.get('knee_warn'): d.text((x,y+84),"這拍角度不準",font=F(30),fill=BAD,stroke_width=3,stroke_fill=(0,0,0))
 
 class Out:
     def __init__(s,path): s.p=subprocess.Popen(["ffmpeg","-v","error","-y","-f","rawvideo","-pix_fmt","rgb24","-s",f"{W}x{H}","-r",str(FPS),"-i","-","-c:v","libx264","-preset","slow","-crf","22","-pix_fmt","yuv420p","-movflags","+faststart",path],stdin=subprocess.PIPE)
@@ -79,7 +85,7 @@ def clip(o,title,sub,items,hold=24):
         for j,s in enumerate(S):
             i=max(0,min(len(V[j])-1,s['contact']+t))
             im.paste(panel(s,V[j][i],i,(pw,ph),B[j]),(j*pw,TOP))
-            label(d,j*pw+20,TOP+16,s,items[j][1],kc(s['knee']))
+            label(d,j*pw+20,TOP+16,s,items[j][1],kc(s['knee3d'] if s.get('knee3d') is not None else s['knee']))
         if n==2: d.line([(pw,TOP),(pw,H)],fill=BG,width=6)
         o.put(im,hold if t==0 else 1)
 def card(o,title,lines,secs=3.5):
