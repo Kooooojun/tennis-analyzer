@@ -12,6 +12,8 @@ METRICS = {
 }
 KINDS = ("FH", "BH")
 MIN_N, MIN_N_CONS = 3, 5
+MIN_COVER = 0.5  # usable strokes / strokes in the group; below it the metric says 資料不足 (docs/scoring.md §1)
+SCORE_VERSION = 2  # bump when an anchor, gate or formula changes; trend.py only compares equal versions
 
 
 def _num(v):
@@ -50,6 +52,17 @@ def _mean(xs):
 def _r(x, d=1): return None if x is None else round(x, d)
 
 
+def _explain(cfg, n, total, med, sp):
+    """Why the metric got (or did not get) a score: status, formula text and the inputs that fed it."""
+    cover = n / total if total else 0
+    ok = n >= MIN_N and cover >= MIN_COVER
+    if "lin" in cfg: g, b = cfg["lin"]; f = f"10 − 9 × clip((中位數 − {g}) / ({b} − {g}), 0, 1)"
+    else: lo, hi, lb, hb = cfg["band"]; f = f"中位數在 {lo}–{hi} 內 10 分；外側往 {lb} / {hb} 線性降到 1 分"
+    cg, cb = cfg["cons"]; f += f"；一致性 = 10 − 9 × clip((穩健SD − {cg}) / ({cb} − {cg}), 0, 1)"
+    return dict(status="ok" if ok else "資料不足", coverage=_r(cover, 2), formula=f,
+                inputs=dict(median=_r(med, 2), spread=_r(sp, 2), n=n, n_total=total, anchors=list(cfg["lin"] if "lin" in cfg else cfg["band"]), cons_anchors=list(cfg["cons"])))
+
+
 def score_group(strokes, show_open):
     # one knee source per group: 2D shifts 9-19 deg with view angle, so a 2D/3D mix is not comparable
     ok = [s for s in strokes if not s.get("knee_warn")]
@@ -58,13 +71,14 @@ def score_group(strokes, show_open):
     for m, cfg in METRICS.items():
         if m == "open_min" and not show_open: continue
         vals = [v for v in (_value(s, m, knee_src) for s in strokes) if _num(v)]
-        med = float(np.median(vals)) if len(vals) >= MIN_N else None
-        sp = spread(vals) if len(vals) >= MIN_N_CONS else None
+        enough = len(vals) >= MIN_N and len(vals) / len(strokes) >= MIN_COVER
+        med = float(np.median(vals)) if enough else None
+        sp = spread(vals) if enough and len(vals) >= MIN_N_CONS else None
         sc = lin(med, *cfg["lin"]) if "lin" in cfg else band(med, *cfg["band"])
-        out[m] = dict(median=_r(med, 2), spread=_r(sp, 2), n=len(vals), score=_r(sc), cons=_r(lin(sp, *cfg["cons"])))
+        out[m] = dict(median=_r(med, 2), spread=_r(sp, 2), n=len(vals), score=_r(sc), cons=_r(lin(sp, *cfg["cons"])), **_explain(cfg, len(vals), len(strokes), med, sp))
     form = _mean([x["score"] for x in out.values()]); cons = _mean([x["cons"] for x in out.values()])
     total = None if form is None else form if cons is None else 0.75 * form + 0.25 * cons
-    return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), metrics=out, knee_src=knee_src)
+    return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), metrics=out, knee_src=knee_src, score_version=SCORE_VERSION)
 
 
 def score_session(strokes, show_open):
@@ -78,7 +92,7 @@ if __name__ == "__main__":
     from common import session, web, load, save
     s = session(); D = web(s); notes = load(D / "notes.json", {})
     G = score_session(load(D / "strokes.json"), notes.get("showOpen") is True)
-    save(D / "scores.json", dict(session=s, date=notes.get("date", s), camera=notes.get("camera") or "", show_open=notes.get("showOpen") is True, groups=G))
+    save(D / "scores.json", dict(score_version=SCORE_VERSION, session=s, date=notes.get("date", s), camera=notes.get("camera") or "", show_open=notes.get("showOpen") is True, groups=G))
     for g in G:
         ms = "  ".join(f"{m} {x['score']}（中位 {x['median']}，{x['n']} 拍，一致 {x['cons']}）" for m, x in g["metrics"].items())
         print(f"{g['player']} {g['kind']} {g['n']} 拍  總分 {g['total']}  技術 {g['form']}  一致性 {g['consistency']}  | {ms}")

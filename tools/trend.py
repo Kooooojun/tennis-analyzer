@@ -13,7 +13,7 @@ def compare(history):
     if not history or history[-1]["n"] < MIN_N: return []
     history = [h for h in history if h["n"] >= MIN_N]
     if len(history) < 2: return []
-    last = history[-1]; prev = [h for h in history[:-1] if last["camera"] and h["camera"] == last["camera"] and h.get("knee_src") == last.get("knee_src")]
+    last = history[-1]; prev = [h for h in history[:-1] if last["camera"] and h["camera"] == last["camera"] and h.get("knee_src") == last.get("knee_src") and h.get("score_version") == last.get("score_version")]
     out = []
     for item, v in last["items"].items():
         # total / consistency average over whichever metrics were scored, so only compare sessions that scored the same set
@@ -38,7 +38,7 @@ if __name__ == "__main__":
     H = {}
     for r in runs:
         for g in r["groups"]:
-            H.setdefault((g["player"], g["kind"]), []).append(dict(session=r["session"], date=r.get("date"), camera=r.get("camera") or "", n=g["n"], knee_src=g.get("knee_src"), items=_items(g)))
+            H.setdefault((g["player"], g["kind"]), []).append(dict(session=r["session"], date=r.get("date"), camera=r.get("camera") or "", n=g["n"], knee_src=g.get("knee_src"), score_version=g.get("score_version"), items=_items(g)))
     # only YYYY-MM-DD dates sort correctly as text; undated sessions are listed but never compared
     dated = lambda h: [x for x in h if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(x["date"]))]
     out = [dict(player=p, kind=k, history=h, flags=compare(dated(h))) for (p, k), h in sorted(H.items())]

@@ -9,7 +9,7 @@
 
 - 一組 =（player, kind）。`player` 取 stroke 的 `player` 欄位，沒有就是 `"me"`（多人追蹤之後會填）。
 - 只評 FH、BH。SV、OH 數量少、參考值查不到，暫不評分。
-- 一組有效擊球少於 3 拍：該指標不給分（`null`）。一致性要 5 拍以上。
+- 覆蓋率閘門（`score_version` 2 起）：每個指標要同時滿足「可用拍數 ≥ 3」與「可用拍數 / 該組拍數 ≥ 50%」（`MIN_COVER`，**暫定**），否則 `status` = `"資料不足"`、不給分，不用少數拍硬估。一致性另外要 5 拍以上。
 
 ## 2. 指標、參考值、出處
 
@@ -88,3 +88,33 @@
 ```
 
 之後加新指標：在 `tools/score.py` 的 `METRICS` 加一行（欄位、10 分端、1 分端、一致性端點、採計條件），並在本文件第 2 節補出處。
+
+### 7.1 公式、輸入與版本（`score_version`）
+
+`scores.json` 頂層與每一組都有 `score_version`（現為 2；改錨點、閘門或公式就加 1）。每個指標多這幾欄，讓人（和 `check_findings`）追得到分數怎麼來：
+
+- `status`：`"ok"` 或 `"資料不足"`；`coverage`：可用拍數 / 該組拍數。
+- `formula`：這個指標的換算公式文字。
+- `inputs`：`median`、`spread`、`n`（可用拍數）、`n_total`（該組拍數）、`anchors`、`cons_anchors`。
+
+`trend.py` 只拿 `score_version` 相同的場次互比（版本不同＝公式或閘門不同，分數不可比）。舊的 `scores.json` 沒有這欄，重跑 `score.py` 即可。
+
+借用說明：YuSak1/tennis-swing-analysis-v3（MIT）的 `_plateau_score`、`_higher_better` 與本檔 `lin`、`band` 做的是同一件事（區間內滿分、外側線性降分），這裡沿用自己的實作，**沒有複製其程式碼**，所以不需要附授權聲明。VisioTennis（無授權）只參考「建議必須引用數值並機械核對」的做法；Tennis-AI-Coach（無授權）只參考「覆蓋率不足不評分」。
+
+## 8. 建議要對得上數據（`tools/check_findings.py`）
+
+`notes.json` 的每條 finding 必須有 `cite`（陣列）。`tools/check_findings.py <session>` 逐條核對，不通過就列出是哪一條、哪裡不符並 exit 1。不用 NLP，只做數值比對。
+
+| 引用類型 | 格式 | 核對來源 |
+|---|---|---|
+| 單拍 | `{"stroke": 5, "field": "knee3d", "value": 119.4}` | `strokes.json` 第 5 筆（拍號 = 頁面 `#05`，從 1 數，不是 `id` 欄位） |
+| 群組統計 | `{"kind": "FH", "drill": "feed", "field": "knee3d", "stat": "median", "value": 155}` | 從 `strokes.json` 過品質閘門重算；`stat` = median／mean／min／max／n；`player` 預設 me，`drill` 省略 = 全部 |
+| 分數 | `{"kind": "FH", "metric": "knee", "stat": "score", "value": 6.3}` | `scores.json`；`stat` = median／spread／n／score／cons，`metric` 也可是 total／form／consistency |
+
+規則：
+
+- 容許四捨五入：引用值是實際值照「引用自己的小數位數」四捨五入的結果（寫 155 接受 154.5–155.5；寫 0.5 接受 0.45–0.55）。
+- 被品質閘門排除的值（`knee_warn`、`vis < 0.5`）、空值、`null` 分數都不能引用。
+- 引用的拍或組不存在、群組統計沒有任何可用拍，都報錯。沒有 `cite` 也報錯。
+- 文字裡每個「數字＋°」必須跟某個引用值差在 0.5 以內；文字或 `jump` 裡的 `#NN` 必須存在。所以句子裡寫了角度就一定要有對應引用。
+- 不檢查「判斷對不對」（例如這樣算不算好）；只保證寫出來的數字追得到量測。
