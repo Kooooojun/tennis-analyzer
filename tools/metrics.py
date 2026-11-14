@@ -82,7 +82,7 @@ _ARM = dict(R=(2, 4, 6), L=(1, 3, 5))  # CLIP indices (shoulder, elbow, wrist) p
 def arm_checks(frames, c, size=None, world=None, kind=None, hand="R", one_hand=False):
     """Racket-arm shape at contact on the CLIP layout (frames/world as in measure_clip), window c-2..c+2.
     serve_arm_straight (kind SV) and bh_elbow_ok / bh_front_ok (kind BH with one_hand) are True / False / None (None = cannot tell).
-    *_conf = min(wrist-chain visibility, 1 - arm depth fraction, 1 - 2D/3D gap / 60), 0-1. FH, OH and two-handed BH get None."""
+    *_conf = min(wrist-chain visibility, 1 - arm depth fraction, 1 - 2D/3D gap / 70), 0-1. FH, OH and two-handed BH get None."""
     out = dict(serve_arm_straight=None, serve_arm_conf=None, bh_elbow_ok=None, bh_elbow_conf=None, bh_front_ok=None)
     want_elbow = kind == "SV" or (kind == "BH" and one_hand)
     if not want_elbow or world is None: return out

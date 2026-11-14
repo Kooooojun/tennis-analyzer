@@ -335,9 +335,9 @@ function angle3(w, a, b, c){  // world landmarks, metres: no aspect fix needed
   return d ? Math.acos(Math.max(-1,Math.min(1,(u[0]*v[0]+u[1]*v[1]+u[2]*v[2])/d)))*180/Math.PI : null;
 }
 const armCheck = s => {  // [headline, detail] or null when no check applies to this stroke
-  const T=(v,y,n)=>v===true?"✓ "+y:v===false?"✗ "+n:"？看不出來";
+  const T=(v,y,n)=>v===true?("✓ "+y).trim():v===false?("✗ "+n).trim():"？看不出來";
   if(s.serve_arm_conf!=null) return [T(s.serve_arm_straight,"手臂接近伸直","手臂偏彎"), "發球擊球瞬間；角度看不出來＝視角或可見度不夠，不下結論"];
-  if(s.bh_elbow_conf!=null) return [T(s.bh_elbow_ok,"手肘沒彎","手肘偏彎"), "單手反拍：手肘"+T(s.bh_elbow_ok,"✓","✗")+" · 擊球點在身前"+T(s.bh_front_ok,"✓","✗")];
+  if(s.bh_elbow_conf!=null) return [T(s.bh_elbow_ok,"手肘沒彎","手肘偏彎"), "單手反拍：手肘"+T(s.bh_elbow_ok,"","")+" · 擊球點在身前"+T(s.bh_front_ok,"","")];
   return null;
 };
 const kneeWarn = s => s.knee_warn ? `這拍角度不準（3D ${Math.round(s.knee3d)}° 與 2D ${Math.round(s.knee2d)}° 差太多）` : "";
@@ -548,7 +548,7 @@ function load(id, scroll){
   $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${Math.round(m.open)}%`:"這場鏡頭角度不適合看轉肩，參考就好";
   $("mHeight").innerHTML=fmt(S.contact_h*100,""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
   const arm=armCheck(S);  // pass/fail checks, not degrees (docs/scoring.md §9)
-  $("mElbow").textContent=arm?arm[0]:"–"; $("cElbow").textContent=arm?arm[1]:"正手不評手肘；手肘角度太不準，不顯示數字";
+  $("mElbow").textContent=arm?arm[0]:"–"; $("cElbow").textContent=arm?arm[1]:S.kind==="SV"?"發球：缺 3D 骨架或視角不夠，這拍沒有結論":"正手與雙手反拍不評手肘；手肘角度太不準，不顯示數字";
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage
   $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]);
   v.src=clipSrc(S); v.playbackRate=rate;
