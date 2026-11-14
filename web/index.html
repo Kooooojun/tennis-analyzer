@@ -1,0 +1,676 @@
+<title>網球動作檢討</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta charset="utf-8">
+<style>
+/* layout: sticky player on the left (top on phones); right column = findings → side-by-side compare → how to practise → stroke picker → per-stroke detail */
+:root{
+  --bg:#f6f5f1; --panel:#ffffff; --ink:#1c1c1a; --muted:#6b6a64; --line:#e2e0d8;
+  --accent:#2f7d4f; --accent-ink:#ffffff; --warn:#b4541a; --good:#2f7d4f; --chip:#efeee8;
+  --s1:#d9480f; --s2:#1971c2; --s3:#7048e8;
+  --fh:#c2410c; --bh:#1d4ed8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121311; --panel:#1c1d1a; --ink:#ecebe4; --muted:#9c9b93; --line:#2e2f2b;
+    --accent:#5cc28a; --accent-ink:#0d1a12; --warn:#f0965a; --good:#5cc28a; --chip:#262723;
+    --s1:#ff8a4c; --s2:#5aa9ff; --s3:#a98bff;
+    --fh:#fb923c; --bh:#60a5fa; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121311; --panel:#1c1d1a; --ink:#ecebe4; --muted:#9c9b93; --line:#2e2f2b;
+  --accent:#5cc28a; --accent-ink:#0d1a12; --warn:#f0965a; --good:#5cc28a; --chip:#262723;
+  --s1:#ff8a4c; --s2:#5aa9ff; --s3:#a98bff;
+  --fh:#fb923c; --bh:#60a5fa; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,"PingFang TC","Noto Sans TC",system-ui,sans-serif}
+header{padding-block:18px 8px;max-width:1200px;margin:0 auto}
+header,main{padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+h1{font-size:22px;margin:0 0 2px;text-wrap:balance}
+header p{margin:0;color:var(--muted);font-size:13px}
+main{max-width:1200px;margin:0 auto;padding-block:8px 40px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:20px;align-items:start}
+.player{position:sticky;top:calc(12px + env(safe-area-inset-top, 0px));width:calc((100vh - 290px) * 9 / 16);max-width:420px;min-width:260px}
+.stage{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:9/16;width:100%;max-width:100%}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%}
+.stage video{object-fit:contain}
+.badge{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.6);color:#fff;font:600 12px/1 ui-monospace,Menlo,monospace;padding:6px 8px;border-radius:6px}
+.phase-badge{position:absolute;right:10px;top:10px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:13px;padding:5px 10px;border-radius:999px;display:none}
+.now{display:flex;align-items:center;gap:8px;margin-top:10px}
+.now .title{flex:1;min-width:0;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+button,select{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 11px;border-radius:8px;cursor:pointer}
+select{max-width:100%;min-width:0}
+button:hover{border-color:var(--muted)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.sep{width:1px;height:22px;background:var(--line);margin:0 4px}
+input[type=range]{width:100%;accent-color:var(--accent);margin:10px 0 2px}
+.hint{color:var(--muted);font-size:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.card h2{font-size:15px;margin:0 0 10px}
+.card h3{font-size:14px;margin:14px 0 6px}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;color:#fff;vertical-align:1px}
+.tag.FH{background:var(--fh)} .tag.BH{background:var(--bh)} .tag.SV{background:var(--muted)}
+.tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.strokes{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px}
+.strokes button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:6px 8px;background:var(--chip);border-color:transparent;font-size:12px;text-align:left}
+.strokes button .row{display:flex;gap:5px;align-items:center;width:100%}
+.strokes button .clock{font-family:ui-monospace,Menlo,monospace;color:var(--muted);margin-left:auto}
+.strokes button .mini{font-family:ui-monospace,Menlo,monospace;color:var(--muted);font-variant-numeric:tabular-nums}
+.strokes button .mini.bad{color:var(--warn);font-weight:600}
+.strokes button.cur{border-color:var(--ink);background:var(--panel)}
+.phases{display:flex;flex-wrap:wrap;gap:6px}
+.phases button{background:var(--chip);border-color:transparent;font-size:13px}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media (max-width:520px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.metric{background:var(--chip);border-radius:8px;padding:8px 10px}
+.metric .k{font-size:12px;color:var(--muted)}
+.metric .v{font:600 22px/1.2 ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.metric .v small{font-size:12px;font-weight:400;color:var(--muted)}
+.metric .cmp{font-size:11px;color:var(--muted)}
+#chart{width:100%;height:160px;display:block;cursor:crosshair}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+.legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.legend i.dot{width:8px;height:8px;border-radius:50%}
+.legend i.ring{width:8px;height:8px;border-radius:50%;background:transparent!important;border:2px solid var(--fh)}
+.legend i.band{width:14px;height:8px;border-radius:2px;background:rgba(74,222,128,.35);border:1px solid rgba(74,222,128,.9)}
+.strip{margin:4px 0 14px}
+.strip .lbl{display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;gap:8px}
+.strip .lbl span{color:var(--muted);font-size:12px}
+.strip svg{width:100%;height:64px;display:block;overflow:visible}
+.strip circle{cursor:pointer}
+.find{border-left:3px solid var(--warn);padding:2px 0 2px 12px;margin:0 0 12px}
+.find.good{border-left-color:var(--good)}
+.find.info{border-left-color:var(--line)}
+.find b{display:block}
+.find p{margin:2px 0 4px}
+.find .jump{font-size:12px;padding:3px 8px;margin:2px 4px 2px 0}
+.reel{display:block;width:100%;max-width:420px;margin:4px 0 12px;border-radius:10px;background:#000}
+.presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.presets button{font-size:13px;background:var(--chip);border-color:transparent}
+.presets button.on{background:var(--accent);color:var(--accent-ink)}
+.duo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.duo .side{min-width:0;display:flex;flex-direction:column;gap:6px}
+.duo .stage{max-height:62vh;width:100%}
+.duo .stage video{opacity:0}
+.duo .cap{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.duo .cap b{color:var(--ink);font-size:13px}
+.duo .nums{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-variant-numeric:tabular-nums}
+.check{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+.check li{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px;align-items:baseline;padding:8px 10px;background:var(--chip);border-radius:8px}
+.check li b{font-size:13px}
+.check li .you{display:block;font-size:12px;color:var(--warn);margin-top:2px}
+.check li .you.ok{color:var(--good)}
+.links{margin:6px 0 0;padding-left:18px}
+.links li{margin:4px 0}
+a{color:var(--accent)}
+.notes-list{list-style:none;padding:0;margin:8px 0 0}
+.notes-list li{display:flex;gap:8px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line)}
+.notes-list li button{font-size:12px;padding:2px 7px}
+.notes-list li span{flex:1;min-width:0}
+.note-row{display:flex;gap:6px}
+.note-row input{flex:1;min-width:0;font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+.caveat{font-size:12px;color:var(--muted);margin-top:8px}
+kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--panel)}
+@media (max-width:820px){
+  header{padding-block:12px 4px} h1{font-size:18px}
+  body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top, 0px);z-index:10;background:var(--bg)}
+  main{grid-template-columns:minmax(0,1fr);gap:12px;padding-top:4px}
+  .player{position:sticky;top:env(safe-area-inset-top, 0px);z-index:5;width:100%;max-width:none;min-width:0;margin:0;background:var(--bg);padding:8px 0 6px;border-bottom:1px solid var(--line)}
+  .player .stage{width:auto;height:38vh;height:38svh;margin:0 auto;border-radius:10px;touch-action:pan-y}
+  .duo .stage{max-height:none;width:100%}
+  input[type=range]{margin:6px 0 0}
+  .now{margin-top:6px}
+  .controls{gap:4px;margin-top:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .controls button,.now button{padding:7px 7px;font-size:12.5px;white-space:nowrap;flex:none}
+  .phase-badge{top:auto;bottom:8px;right:8px}
+  .controls .sep,.controls .hint{display:none}
+  #speeds,#cmpSpeeds{display:flex;gap:4px;flex:none;margin-left:auto}
+  .player .hint.kbd-hint{display:none}
+  .card{padding:12px 14px}
+  .badge,.phase-badge{font-size:11px;padding:4px 6px}
+  .check li{grid-template-columns:minmax(0,1fr);gap:2px}
+}
+.days{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.days button{font-size:13px}
+.trend{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;margin:4px 0 2px}
+.trend th,.trend td{padding:5px 8px;text-align:right;border-top:1px solid var(--line)}
+.trend th:first-child,.trend td:first-child{text-align:left;font-weight:400}
+.trend thead th{color:var(--muted);font-size:12px;font-weight:600;border-top:0}
+.trend td.cur{font-weight:700}
+.trend-wrap{overflow-x:auto;margin:6px 0 4px}
+.touch-hint{display:none}
+@media (hover:none){.kbd-hint{display:none}.touch-hint{display:block;margin:4px 0 0}}
+</style>
+<header>
+  <h1>網球練習 · 逐拍檢討</h1>
+  <p id="sub"></p>
+  <div class="days" id="days" role="tablist" aria-label="選擇練習日期"></div>
+</header>
+<main>
+  <section class="player">
+    <div class="stage" id="stage">
+      <video id="v" playsinline muted preload="auto"></video>
+      <canvas id="cv"></canvas>
+      <div class="badge" id="badge">–</div>
+      <div class="phase-badge" id="phaseBadge"></div>
+    </div>
+    <input type="range" id="seek" min="0" max="149" value="0" step="1" aria-label="時間軸">
+    <div class="now">
+      <button id="prevS" title="上一拍 (↑)">‹ 上一拍</button>
+      <span class="title" id="nowTitle"></span>
+      <button id="nextS" title="下一拍 (↓)">下一拍 ›</button>
+    </div>
+    <div class="controls">
+      <button id="play">▶ 播放</button>
+      <button id="prev" title="上一格 (←)">◀︎ 格</button>
+      <button id="next" title="下一格 (→)">格 ▶︎</button>
+      <span class="sep"></span>
+      <span class="hint">速度</span>
+      <span id="speeds"></span>
+    </div>
+    <div class="controls">
+      <button id="skel" class="on">骨架</button>
+      <button id="guides" class="on">輔助線</button>
+      <button id="trail" class="on">手腕軌跡</button>
+      <button id="theme" aria-label="切換深淺色">🌓</button>
+    </div>
+    <p class="hint touch-hint">點影片播放/暫停 · 在影片上左右滑動可逐格</p>
+    <p class="hint kbd-hint"><kbd>空白</kbd> 播放/暫停 · <kbd>←</kbd><kbd>→</kbd> 逐格 · <kbd>↑</kbd><kbd>↓</kbd> 換一拍 · <kbd>N</kbd> 寫筆記</p>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>整場重點</h2>
+      <div id="findings"></div>
+      <div class="strip" id="stripKnee"></div>
+      <div class="strip" id="stripHeight"></div>
+      <div class="strip" id="stripOpen"></div>
+      <div class="legend"><span><i class="dot" style="background:var(--fh)"></i>對打正拍</span><span><i class="ring"></i>自己拋球的正拍</span><span><i class="dot" style="background:var(--bh)"></i>反拍</span><span>點圓點直接看那一拍</span></div>
+      <p class="caveat" id="caveatDay"></p>
+      <h3 id="trendTitle">各場比較</h3>
+      <div class="trend-wrap"><table class="trend" id="trend"></table></div>
+      <p class="caveat">鏡頭位置會改變膝蓋角度的讀數（手機越低、越近，膝蓋看起來越直），所以只有「鏡頭」那一列相同的場次能直接比絕對數字。不同機位的場次，看自拋跟對打之間的差距有沒有縮小。自己把球拋高再打的「高拋」另外分一類，不算進自拋或對打的中位數。</p>
+    </div>
+
+    <div class="card">
+      <h2>並排比較</h2>
+      <div class="presets" id="presets"></div>
+      <div class="duo">
+        <div class="side">
+          <select id="selA" aria-label="左邊的擊球"></select>
+          <div class="stage"><video id="vA" playsinline muted preload="auto"></video><canvas id="cvA"></canvas><div class="badge" id="badgeA">–</div></div>
+          <div class="cap" id="capA"></div>
+        </div>
+        <div class="side">
+          <select id="selB" aria-label="右邊的擊球"></select>
+          <div class="stage"><video id="vB" playsinline muted preload="auto"></video><canvas id="cvB"></canvas><div class="badge" id="badgeB">–</div></div>
+          <div class="cap" id="capB"></div>
+        </div>
+      </div>
+      <input type="range" id="cmpSeek" min="0" max="149" value="0" step="1" aria-label="比較時間軸">
+      <div class="controls">
+        <button id="cmpPlay">▶ 同步播放</button>
+        <button id="cmpPrev">◀︎ 格</button>
+        <button id="cmpNext">格 ▶︎</button>
+        <button id="cmpContact">跳到擊球</button>
+        <span class="sep"></span>
+        <span id="cmpSpeeds"></span>
+      </div>
+      <div class="legend">
+        <span><i style="background:#fff;outline:1px solid var(--muted)"></i>肩線</span>
+        <span><i style="background:#9ca3af"></i>髖線</span>
+        <span><i class="band"></i>理想擊球高度（腰到胸口）</span>
+        <span><i class="dot" style="background:#4ade80"></i>膝蓋 ≤130°</span>
+        <span><i class="dot" style="background:#fbbf24"></i>130–150°</span>
+        <span><i class="dot" style="background:#f87171"></i>&gt;150° 太直</span>
+      </div>
+      <p class="caveat">兩邊以擊球瞬間對齊，同一時間點看的是揮拍的同一個階段。膝蓋請看擊球前 0.8–0.3 秒的蓄力階段；擊球時腿往上蹬，本來就會伸直。擊球瞬間手腕的圈圈綠色代表在理想高度內，紅色代表在外面。肩線和髖線看起來越短，代表越側身。</p>
+    </div>
+
+    <div class="card">
+      <h2>怎麼練正確姿勢</h2>
+      <p style="margin:0 0 8px">最好的參考是你自己的好球：同樣的身高、球拍和鏡頭角度，最容易對照。下面每一點都附上你這場的實際數字。</p>
+      <h3>正拍</h3>
+      <ul class="check" id="checkFH"></ul>
+      <h3>單手反拍</h3>
+      <ul class="check" id="checkBH"></ul>
+      <h3>自己拋球練習時</h3>
+      <ul class="check">
+        <li><b>拋之前</b><span>先把膝蓋彎下去、拍子拉到後面，再拋球。不要站直拋球、等球彈起來才開始動。</span></li>
+        <li><b>讓球彈高</b><span>把球拋高一點、往前一點，讓它彈到腰的高度。拋太低的球會逼你用手撈。</span></li>
+        <li><b>每 5 球錄一次</b><span>用同一個位置錄影，看準備時膝蓋能不能接近你對打時的角度。</span></li>
+      </ul>
+      <h3>參考教學</h3>
+      <ul class="links">
+        <li><a href="https://tennisevolution.com/?p=17562" target="_blank" rel="noopener">Tennis Evolution：正拍怎麼彎膝蓋</a>（英文，影片教學）</li>
+        <li><a href="https://tennisevolution.com/?p=15873" target="_blank" rel="noopener">Tennis Evolution：高球的單手反拍</a>（英文）</li>
+        <li><a href="https://tennisone.tennisplayer.net/content/Lessons/murphy/back/complet/compback2.htm" target="_blank" rel="noopener">TennisONE：單反擊球時肩膀維持側身</a>（英文）</li>
+        <li><a href="https://www.youtube.com/watch?v=jwOFxn51auc" target="_blank" rel="noopener">LeonTV：正拍轉身拉拍的四個步驟</a>（中文，影片；9:29 的 1-2-3 節奏練習很適合自拋）</li>
+        <li><a href="https://sikana.tv/en/sport/tennis/self-feeding" target="_blank" rel="noopener">Sikana：自己拋球練習的方法</a>（英文，影片）</li>
+        <li><a href="https://www.youtube.com/results?search_query=forehand+leg+drive+knee+bend+tennis" target="_blank" rel="noopener">YouTube 搜尋：正拍腿部發力</a></li>
+        <li><a href="https://www.youtube.com/results?search_query=one+handed+backhand+stay+sideways" target="_blank" rel="noopener">YouTube 搜尋：單反維持側身</a></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>全部擊球</h2>
+      <div class="tabs" id="tabs"></div>
+      <div class="strokes" id="strokes"></div>
+    </div>
+
+    <div class="card">
+      <h2 id="detailTitle">這一拍</h2>
+      <div class="phases" id="phases"></div>
+      <div class="metrics" style="margin-top:10px">
+        <div class="metric"><div class="k">準備時膝蓋</div><div class="v" id="mKnee">–</div><div class="cmp" id="cKnee"></div></div>
+        <div class="metric"><div class="k">引拍轉肩</div><div class="v" id="mOpen">–</div><div class="cmp" id="cOpen"></div></div>
+        <div class="metric"><div class="k">擊球高度</div><div class="v" id="mHeight">–</div><div class="cmp" id="cHeight"></div></div>
+        <div class="metric"><div class="k">擊球手肘</div><div class="v" id="mElbow">–</div><div class="cmp" id="cElbow"></div></div>
+      </div>
+      <div style="margin-top:12px"><canvas id="chart"></canvas></div>
+      <div class="legend">
+        <span><i style="background:var(--s1)"></i>持拍手肘</span>
+        <span><i style="background:var(--s2)"></i>較彎的膝蓋</span>
+        <span><i style="background:var(--s3)"></i>肩膀轉開度</span>
+        <span>點圖表可跳轉</span>
+      </div>
+      <p class="caveat">膝蓋越小越蹲。轉肩 0% = 完全側身，100% = 胸口正對球網。擊球高度 0 = 髖部，100 = 肩膀。下方小字是同類擊球整場的中位數。</p>
+    </div>
+
+    <div class="card">
+      <h2>這一拍的筆記</h2>
+      <div class="note-row">
+        <input id="noteIn" placeholder="在目前這一格寫筆記，Enter 儲存">
+        <button id="noteAdd">加入</button>
+      </div>
+      <ul class="notes-list" id="notes"></ul>
+      <p class="caveat">筆記只存在這台裝置的瀏覽器裡。</p>
+    </div>
+  </section>
+</main>
+
+<script src="sessions/manifest.js"></script>
+<script>for(const id of window.SESSION_IDS||[]) document.write(`<script src="sessions/${id}/data.js?v=${Date.now()}"><\/script>`);</script>
+<script>
+const FPS = 60, NAMES = {FH:"正拍", BH:"反拍", SV:"發球"};
+// one entry per practice session (built by tools/build_site.py); strokes carry their day so compare can mix sessions
+const DAYS = Object.fromEntries((window.SESSIONS||[]).map(d=>[d.id,{...d,data:d.strokes}]));
+for(const [k,d] of Object.entries(DAYS)) d.data.forEach(s=>s.day=k);
+const DAY_KEYS = Object.keys(DAYS);
+if(!DAY_KEYS.length){ document.querySelector("main").innerHTML='<p style="padding:24px">還沒有分析好的練習。在這個資料夾開 Claude Code，說「幫我分析 videos/ 裡的新練習」。</p>'; throw new Error("no sessions"); }
+let DAY = DAY_KEYS[DAY_KEYS.length-1], ALL = DAYS[DAY].data;
+// landmark id → index in the trimmed per-frame arrays
+const K = {0:0,11:1,12:2,13:3,14:4,15:5,16:6,23:7,24:8,25:9,26:10,27:11,28:12,29:13,30:14,31:15,32:16};
+const EDGES = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],[27,31],[28,32],[27,29],[28,30]];
+const SWMAX = 0.5527;  // 97th-percentile shoulder width over the session, so 100% ≈ chest square to the camera
+const ZONE = [0.3, 0.8]; // target contact band, in torso lengths above the hip (waist → chest)
+
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const median = a => { const s=a.filter(x=>x!=null&&isFinite(x)).sort((x,y)=>x-y); return s.length? s[s.length>>1] : null; };
+const pct = (a,q) => { const s=a.filter(x=>x!=null&&isFinite(x)).sort((x,y)=>x-y); return s[Math.floor((s.length-1)*q)]; };
+const byKind = k => ALL.filter(s=>s.kind===k);
+const feedFH = () => ALL.filter(s=>s.kind==="FH"&&s.drill==="feed");
+const rallyFH = () => ALL.filter(s=>s.kind==="FH"&&s.drill==="rally");
+const kneeColor = a => a==null ? "#fff" : a<=130 ? "#4ade80" : a<=150 ? "#fbbf24" : "#f87171";
+const stats = g => ({knee:median(g.map(s=>s.knee)), open:median(g.map(s=>s.open_min)), h:median(g.map(s=>s.contact_h*100)), elbow:median(g.map(s=>s.elbow)), openC:median(g.map(s=>s.open_contact))});
+const dayStats = data => { const k=(kind,drill)=>data.filter(s=>s.kind===kind&&(!drill||s.drill===drill)); return {FH:stats(k("FH")), BH:stats(k("BH")), SV:stats(k("SV")), feed:stats(k("FH","feed")), rally:stats(k("FH","rally"))}; };
+let MED = dayStats(ALL);
+const byNo = n => ALL[n-1];
+const dayNo = (day,n) => DAYS[day].data[n-1];
+function strokeLabel(s){ return `#${String(s.id+1).padStart(2,"0")} ${NAMES[s.kind]} · ${s.clock}`; }
+const drillName = s => s.kind!=="FH" ? "" : s.drill==="feed" ? "自己拋球" : s.drill==="rally" ? "對打" : s.drill==="high" ? "高拋" : "";
+
+// ---------- per-stroke series ----------
+function angle(fr, a, b, c){
+  const A=fr[K[a]], B=fr[K[b]], C=fr[K[c]];
+  const ax=A[0]-B[0], ay=(A[1]-B[1])*16/9, cx=C[0]-B[0], cy=(C[1]-B[1])*16/9, d=Math.hypot(ax,ay)*Math.hypot(cx,cy);
+  return d ? Math.acos(Math.max(-1,Math.min(1,(ax*cx+ay*cy)/d)))*180/Math.PI : null;
+}
+function smooth(arr,k=3){ return arr.map((_,i)=>{ if(arr[i]==null) return null; const w=[]; for(let j=i-k;j<=i+k;j++) if(arr[j]!=null) w.push(arr[j]); w.sort((a,b)=>a-b); return w[w.length>>1]; }); }
+const SER = new Map();
+function series(s){
+  if(SER.has(s)) return SER.get(s);
+  const fr=s.frames;
+  const kR=fr.map(p=>p?angle(p,24,26,28):null), kL=fr.map(p=>p?angle(p,23,25,27):null);
+  const out={
+    elbow: smooth(fr.map(p=>p?angle(p,12,14,16):null)),
+    knee: smooth(kR.map((r,i)=>r==null?null:Math.min(r,kL[i]))),
+    kneeSide: kR.map((r,i)=>r==null?null:(r<=kL[i]?"R":"L")),
+    open: smooth(fr.map(p=>{ if(!p) return null; const hx=(p[K[23]][0]+p[K[24]][0])/2, hy=(p[K[23]][1]+p[K[24]][1])/2;
+      const bh=Math.hypot(p[0][0]-hx,(p[0][1]-hy)*16/9); const sw=Math.hypot(p[K[12]][0]-p[K[11]][0],(p[K[12]][1]-p[K[11]][1])*16/9);
+      return bh? Math.min(120, sw/bh/SWMAX*100) : null; })),
+  };
+  SER.set(s,out); return out;
+}
+
+// ---------- drawing one video frame's overlay ----------
+const ZB=new Map();
+function zoomBox(s){
+  if(ZB.has(s)) return ZB.get(s);
+  const cx=[],cy=[],hh=[];
+  for(const fr of s.frames){ if(!fr) continue; const ank=(fr[K[27]][1]+fr[K[28]][1])/2; cx.push((fr[K[23]][0]+fr[K[24]][0])/2); cy.push((fr[0][1]+ank)/2); hh.push(ank-fr[0][1]); }
+  const z={cx:median(cx)||0.5, cy:median(cy)||0.5, h:Math.max(0.3,(median(hh)||0.3)*2.0)};
+  ZB.set(s,z); return z;
+}
+function fitCanvas(cv){ const dpr=devicePixelRatio||1, r=cv.getBoundingClientRect(); const w=Math.round(r.width*dpr), h=Math.round(r.height*dpr); if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; } const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); return {g,W:r.width,H:r.height}; }
+function paint(cv, vid, s, f, opt){
+  const {g,W,H}=fitCanvas(cv); g.clearRect(0,0,W,H);
+  if(!s) return;
+  const vw=vid.videoWidth||540, vh=vid.videoHeight||960;
+  let X, Y;
+  if(opt.zoom){
+    // crop the frame around the player and draw it ourselves, so both sides show the body at the same scale
+    const z=zoomBox(s), ch=Math.min(vh, z.h*vh), cw=Math.min(vw, ch*W/H);
+    const sx=Math.max(0,Math.min(vw-cw, z.cx*vw-cw/2)), sy=Math.max(0,Math.min(vh-ch, z.cy*vh-ch/2)), k=W/cw;
+    if(vid.readyState>=2) g.drawImage(vid,sx,sy,cw,ch,0,0,W,ch*k);
+    X=q=>(q[0]*vw-sx)*k; Y=q=>(q[1]*vh-sy)*k;
+  } else {
+    const sc=Math.min(W/vw,H/vh), bx=(W-vw*sc)/2, by=(H-vh*sc)/2;
+    X=q=>bx+q[0]*vw*sc; Y=q=>by+q[1]*vh*sc;
+  }
+  const small=W<240;
+  const ser=series(s), P=(i,id)=>{ const fr=s.frames[i]; return fr?fr[K[id]]:null; };
+  if(opt.guides){
+    // target contact band, measured from the body at contact so it stays put through the swing
+    const c=s.frames[s.contact]||s.frames[s.contact-1];
+    if(c && Math.abs(f-s.contact)<=40){
+      const hy=(Y(c[K[23]])+Y(c[K[24]]))/2, hx=(X(c[K[23]])+X(c[K[24]]))/2, sy=(Y(c[K[11]])+Y(c[K[12]]))/2, sx=(X(c[K[11]])+X(c[K[12]]))/2;
+      const L=Math.hypot(hx-sx,hy-sy), y0=hy-ZONE[1]*L, y1=hy-ZONE[0]*L, half=L*1.5;
+      g.fillStyle="rgba(74,222,128,.18)"; g.fillRect(hx-half,y0,half*2,y1-y0);
+      g.strokeStyle="rgba(74,222,128,.85)"; g.lineWidth=1; g.setLineDash([4,3]); g.strokeRect(hx-half,y0,half*2,y1-y0); g.setLineDash([]);
+      if(!small){ g.font="600 11px -apple-system,'PingFang TC',sans-serif"; g.fillStyle="rgba(74,222,128,1)"; g.fillText("理想擊球高度",hx-half+4,y0-4); }
+      if(f===s.contact){ const w=P(f,16); if(w){ const inZ=Y(w)>=y0&&Y(w)<=y1; g.strokeStyle=inZ?"#4ade80":"#f87171"; g.lineWidth=3; g.beginPath(); g.arc(X(w),Y(w),11,0,7); g.stroke(); } }
+    }
+  }
+  if(opt.trail){ g.lineWidth=2.5;
+    for(let i=Math.max(1,f-24);i<=f;i++){ const a=P(i-1,16), c=P(i,16); if(!a||!c) continue;
+      g.strokeStyle=`rgba(255,214,10,${(1-(f-i)/25)*0.9})`; g.beginPath(); g.moveTo(X(a),Y(a)); g.lineTo(X(c),Y(c)); g.stroke(); } }
+  const fr=s.frames[f]; if(!fr) return;
+  if(opt.skel){
+    g.lineCap="round";
+    for(const [a,c] of EDGES){ g.strokeStyle=(a%2===0&&c%2===0)?"rgba(255,120,60,.95)":"rgba(90,180,255,.95)"; g.lineWidth=(a===14||c===14)?4:3;
+      const A=fr[K[a]], C=fr[K[c]]; g.beginPath(); g.moveTo(X(A),Y(A)); g.lineTo(X(C),Y(C)); g.stroke(); }
+    for(const id of [0,11,12,13,14,15,16,23,24,25,26,27,28]){ const q=fr[K[id]]; g.fillStyle=q[2]<0.4?"rgba(255,255,255,.35)":"#fff"; g.beginPath(); g.arc(X(q),Y(q),id===16?5:3.2,0,7); g.fill(); }
+  }
+  const label=(t,x,y,col)=>{ g.font=`600 ${small?11:13}px ui-monospace,Menlo,monospace`; g.lineWidth=3; g.strokeStyle="rgba(0,0,0,.75)"; g.fillStyle=col||"#fff"; g.strokeText(t,x,y); g.fillText(t,x,y); };
+  if(opt.guides){
+    // shoulder + hip lines, extended past the body so their tilt is easy to read
+    for(const [a,b,col,ext] of [[11,12,"rgba(255,255,255,.95)",0.45],[23,24,"rgba(156,163,175,.95)",0.45]]){
+      const A=fr[K[a]], B=fr[K[b]]; const ax=X(A),ay=Y(A),bx2=X(B),by2=Y(B), dx=bx2-ax, dy=by2-ay;
+      g.strokeStyle=col; g.lineWidth=2; g.setLineDash([6,4]); g.beginPath(); g.moveTo(ax-dx*ext,ay-dy*ext); g.lineTo(bx2+dx*ext,by2+dy*ext); g.stroke(); g.setLineDash([]);
+    }
+    // the more-bent knee, with its angle arc coloured by how much it bends
+    const side=ser.kneeSide[f], ka=ser.knee[f];
+    if(side && ka!=null){
+      const [h,k,an]=side==="R"?[24,26,28]:[23,25,27]; const H2=fr[K[h]], Kn=fr[K[k]], An=fr[K[an]];
+      const a1=Math.atan2(Y(H2)-Y(Kn),X(H2)-X(Kn)), a2=Math.atan2(Y(An)-Y(Kn),X(An)-X(Kn));
+      let d=a2-a1; while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
+      const col=kneeColor(ka); g.strokeStyle=col; g.lineWidth=3; g.beginPath(); g.arc(X(Kn),Y(Kn),small?10:15,a1,a1+d,d<0); g.stroke();
+      label(Math.round(ka)+"°",X(Kn)+(side==="R"?10:-34),Y(Kn)+4,col);
+    }
+  }
+  const e=ser.elbow[f]; if(opt.skel && e!=null && !small){ const q=fr[K[14]]; label(Math.round(e)+"°",X(q)+8,Y(q)); }
+}
+
+// ---------- session summary ----------
+function typicalFH(){ const fh=feedFH().length?feedFH():byKind("FH").length?byKind("FH"):ALL, d=s=>Math.abs(s.knee-MED.feed.knee)/20+Math.abs(s.contact_h*100-MED.feed.h)/30+Math.abs(s.open_min-MED.feed.open)/15; return [...fh].sort((a,b)=>d(a)-d(b))[0]; }
+function drawSummary(){
+  const fh=byKind("FH"), bh=byKind("BH"), sv=byKind("SV"), fd=feedFH(), ry=rallyFH();
+  $("sub").textContent = `${DAYS[DAY].label} · ${DAYS[DAY].sub} · 找出 ${ALL.length} 拍（正拍 ${fh.length}、反拍 ${bh.length}${sv.length?`、發球 ${sv.length}`:""}）`;
+  const r=Math.round;
+  const items = (DAYS[DAY].findings||[]).map(f=>({cls:f.good?"good":f.info?"info":"", t:f.title, p:f.text, j:(f.jump||[]).map(([n,l])=>[byNo(n),l])}));
+  if(!items.length) items.push({cls:"info", t:"這場還沒有寫重點", p:"請 Claude 看完數字後寫進 notes.json 的 findings，再跑 tools/build_site.py。", j:[]});
+  $("findings").innerHTML="";
+  for(const it of items){
+    const d=document.createElement("div"); d.className="find "+it.cls;
+    d.innerHTML=`<b>${it.cls==="good"?"✓ ":"△ "}${it.t}</b><p>${it.p}</p>`;
+    for(const [s,label] of it.j.filter(([s])=>s)){ const b=document.createElement("button"); b.className="jump"; b.textContent=label; b.onclick=()=>load(s.id,true); d.append(b); }
+    $("findings").append(d);
+  }
+  if(DAYS[DAY].reel){ const v=document.createElement("video"); v.src=DAYS[DAY].reel; v.controls=true; v.playsInline=true; v.preload="metadata"; v.className="reel"; $("findings").append(v); }
+  strip("stripKnee","準備時膝蓋角度","越左越蹲",s=>s.knee,90,180,"°",[90,110,130,150,170]);
+  strip("stripHeight","擊球高度","髖部 = 0、肩膀 = 100",s=>s.contact_h*100,-40,100,"",[-40,-20,0,20,40,60,80,100]);
+  $("stripOpen").hidden=!DAYS[DAY].showOpen;
+  if(DAYS[DAY].showOpen) strip("stripOpen","引拍時轉肩","越左越側身",s=>s.open_min,0,60,"%",[0,10,20,30,40,50,60]);
+  $("caveatDay").textContent=DAYS[DAY].caveat;
+  drawTrend();
+}
+function drawTrend(){
+  const keys=Object.keys(DAYS), st=Object.fromEntries(keys.map(k=>[k,dayStats(DAYS[k].data)])), r=x=>x==null?"–":Math.round(x);
+  $("trendTitle").textContent=keys.length>1?`${keys.length} 場比較`:"這場數字";
+  const rows=[
+    ["鏡頭",k=>DAYS[k].camera||"–"],
+    ["自拋正拍・準備時膝蓋",k=>r(st[k].feed.knee)+"°"],
+    ["對打正拍・準備時膝蓋",k=>r(st[k].rally.knee)+"°"],
+    ["<b>膝蓋差距（自拋 − 對打）</b>",k=>`<b>${r(st[k].feed.knee-st[k].rally.knee)}°</b>`],
+    ["自拋正拍・擊球高度",k=>r(st[k].feed.h)],
+    ["對打正拍・擊球高度",k=>r(st[k].rally.h)],
+    ["拍數（自拋 / 對打）",k=>`${DAYS[k].data.filter(s=>s.kind==="FH"&&s.drill==="feed").length} / ${DAYS[k].data.filter(s=>s.kind==="FH"&&s.drill==="rally").length}`],
+  ];
+  $("trend").innerHTML=`<thead><tr><th></th>${keys.map(k=>`<th>${DAYS[k].label}</th>`).join("")}</tr></thead><tbody>`+
+    rows.map(([lab,f])=>`<tr><td>${lab}</td>${keys.map(k=>`<td class="${k===DAY?"cur":""}">${f(k)}</td>`).join("")}</tr>`).join("")+"</tbody>";
+}
+function strip(id,title,hint,get,lo,hi,unit,ticks){
+  const el=$(id); el.innerHTML=`<div class="lbl">${title}<span>${hint}</span></div>`;
+  const NS="http://www.w3.org/2000/svg", W=600, H=64, pad=14;
+  const svg=document.createElementNS(NS,"svg"); svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.setAttribute("preserveAspectRatio","none");
+  const x=val=>pad+(Math.max(lo,Math.min(hi,val))-lo)/(hi-lo)*(W-2*pad);
+  const rows={FH:16,BH:38};
+  const mk=(tag,attrs)=>{ const e=document.createElementNS(NS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); svg.append(e); return e; };
+  for(const k of ["FH","BH"]) mk("line",{x1:pad,x2:W-pad,y1:rows[k],y2:rows[k],stroke:"var(--line)","stroke-width":1});
+  for(const val of ticks){ const t=mk("text",{x:x(val),y:H-2,"text-anchor":"middle","font-size":10,fill:"var(--muted)"}); t.textContent=Math.round(val)+unit; }
+  for(const k of ["FH","BH"]){ const m=median(byKind(k).map(get)); if(m!=null) mk("line",{x1:x(m),x2:x(m),y1:rows[k]-9,y2:rows[k]+9,stroke:`var(--${k.toLowerCase()})`,"stroke-width":2.5}); }
+  for(const s of ALL){
+    if(!(s.kind in rows)) continue;
+    const val=get(s); if(val==null) continue;
+    const col=`var(--${s.kind.toLowerCase()})`, hollow=s.kind==="FH"&&s.drill==="feed";
+    const c=mk("circle",{cx:x(val),cy:rows[s.kind]+((s.id*37)%7-3)*0.9,r:4.2,fill:hollow?"var(--panel)":col,"fill-opacity":hollow?1:0.6,stroke:hollow?col:"var(--panel)","stroke-width":hollow?1.6:1});
+    c.dataset.id=s.id; c.dataset.hollow=hollow?1:0;
+    const tt=document.createElementNS(NS,"title"); tt.textContent=`${strokeLabel(s)}${drillName(s)?"（"+drillName(s)+"）":""}：${Math.round(val)}${unit}`; c.append(tt);
+    c.addEventListener("click",()=>load(s.id,true));
+  }
+  el.append(svg);
+}
+function markStrips(){
+  document.querySelectorAll(".strip circle").forEach(c=>{ const on=+c.dataset.id===S.id; c.setAttribute("r",on?7:4.2); if(on){ c.setAttribute("stroke","var(--ink)"); c.setAttribute("stroke-width",2); c.parentNode.append(c); } else { const s=ALL[+c.dataset.id], col=`var(--${s.kind.toLowerCase()})`; c.setAttribute("stroke",+c.dataset.hollow?col:"var(--panel)"); c.setAttribute("stroke-width",+c.dataset.hollow?1.6:1); } });
+}
+
+// ---------- how-to checklist with the user's own numbers ----------
+function drawChecks(){
+  const r=Math.round, you=(txt,ok)=>`<span class="you ${ok?"ok":""}">${txt}</span>`;
+  const fh=[
+    ["準備","看到球就轉肩側身、拍子往後拉。", you(`你：正拍轉肩中位數 ${r(MED.FH.open)}%`,MED.FH.open<=35)],
+    ["蓄力",`膝蓋彎下去，重心壓在後腳。目標就是你對打時的角度，約 ${r(MED.rally.knee)}°。`, (MED.feed.knee==null?you(`你：對打 ${r(MED.rally.knee)}°`,MED.rally.knee<=140):you(`你：自己拋球時 ${r(MED.feed.knee)}°${MED.feed.knee>150?"，太直":""}`,MED.feed.knee<=140))],
+    ["擊球","在身體前方、腰到胸口的高度擊球（畫面上的綠色區）。低球用膝蓋降下去，不要用手撈。", you(`你：自己拋球時擊球高度 ${r(MED.feed.h)}，對打 ${r(MED.rally.h)}`,(MED.feed.h??MED.rally.h)>=30)],
+    ["收拍","從下往上揮，拍子收到非持拍手那側的肩膀上方。",""],
+  ];
+  const bh=[
+    ["準備","左手扶拍喉，一起把拍子帶到左後方，背對來球方向。", you(`你：反拍轉肩中位數 ${r(MED.BH.open)}%`,MED.BH.open<=35)],
+    ["蓄力","前腳（右腳）踩出去，膝蓋彎。", you(`你：反拍膝蓋中位數 ${r(MED.BH.knee)}°`,MED.BH.knee<=140)],
+    ["擊球","擊球點在前腳前方，手臂接近伸直。左手往後展開，讓肩膀在擊球時維持側身。", you(`你：擊球時肩膀打開中位數 ${r(MED.BH.openC)}%、手肘 ${r(MED.BH.elbow)}°`,MED.BH.openC<=35)],
+    ["收拍","持拍手往前上方延伸，胸口最後才轉向球網。",""],
+  ];
+  if(byKind("BH").length<3) bh.splice(0,bh.length,["這場",`反拍只抓到 ${byKind("BH").length} 拍，數字不夠參考。`,""]);
+  const fill=(id,rows)=>{ $(id).innerHTML=rows.map(([a,b,c])=>`<li><b>${a}</b><span>${b}${c}</span></li>`).join(""); };
+  fill("checkFH",fh); fill("checkBH",bh);
+}
+
+// ---------- stroke picker ----------
+let filter="ALL";
+function drawTabs(){
+  $("tabs").innerHTML="";
+  const tabs=[["ALL",`全部 ${ALL.length}`],["FH",`正拍 ${byKind("FH").length}`],["BH",`反拍 ${byKind("BH").length}`]];
+  if(byKind("SV").length) tabs.push(["SV",`發球 ${byKind("SV").length}`]);
+  for(const [k,label] of tabs){ const b=document.createElement("button"); b.textContent=label; b.classList.toggle("on",filter===k); b.onclick=()=>{ filter=k; drawTabs(); drawList(); }; $("tabs").append(b); }
+}
+function visible(){ return ALL.filter(s=>filter==="ALL"||s.kind===filter); }
+function drawList(){
+  const box=$("strokes"); box.innerHTML="";
+  for(const s of visible()){
+    const b=document.createElement("button"); b.dataset.id=s.id;
+    const bad = s.kind==="FH" && s.knee>150;
+    const dn=drillName(s);
+    b.innerHTML=`<span class="row"><span class="tag ${s.kind}">${NAMES[s.kind]}</span><span class="clock">${s.clock}</span></span><span class="mini ${bad?"bad":""}">膝 ${Math.round(s.knee)}°${dn?" · "+dn:""}</span>`;
+    b.title=strokeLabel(s);
+    b.onclick=()=>load(s.id,false); box.append(b);
+  }
+  markList();
+}
+function markList(){ document.querySelectorAll("#strokes button").forEach(b=>b.classList.toggle("cur",S&&+b.dataset.id===S.id)); }
+
+// ---------- main player ----------
+const v=$("v"), cv=$("cv"), seek=$("seek");
+const OPT={skel:true, guides:true, trail:true};
+let S=null, cur=0, N=150, rate=0.25;
+const clipSrc=s=>s.src;
+function load(id, scroll){
+  S=ALL[id]; N=S.frames.length; seek.max=N-1;
+  S.phases=[{f:S.contact-48,name:"準備"},{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}];
+  $("phases").innerHTML=""; for(const p of S.phases){ const b=document.createElement("button"); b.textContent=p.name; b.onclick=()=>goto(p.f); $("phases").append(b); }
+  const dn=drillName(S);
+  $("nowTitle").textContent=strokeLabel(S)+(dn?" · "+dn:"");
+  $("detailTitle").textContent=`這一拍：${strokeLabel(S)}${dn?"（"+dn+"）":""}`;
+  const m=S.kind==="FH"?(S.drill==="feed"?MED.feed:S.drill==="rally"?MED.rally:MED.FH):MED[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
+  const fmt=(x,u)=>x==null?"–":`${Math.round(x)}<small>${u}</small>`;
+  $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${Math.round(m.knee)}°`;
+  $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${Math.round(m.open)}%`:"這場鏡頭角度不適合看轉肩，參考就好";
+  $("mHeight").innerHTML=fmt(S.contact_h*100,""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
+  $("mElbow").innerHTML=fmt(S.elbow,"°"); $("cElbow").textContent=`中位數 ${Math.round(m.elbow)}°`+(S.vis<0.5?" · 偵測信心低":"");
+  v.src=clipSrc(S); v.playbackRate=rate;
+  const start=()=>goto(S.contact-48);
+  if(v.readyState>=1 && v.currentSrc.endsWith(clipSrc(S))) start(); else v.addEventListener("loadedmetadata",start,{once:true});
+  markList(); markStrips(); drawNotes();
+  if(scroll && matchMedia("(max-width:820px)").matches) scrollTo({top:0,behavior:"smooth"});
+}
+const frameOf=t=>Math.max(0,Math.min(N-1,Math.floor(t*FPS+1e-3)));
+const relLabel=f=>{ const dt=(f-S.contact)/FPS; return dt===0?"擊球":(dt>0?"+":"")+dt.toFixed(2)+"s"; };
+function goto(f){ f=Math.max(0,Math.min(N-1,f)); v.pause(); v.currentTime=(f+0.5)/FPS; render(f); }
+function drawChart(f){
+  const c=$("chart"), {g,W,H}=fitCanvas(c); g.clearRect(0,0,W,H);
+  const ser=series(S), pad={l:30,r:6,t:8,b:18}, x=i=>pad.l+i/(N-1)*(W-pad.l-pad.r), y=(val,lo,hi)=>pad.t+(1-(val-lo)/(hi-lo))*(H-pad.t-pad.b);
+  g.font="11px ui-monospace,Menlo,monospace"; g.strokeStyle=css("--line"); g.fillStyle=css("--muted"); g.lineWidth=1;
+  for(const deg of [60,120,180]){ const yy=y(deg,40,185); g.beginPath(); g.moveTo(pad.l,yy); g.lineTo(W-pad.r,yy); g.stroke(); g.fillText(deg+"°",0,yy+4); }
+  for(const p of S.phases){ g.fillStyle=p.key?css("--warn"):css("--line"); g.fillRect(x(p.f)-0.5,pad.t,p.key?2:1,H-pad.t-pad.b); }
+  g.fillStyle=css("--muted");
+  for(const s of [-1.5,-1,-0.5,0,0.5,1]){ const i=S.contact+s*FPS; if(i<0||i>N-1) continue; const t=(s===0?"擊球":(s>0?"+":"")+s+"s"); g.fillText(t,x(i)-g.measureText(t).width/2,H-4); }
+  for(const [arr,col,lo,hi] of [[ser.elbow,"--s1",40,185],[ser.knee,"--s2",40,185],[ser.open,"--s3",-40,105]]){
+    g.strokeStyle=css(col); g.lineWidth=2; g.beginPath(); let pen=false;
+    for(let i=0;i<N;i++){ const val=arr[i]; if(val==null){pen=false;continue;} const X=x(i),Y=y(val,lo,hi); pen?g.lineTo(X,Y):g.moveTo(X,Y); pen=true; }
+    g.stroke();
+  }
+  g.strokeStyle=css("--ink"); g.lineWidth=1.5; g.beginPath(); g.moveTo(x(f),pad.t); g.lineTo(x(f),H-pad.b); g.stroke();
+  c._map=px=>Math.round((px-pad.l)/(W-pad.l-pad.r)*(N-1));
+}
+function render(f){
+  cur=f; paint(cv,v,S,f,OPT); drawChart(f); seek.value=f; $("badge").textContent=relLabel(f);
+  let ph=null; for(const p of S.phases) if(f>=p.f) ph=p;
+  const pb=$("phaseBadge"); pb.style.display=ph?"block":"none"; if(ph) pb.textContent=ph.name;
+}
+function tick(){ render(frameOf(v.currentTime)); if(!v.paused) (v.requestVideoFrameCallback?v.requestVideoFrameCallback(tick):requestAnimationFrame(tick)); }
+function toggle(){ v.paused?v.play():v.pause(); }
+v.loop=true;
+v.addEventListener("play",()=>{$("play").textContent="⏸ 暫停"; tick();});
+v.addEventListener("pause",()=>{$("play").textContent="▶ 播放";});
+v.addEventListener("seeked",()=>{ if(v.paused) render(frameOf(v.currentTime)); });
+$("play").onclick=toggle; $("prev").onclick=()=>goto(cur-1); $("next").onclick=()=>goto(cur+1);
+seek.oninput=()=>goto(+seek.value);
+function step(d){ const list=visible(); let i=list.findIndex(s=>s.id===S.id); if(i<0) i=0; load(list[(i+d+list.length)%list.length].id,false); }
+$("prevS").onclick=()=>step(-1); $("nextS").onclick=()=>step(1);
+function speedButtons(box,get,set){ for(const s of [0.1,0.25,0.5,1]){ const b=document.createElement("button"); b.textContent=s+"×"; b.onclick=()=>{ set(s); [...box.children].forEach(x=>x.classList.toggle("on",x===b)); }; if(s===get()) b.classList.add("on"); box.append(b); } }
+speedButtons($("speeds"),()=>rate,s=>{rate=s;v.playbackRate=s;});
+const tg=(id,key)=>{$(id).onclick=()=>{ $(id).classList.toggle("on"); OPT[key]=$(id).classList.contains("on"); render(cur); cmpRender(cmpCur); };};
+tg("skel","skel"); tg("guides","guides"); tg("trail","trail");
+$("theme").onclick=()=>{ const r=document.documentElement, dark=matchMedia("(prefers-color-scheme: dark)").matches; const now=r.dataset.theme||(dark?"dark":"light"); r.dataset.theme=now==="dark"?"light":"dark"; render(cur); };
+$("chart").addEventListener("click",e=>{ const r=e.currentTarget.getBoundingClientRect(); goto(e.currentTarget._map(e.clientX-r.left)); });
+let drag=null;
+cv.addEventListener("pointerdown",e=>{ drag={x:e.clientX,f:cur,moved:false}; try{ cv.setPointerCapture(e.pointerId); }catch{} });
+cv.addEventListener("pointermove",e=>{ if(!drag) return; const dx=e.clientX-drag.x; if(Math.abs(dx)>6) drag.moved=true; if(drag.moved) goto(drag.f+Math.round(dx/6)); });
+cv.addEventListener("pointerup",()=>{ if(drag&&!drag.moved) toggle(); drag=null; });
+cv.addEventListener("pointercancel",()=>{ drag=null; });
+
+// ---------- side-by-side compare, both clips aligned on contact ----------
+const vA=$("vA"), vB=$("vB"), cvA=$("cvA"), cvB=$("cvB"), cmpSeek=$("cmpSeek");
+let A=null, B=null, cmpCur=0, cmpRate=0.25;
+// a/b are [day, stroke number]; presets with two different days compare across sessions
+// from notes.json: a/b are a stroke number in that session, or [session, number] to compare across sessions
+const PRESETS=Object.values(DAYS).flatMap(d=>(d.presets||[]).map(p=>{ const a=Array.isArray(p.a)?p.a:[d.id,p.a], b=Array.isArray(p.b)?p.b:[d.id,p.b]; return {day:a[0]===b[0]&&a[0]===d.id?d.id:"*",a,b,label:p.label}; })).filter(p=>p.a[0] in DAYS&&p.b[0] in DAYS);
+const sKey=s=>s.day+":"+s.id, fromKey=k=>{ const [d,i]=k.split(":"); return DAYS[d].data[+i]; };
+function fillSelect(sel){ sel.innerHTML=Object.entries(DAYS).map(([k,d])=>`<optgroup label="${d.label}">`+d.data.map(s=>`<option value="${sKey(s)}">${d.label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</option>`).join("")+"</optgroup>").join(""); }
+function capFor(s){ const r=Math.round; return `<b>${DAYS[s.day].label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${r(s.knee)}° · 轉肩 ${r(s.open_min)}% · 擊球高度 ${r(s.contact_h*100)}</span>`; }
+function drawPresets(){
+  $("presets").innerHTML="";
+  for(const p of PRESETS.filter(p=>p.day===DAY||p.day==="*")){ const b=document.createElement("button"); b.textContent=p.label; b._p=p; b.onclick=()=>cmpLoad(dayNo(...p.a),dayNo(...p.b)); $("presets").append(b); }
+}
+function cmpLoad(a,b){
+  A=a; B=b; $("selA").value=sKey(A); $("selB").value=sKey(B); $("capA").innerHTML=capFor(A); $("capB").innerHTML=capFor(B);
+  [...$("presets").children].forEach(x=>x.classList.toggle("on",dayNo(...x._p.a)===A&&dayNo(...x._p.b)===B));
+  let ready=0; const go=()=>{ if(++ready===2) cmpGoto(A.contact-48); };
+  for(const [vid,s] of [[vA,A],[vB,B]]){ vid.pause(); vid.playbackRate=cmpRate; vid.src=clipSrc(s); vid.addEventListener("loadedmetadata",go,{once:true}); }
+}
+function cmpRender(f){
+  if(!A||!B) return; cmpCur=f; cmpSeek.value=f;
+  const zo={...OPT,zoom:true}; paint(cvA,vA,A,f,zo); paint(cvB,vB,B,f,zo);
+  const dt=(f-A.contact)/FPS, t=dt===0?"擊球":(dt>0?"+":"")+dt.toFixed(2)+"s"; $("badgeA").textContent=t; $("badgeB").textContent=t;
+}
+function cmpGoto(f){ f=Math.max(0,Math.min(149,f)); vA.pause(); vB.pause(); vA.currentTime=vB.currentTime=(f+0.5)/FPS; cmpRender(f); }
+function cmpTick(){
+  if(Math.abs(vB.currentTime-vA.currentTime)>1.5/FPS) vB.currentTime=vA.currentTime;
+  cmpRender(Math.max(0,Math.min(149,Math.floor(vA.currentTime*FPS+1e-3))));
+  if(!vA.paused) (vA.requestVideoFrameCallback?vA.requestVideoFrameCallback(cmpTick):requestAnimationFrame(cmpTick));
+}
+vA.loop=vB.loop=true;
+vA.addEventListener("play",()=>{ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
+vA.addEventListener("pause",()=>{ $("cmpPlay").textContent="▶ 同步播放"; vB.pause(); });
+for(const vid of [vA,vB]) vid.addEventListener("seeked",()=>{ if(vA.paused) cmpRender(Math.floor(vA.currentTime*FPS+1e-3)); });
+$("cmpPlay").onclick=()=>{ if(vA.paused){ vB.currentTime=vA.currentTime; vA.playbackRate=vB.playbackRate=cmpRate; vA.play(); vB.play(); } else vA.pause(); };
+$("cmpPrev").onclick=()=>cmpGoto(cmpCur-1); $("cmpNext").onclick=()=>cmpGoto(cmpCur+1); $("cmpContact").onclick=()=>cmpGoto(A.contact);
+cmpSeek.oninput=()=>cmpGoto(+cmpSeek.value);
+speedButtons($("cmpSpeeds"),()=>cmpRate,s=>{cmpRate=s;vA.playbackRate=vB.playbackRate=s;});
+fillSelect($("selA")); fillSelect($("selB"));
+$("selA").onchange=()=>cmpLoad(fromKey($("selA").value),B); $("selB").onchange=()=>cmpLoad(A,fromKey($("selB").value));
+for(const c of [cvA,cvB]) c.addEventListener("click",()=>$("cmpPlay").click());
+
+addEventListener("resize",()=>{ if(S) render(cur); cmpRender(cmpCur); });
+addEventListener("keydown",e=>{
+  if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+  const st=e.shiftKey?10:1;
+  if(e.key===" "){e.preventDefault();toggle();}
+  else if(e.key==="ArrowLeft"){e.preventDefault();goto(cur-st);}
+  else if(e.key==="ArrowRight"){e.preventDefault();goto(cur+st);}
+  else if(e.key==="ArrowUp"){e.preventDefault();step(-1);}
+  else if(e.key==="ArrowDown"){e.preventDefault();step(1);}
+  else if(e.key==="n"||e.key==="N"){e.preventDefault();$("noteIn").focus();}
+});
+
+// notes, per stroke, per device
+const KEY="tennis-session-notes-v1";
+let notes={}; try{ notes=JSON.parse(localStorage.getItem(KEY))||{}; }catch{}
+const saveNotes=()=>{ try{ localStorage.setItem(KEY,JSON.stringify(notes)); }catch{} };
+const noteKey=sKey;
+function drawNotes(){
+  const ul=$("notes"); ul.innerHTML=""; const nk=noteKey(S), list=(notes[nk]||[]).sort((a,b)=>a.f-b.f);
+  list.forEach((n,i)=>{ const li=document.createElement("li");
+    const go=document.createElement("button"); go.textContent=relLabel(n.f); go.onclick=()=>goto(n.f);
+    const sp=document.createElement("span"); sp.textContent=n.t;
+    const del=document.createElement("button"); del.textContent="✕"; del.setAttribute("aria-label","刪除筆記"); del.onclick=()=>{list.splice(i,1);notes[nk]=list;saveNotes();drawNotes();};
+    li.append(go,sp,del); ul.append(li); });
+}
+function addNote(){ const t=$("noteIn").value.trim(); if(!t) return; (notes[noteKey(S)]=notes[noteKey(S)]||[]).push({f:cur,t}); $("noteIn").value=""; saveNotes(); drawNotes(); $("noteIn").blur(); }
+$("noteAdd").onclick=addNote; $("noteIn").addEventListener("keydown",e=>{ if(e.key==="Enter") addNote(); });
+
+function setDay(k){
+  DAY=k; ALL=DAYS[k].data; MED=dayStats(ALL); filter="ALL";
+  [...$("days").children].forEach(b=>{ const on=b.dataset.day===k; b.classList.toggle("on",on); b.setAttribute("aria-selected",on); });
+  try{ history.replaceState(null,"","#d"+k); }catch{}
+  drawSummary(); drawChecks(); drawTabs(); drawList(); drawPresets();
+  load(typicalFH().id,false);
+  const p=PRESETS.find(p=>p.day===k);
+  if(p) cmpLoad(dayNo(...p.a),dayNo(...p.b));
+  else { const fh=ALL.filter(s=>s.kind==="FH").sort((x,y)=>x.knee-y.knee); cmpLoad(fh[0]||ALL[0], typicalFH()); }
+}
+for(const [k,d] of Object.entries(DAYS)){ const b=document.createElement("button"); b.dataset.day=k; b.setAttribute("role","tab"); b.textContent=`${d.label} · ${d.data.length} 拍`; b.onclick=()=>setDay(k); $("days").append(b); }
+setDay(location.hash.slice(2) in DAYS ? location.hash.slice(2) : DAY);
+</script>
