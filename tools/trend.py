@@ -33,6 +33,7 @@ def _items(g):
 
 if __name__ == "__main__":
     from common import ROOT, load, save
+    from score import SCORE_VERSION
     S = ROOT / "web" / "sessions"
     runs = sorted((load(p) for p in S.glob("*/scores.json")), key=lambda r: (str(r.get("date", r["session"])), r["session"]))
     H = {}
@@ -41,6 +42,8 @@ if __name__ == "__main__":
             H.setdefault((g["player"], g["kind"]), []).append(dict(session=r["session"], date=r.get("date"), camera=r.get("camera") or "", n=g["n"], knee_src=g.get("knee_src"), score_version=g.get("score_version"), items=_items(g)))
     # only YYYY-MM-DD dates sort correctly as text; undated sessions are listed but never compared
     dated = lambda h: [x for x in h if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(x["date"]))]
+    old = sorted({r["session"] for r in runs if r.get("score_version") != SCORE_VERSION})
+    if old: print("注意：這些場次的 scores.json 版本不是", SCORE_VERSION, "，只會跟同版本的場次比，請重跑 tools/score.py：", ", ".join(old))
     out = [dict(player=p, kind=k, history=h, flags=compare(dated(h))) for (p, k), h in sorted(H.items())]
     save(S / "trend.json", out)
     for t in out:

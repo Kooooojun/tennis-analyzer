@@ -89,7 +89,8 @@ Write `web/sessions/<s>/notes.json`:
  "caveat": "數字的限制：鏡頭位置、被排除的片段、骨架抓錯的拍號。",
  "findings": [
   {"title": "自拋還是比對打站得直", "text": "自拋 33 拍膝蓋中位數 155°，對打 135°。", "cite": [{"kind": "FH", "drill": "feed", "field": "knee3d", "stat": "median", "value": 155}, {"kind": "FH", "drill": "rally", "field": "knee3d", "stat": "median", "value": 135}], "jump": [[5, "好球：#05"], [41, "問題：#41"]]},
-  {"good": true, "title": "...", "text": "...", "jump": [[17, "看 #17"]]}
+  {"good": true, "title": "#17 蹲得最低", "text": "#17 膝蓋 118°。", "cite": [{"stroke": 17, "field": "knee3d", "value": 118}], "jump": [[17, "看 #17"]]},
+  {"info": true, "title": "這場正拍拍數", "text": "可用的正拍有 40 拍。", "cite": [{"kind": "FH", "field": "knee3d", "stat": "n", "value": 40}]}
  ],
  "presets": [{"a": 5, "b": 41, "label": "對打 #05 vs 自拋 #41"}, {"a": ["2026-10-27", 23], "b": 17, "label": "跨場比較"}]
 }
@@ -98,7 +99,7 @@ Write `web/sessions/<s>/notes.json`:
 - `camera` decides comparability. Sessions with the same camera text can be compared in absolute numbers. A phone on the ground close to the player makes knees read about 15° straighter than a raised phone behind the baseline.
 - Set `showOpen` to true only when the camera is roughly behind the player at hip height or higher.
 - Every finding needs `cite`: the numbers it states (single stroke, group stat or score), checked by the script below. Formats: `docs/scoring.md` §8.
-- Keep 3–5 findings, each tied to stroke numbers the user can click. Mark the good ones `good: true`. Use `info: true` for neutral notes.
+- Keep 3–5 findings, each tied to stroke numbers the user can click. Mark the good ones `good: true`. Use `info: true` for neutral notes. Good and info findings need `cite` too: every finding is checked, with no exemption.
 
 Then score the session and update the long-term trend:
 
