@@ -29,6 +29,26 @@ def _knee(xy, J, c):
     return float(np.nanpercentile(ks, 10))
 
 
+PREP_WIN = 60  # frames searched before contact; 84 caught the previous rally stroke (testset/results/prep-contact.md)
+
+
+def _swing_dir(xy, J, c):
+    """+1 / -1: image-x direction of the forward swing (hitting wrist, 0.33 s before contact -> contact). Medians, not the
+    last few frames: the wrist already wraps back in the follow-through when the contact frame is a few frames late."""
+    d = np.nanmedian(xy[c - 2:c + 1, J['rw'], 0]) - np.nanmedian(xy[c - 20:c - 13, J['rw'], 0])
+    return float(np.sign(d)) if np.isfinite(d) and d != 0 else np.nan
+
+
+def _prep(xy, J, c, d):
+    """Seconds from backswing end to contact. Backswing end = the frame, within PREP_WIN before contact, where the hitting
+    wrist is furthest back relative to the hip centre along the swing direction (5-frame median against pose jitter)."""
+    a = max(0, c - PREP_WIN)
+    back = d * (xy[a:c - 3, J['rw'], 0] - (xy[a:c - 3, J['lh'], 0] + xy[a:c - 3, J['rh'], 0]) / 2)
+    sm = np.array([np.nanmedian(back[max(0, i - 2):i + 3]) if np.isfinite(back[max(0, i - 2):i + 3]).any() else np.nan for i in range(len(back))])
+    if not np.isfinite(sm).any(): return None
+    return round((c - a - int(np.nanargmin(sm))) / 60, 3)
+
+
 def _core(xy, vis, c, J, world=None):
     """J maps names to landmark indices for this array layout. world: optional (frames, n, 3) metres, same layout, for knee3d.
     knee = 2D knee (unchanged definition); knee3d = same window/percentile on 3D angles, None without world data."""
@@ -39,11 +59,14 @@ def _core(xy, vis, c, J, world=None):
     k3 = _knee(world, J, c) if world is not None else np.nan
     k2 = _knee(xy, J, c)
     ok3 = bool(np.isfinite(k3))
+    d = _swing_dir(xy, J, c); hx = (xy[c - 2:c + 3, J['lh'], 0] + xy[c - 2:c + 3, J['rh'], 0]) / 2
+    fwd = _med(d * (xy[c - 2:c + 3, J['rw'], 0] - hx) / L[c - 2:c + 3])
     return dict(knee=round(k2, 1), knee3d=round(k3, 1) if ok3 else None,
                 knee_warn=bool(abs(k3 - k2) > KNEE_GAP_MAX) if ok3 else None,
                 open_min=round(float(np.nanpercentile(openp[c - 48:c - 5], 10)), 1),
                 open_contact=round(_med(openp[c - 2:c + 3]), 1),
                 contact_h=round(_med((hip - xy[c - 2:c + 3, J['rw'], 1]) / L[c - 2:c + 3]), 2),
+                contact_fwd=None if fwd is None else round(fwd, 2), prep=_prep(xy, J, c, d) if np.isfinite(d) else None,
                 elbow=round(_med([_angle(xy, i, J['rs'], J['re'], J['rw']) for i in range(c - 2, c + 3)]), 1),
                 vis=round(float(np.nanmean(vis[c - 2:c + 3, J['rw']])), 2))
 

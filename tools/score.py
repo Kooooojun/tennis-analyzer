@@ -4,10 +4,12 @@
 import math
 import numpy as np
 
-# field, 10-point end, 1-point end (or band lo, hi, lo_bad, hi_bad), consistency 10/1 ends
+# field, 10-point end, 1-point end (or band lo, hi, lo_bad, hi_bad), consistency 10/1 ends; no lin/band = consistency only
 METRICS = {
     "knee": dict(lin=(125, 160), cons=(5, 20)),
     "contact_h": dict(band=(0.3, 0.8, -0.2, 1.3), cons=(0.08, 0.30)),
+    "contact_fwd": dict(cons=(0.10, 0.40)),  # no target: "in front" has no measured optimum and the x projection depends on the camera
+    "prep": dict(lin=(0.7, 0.2), cons=(0.05, 0.20)),
     "open_min": dict(lin=(15, 60), cons=(5, 20)),
 }
 KINDS = ("FH", "BH")
@@ -39,7 +41,7 @@ def _value(s, m, knee_src="knee"):
     """The stroke's value for metric m, or None when a quality gate drops it (docs/scoring.md §3)."""
     if m == "knee":
         return None if s.get("knee_warn") else s.get(knee_src)
-    if m == "contact_h" and (not _num(s.get("vis")) or s["vis"] < 0.5): return None  # missing or NaN vis fails the gate
+    if m in ("contact_h", "contact_fwd") and (not _num(s.get("vis")) or s["vis"] < 0.5): return None  # missing or NaN vis fails the gate
     return s.get(m)
 
 
@@ -60,7 +62,7 @@ def score_group(strokes, show_open):
         vals = [v for v in (_value(s, m, knee_src) for s in strokes) if _num(v)]
         med = float(np.median(vals)) if len(vals) >= MIN_N else None
         sp = spread(vals) if len(vals) >= MIN_N_CONS else None
-        sc = lin(med, *cfg["lin"]) if "lin" in cfg else band(med, *cfg["band"])
+        sc = lin(med, *cfg["lin"]) if "lin" in cfg else band(med, *cfg["band"]) if "band" in cfg else None
         out[m] = dict(median=_r(med, 2), spread=_r(sp, 2), n=len(vals), score=_r(sc), cons=_r(lin(sp, *cfg["cons"])))
     form = _mean([x["score"] for x in out.values()]); cons = _mean([x["cons"] for x in out.values()])
     total = None if form is None else form if cons is None else 0.75 * form + 0.25 * cons
