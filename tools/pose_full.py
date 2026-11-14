@@ -5,12 +5,13 @@ c=cv2.VideoCapture(src); W,H=int(c.get(cv2.CAP_PROP_FRAME_WIDTH)),int(c.get(cv2.
 if not (W and H): sys.exit(f"cannot read {src}")
 p=subprocess.Popen(["ffmpeg","-v","error","-i",src,"-an","-f","rawvideo","-pix_fmt","rgb24","-"],stdout=subprocess.PIPE)
 lm=vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(base_options=BaseOptions(model_asset_path=model),running_mode=vision.RunningMode.VIDEO,min_pose_detection_confidence=0.3,min_tracking_confidence=0.3))
-rows=[];n=0
+rows=[];wrows=[];n=0
 while True:
     b=p.stdout.read(W*H*3)
     if len(b)<W*H*3:break
     r=lm.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB,data=np.frombuffer(b,np.uint8).reshape(H,W,3)),int(n*1000/60))
     rows.append([[q.x,q.y,q.visibility] for q in r.pose_landmarks[0]] if r.pose_landmarks else np.full((33,3),np.nan))
+    wrows.append([[q.x,q.y,q.z] for q in r.pose_world_landmarks[0]] if r.pose_world_landmarks else np.full((33,3),np.nan))
     n+=1
     if n%6000==0: print(n,flush=True)
-np.save(out,np.array(rows,dtype=np.float32)); print("done",n)
+np.save(out.replace("pose.npy","pose_world.npy"),np.array(wrows,dtype=np.float32)); np.save(out,np.array(rows,dtype=np.float32)); print("done",n)  # world: meters, hip-centred, same frames x33x3

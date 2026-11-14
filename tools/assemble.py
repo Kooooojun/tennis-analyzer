@@ -10,12 +10,14 @@ bad = [r for r in rows if not (r[0].isdigit() and int(r[0]) < len(C)) or not (r[
 if bad or len(rows) != len(C) or sorted(int(r[0]) for r in rows) != list(range(len(C))):
     sys.exit(f"labels.txt must have one line per candidate 0..{len(C) - 1}: '<idx> <FH|BH|SV|OH|x> <feed|rally|high|unsure|->' (text after that is ignored). bad lines: {bad[:5]}")
 
-P = {}; SZ = {}; out = []
+P = {}; WD = {}; SZ = {}; out = []
 for r in sorted(rows, key=lambda r: int(r[0])):
     if r[1] == "x": continue
     c = C[int(r[0])]
     if c["v"] not in P: P[c["v"]] = np.load(Wd / c["v"] / "pose.npy").astype(float); SZ[c["v"]] = size(Wd / c["v"] / "proxy.mp4")
-    m = measure_full(P[c["v"]], c["t"], SZ[c["v"]])
+    if c["v"] not in WD:
+        wp = Wd / c["v"] / "pose_world.npy"; WD[c["v"]] = np.load(wp).astype(float) if wp.exists() else None  # old sessions: no 3D
+    m = measure_full(P[c["v"]], c["t"], SZ[c["v"]], WD[c["v"]])
     out.append(dict(t=round(c["t"], 3), video=c["v"], vn=c["vn"], cand=int(r[0]), arc=round(c["arc"], 2),
                     size=SZ[c["v"]], kind=r[1], drill=None if r[1] == "SV" or r[2] == "-" else r[2], **m))
 out.sort(key=lambda x: (x["vn"], x["t"]))
