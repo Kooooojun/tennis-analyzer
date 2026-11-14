@@ -324,23 +324,23 @@ function strokeLabel(s){ return `#${String(s.id+1).padStart(2,"0")} ${NAMES[s.ki
 const drillName = s => s.kind!=="FH" ? "" : s.drill==="feed" ? "自己拋球" : s.drill==="rally" ? "對打" : s.drill==="high" ? "高拋" : "";
 
 // ---------- per-stroke series ----------
-function angle(fr, a, b, c){
+function angle(fr, a, b, c, ar){  // ar = frame height / width
   const A=fr[K[a]], B=fr[K[b]], C=fr[K[c]];
-  const ax=A[0]-B[0], ay=(A[1]-B[1])*16/9, cx=C[0]-B[0], cy=(C[1]-B[1])*16/9, d=Math.hypot(ax,ay)*Math.hypot(cx,cy);
+  const ax=A[0]-B[0], ay=(A[1]-B[1])*ar, cx=C[0]-B[0], cy=(C[1]-B[1])*ar, d=Math.hypot(ax,ay)*Math.hypot(cx,cy);
   return d ? Math.acos(Math.max(-1,Math.min(1,(ax*cx+ay*cy)/d)))*180/Math.PI : null;
 }
 function smooth(arr,k=3){ return arr.map((_,i)=>{ if(arr[i]==null) return null; const w=[]; for(let j=i-k;j<=i+k;j++) if(arr[j]!=null) w.push(arr[j]); w.sort((a,b)=>a-b); return w[w.length>>1]; }); }
 const SER = new Map();
 function series(s){
   if(SER.has(s)) return SER.get(s);
-  const fr=s.frames;
-  const kR=fr.map(p=>p?angle(p,24,26,28):null), kL=fr.map(p=>p?angle(p,23,25,27):null);
+  const fr=s.frames, ar=s.size ? s.size[1]/s.size[0] : 16/9;  // strokes from before landscape support have no size
+  const kR=fr.map(p=>p?angle(p,24,26,28,ar):null), kL=fr.map(p=>p?angle(p,23,25,27,ar):null);
   const out={
-    elbow: smooth(fr.map(p=>p?angle(p,12,14,16):null)),
+    elbow: smooth(fr.map(p=>p?angle(p,12,14,16,ar):null)),
     knee: smooth(kR.map((r,i)=>r==null?null:Math.min(r,kL[i]))),
     kneeSide: kR.map((r,i)=>r==null?null:(r<=kL[i]?"R":"L")),
     open: smooth(fr.map(p=>{ if(!p) return null; const hx=(p[K[23]][0]+p[K[24]][0])/2, hy=(p[K[23]][1]+p[K[24]][1])/2;
-      const bh=Math.hypot(p[0][0]-hx,(p[0][1]-hy)*16/9); const sw=Math.hypot(p[K[12]][0]-p[K[11]][0],(p[K[12]][1]-p[K[11]][1])*16/9);
+      const bh=Math.hypot(p[0][0]-hx,(p[0][1]-hy)*ar); const sw=Math.hypot(p[K[12]][0]-p[K[11]][0],(p[K[12]][1]-p[K[11]][1])*ar);
       return bh? Math.min(120, sw/bh/SWMAX*100) : null; })),
   };
   SER.set(s,out); return out;
@@ -359,7 +359,7 @@ function fitCanvas(cv){ const dpr=devicePixelRatio||1, r=cv.getBoundingClientRec
 function paint(cv, vid, s, f, opt){
   const {g,W,H}=fitCanvas(cv); g.clearRect(0,0,W,H);
   if(!s) return;
-  const vw=vid.videoWidth||540, vh=vid.videoHeight||960;
+  const vw=vid.videoWidth||(s.size||[540,960])[0], vh=vid.videoHeight||(s.size||[540,960])[1];
   let X, Y;
   if(opt.zoom){
     // crop the frame around the player and draw it ourselves, so both sides show the body at the same scale
@@ -539,6 +539,7 @@ function load(id, scroll){
   $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${Math.round(m.open)}%`:"這場鏡頭角度不適合看轉肩，參考就好";
   $("mHeight").innerHTML=fmt(S.contact_h*100,""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
   $("mElbow").innerHTML=fmt(S.elbow,"°"); $("cElbow").textContent=`中位數 ${Math.round(m.elbow)}°`+(S.vis<0.5?" · 偵測信心低":"");
+  $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage
   v.src=clipSrc(S); v.playbackRate=rate;
   const start=()=>goto(S.contact-48);
   if(v.readyState>=1 && v.currentSrc.endsWith(clipSrc(S))) start(); else v.addEventListener("loadedmetadata",start,{once:true});

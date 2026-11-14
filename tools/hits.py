@@ -12,4 +12,4 @@ for i in np.argsort(-on):
 cand=sorted(cand)
 t=np.array(cand)*hop/SR; pk=np.array([db[i:i+6].max() for i in cand])
 np.save(sys.argv[2],np.stack([t,pk,on[cand]],1))
-print(len(t),"onsets; peak dB pct",np.percentile(pk,[10,50,90]).round(1))
+print(len(t),"onsets; peak dB pct",np.percentile(pk,[10,50,90]).round(1) if len(pk) else "-")

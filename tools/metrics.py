@@ -2,9 +2,13 @@
 measure_full() on a whole-video pose.npy (33 landmarks), measure_clip() on the 150-frame web clip (KEEP landmarks)."""
 import numpy as np
 import warnings; warnings.filterwarnings("ignore")
-from common import ASPECT
+from common import PORTRAIT
 
-A = np.array(ASPECT)
+
+def _scale(size):
+    """Normalized landmarks -> units of 540 px, so thresholds mean the same in portrait (540x960) and landscape (960x540)."""
+    return np.array(size or PORTRAIT, float) / 540
+
 SWMAX = 0.5527  # shoulder width / (nose-to-hip) when chest is square to the camera; 100% open
 
 
@@ -36,9 +40,9 @@ FULL = dict(nose=0, ls=11, rs=12, re=14, rw=16, lh=23, rh=24, lk=25, rk=26, la=2
 CLIP = dict(nose=0, ls=1, rs=2, re=4, rw=6, lh=7, rh=8, lk=9, rk=10, la=11, ra=12)
 
 
-def measure_full(P, t):
-    """P: pose.npy (frames,33,3). t: contact time in seconds. Adds an automatic FH/BH/OH guess."""
-    xy = P[:, :, :2] * A; f = int(round(t * 60))
+def measure_full(P, t, size):
+    """P: pose.npy (frames,33,3). t: contact time in seconds. size: proxy (w, h). Adds an automatic FH/BH/OH guess."""
+    xy = P[:, :, :2] * _scale(size); f = int(round(t * 60))
     hip_x = np.nanmean((xy[f - 8:f + 9, 23, 0] + xy[f - 8:f + 9, 24, 0]) / 2)
     nose_y = np.nanmean(xy[f - 3:f + 4, 0, 1]); wy = np.nanmin(xy[f - 6:f + 7, 16, 1])
     dx = np.nanmean(xy[f + 15:f + 22, 16, 0]) - np.nanmean(xy[f - 12:f - 6, 16, 0]); side = np.nanmean(xy[f - 2:f + 3, 16, 0]) - hip_x
@@ -46,7 +50,7 @@ def measure_full(P, t):
     return dict(f=f, auto_kind=auto, **_core(xy, P[:, :, 2], f, FULL))
 
 
-def measure_clip(frames, c):
+def measure_clip(frames, c, size=None):
     nan = [[np.nan] * 3] * 17
     P = np.array([nan if fr is None else fr for fr in frames], float)
-    return _core(P[:, :, :2] * A, P[:, :, 2], c, CLIP)
+    return _core(P[:, :, :2] * _scale(size), P[:, :, 2], c, CLIP)

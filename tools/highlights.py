@@ -7,7 +7,7 @@
 import subprocess,sys,numpy as np,cv2
 from pathlib import Path
 from PIL import Image,ImageDraw,ImageFont
-from common import ROOT, session, work, web, load
+from common import ROOT, session, work, web, load, PORTRAIT
 S=session(); OUT=web(S)/"reel.mp4"; W,H=1080,1350; TOP=230; FPS=30
 FONTS=["/System/Library/Fonts/STHeiti Medium.ttc","/System/Library/Fonts/PingFang.ttc","/System/Library/Fonts/Hiragino Sans GB.ttc",
        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc","/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc","C:/Windows/Fonts/msjh.ttc"]
@@ -30,13 +30,14 @@ def frames(s):
         out.append(im)
     return out
 def box(s,aspect):
-    P=[f for f in s['frames'] if f]; cx=np.median([(f[7][0]+f[8][0])/2 for f in P])*540
-    top=np.median([f[0][1] for f in P])*960; ank=np.median([(f[11][1]+f[12][1])/2 for f in P])*960
-    h=min(960,max(300,(ank-top)*1.9)); w=min(540,h*aspect); h=w/aspect
-    cy=(top+ank)/2; x0=int(np.clip(cx-w/2,0,540-w)); y0=int(np.clip(cy-h/2,0,960-h))
+    sw,sh=s.get('size',PORTRAIT)
+    P=[f for f in s['frames'] if f]; cx=np.median([(f[7][0]+f[8][0])/2 for f in P])*sw
+    top=np.median([f[0][1] for f in P])*sh; ank=np.median([(f[11][1]+f[12][1])/2 for f in P])*sh
+    h=min(sh,max(300*sh/960,(ank-top)*1.9)); w=min(sw,h*aspect); h=w/aspect
+    cy=(top+ank)/2; x0=int(np.clip(cx-w/2,0,sw-w)); y0=int(np.clip(cy-h/2,0,sh-h))
     return x0,y0,int(w),int(h)
-def ang(f,a,b,c):
-    A,B,C=[np.array(f[i][:2])*[540,960] for i in (a,b,c)]; v1,v2=A-B,C-B; n=np.linalg.norm(v1)*np.linalg.norm(v2)
+def ang(f,a,b,c,size):
+    A,B,C=[np.array(f[i][:2])*size for i in (a,b,c)]; v1,v2=A-B,C-B; n=np.linalg.norm(v1)*np.linalg.norm(v2)
     return np.degrees(np.arccos(np.clip(v1@v2/n,-1,1))) if n else None
 def panel(s,im,i,size,bx):
     x0,y0,w,h=bx; k=size[0]/w
@@ -44,10 +45,10 @@ def panel(s,im,i,size,bx):
     pil=Image.fromarray(cv2.cvtColor(crop,cv2.COLOR_BGR2RGB)); d=ImageDraw.Draw(pil)
     f=s['frames'][i] if i<len(s['frames']) else None
     if f:
-        P=lambda j:((f[j][0]*540-x0)*k,(f[j][1]*960-y0)*k)
+        sw,sh=s.get('size',PORTRAIT); P=lambda j:((f[j][0]*sw-x0)*k,(f[j][1]*sh-y0)*k)
         for a,b in EDGES: d.line([P(a),P(b)],fill=(255,140,70) if a%2==0 and b%2==0 else (90,180,255),width=5)
         for j in range(13): x,y=P(j); d.ellipse([x-5,y-5,x+5,y+5],fill=(255,255,255))
-        kr,kl=ang(f,8,10,12),ang(f,7,9,11)
+        kr,kl=ang(f,8,10,12,(sw,sh)),ang(f,7,9,11,(sw,sh))
         if kr and kl:
             a,j=(kr,10) if kr<=kl else (kl,9); x,y=P(j)
             d.text((x+14,y-18),f"{a:.0f}°",font=F(34),fill=kc(a),stroke_width=4,stroke_fill=(0,0,0))

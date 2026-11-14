@@ -19,7 +19,7 @@ tools/prep.sh <s>
 
 This makes the proxy, audio, pose, onsets and match files per video in `work/<s>/<video>/`, plus `videos.json`, which fixes the order (video 1, 2, 3 by filename). Pose runs about real time, so 40 minutes of video takes about 40 minutes. Run it in the background and tell the user how long it will take. It resumes where it stopped.
 
-Only portrait video is supported. If prep rejects a landscape file, tell the user, don't work around it.
+Portrait and landscape 16:9 video both work (proxy is 540x960 or 960x540; each stroke stores its `size`). The tracker follows one body, so with two or more people in frame expect runs on the wrong person and mark them `x other-player`.
 
 ## 2. Candidates and labels (judgment)
 
