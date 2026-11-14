@@ -1,5 +1,6 @@
 # trend.py — every web/sessions/*/scores.json -> history per (player, kind) with flags -> web/sessions/trend.json
 # Latest session vs the mean of up to 3 earlier sessions with the same camera and knee source (docs/scoring.md §6).
+import re
 import numpy as np
 
 WEAK, STRONG, STEP, BASE_N = 6, 8, 1.0, 3
@@ -12,12 +13,12 @@ def compare(history):
     if not history or history[-1]["n"] < MIN_N: return []
     history = [h for h in history if h["n"] >= MIN_N]
     if len(history) < 2: return []
-    last = history[-1]; prev = [h for h in history[:-1] if h["camera"] == last["camera"] and h.get("knee_src") == last.get("knee_src")]
+    last = history[-1]; prev = [h for h in history[:-1] if last["camera"] and h["camera"] == last["camera"] and h.get("knee_src") == last.get("knee_src")]
     out = []
     for item, v in last["items"].items():
         # total / consistency average over whichever metrics were scored, so only compare sessions that scored the same set
         same = [h for h in prev if item not in ("total", "consistency") or h["items"].keys() == last["items"].keys()]
-        olds = [h["items"].get(item) for h in same]; olds = [x for x in olds if x is not None][-BASE_N:]
+        olds = [h["items"].get(item) for h in same][-BASE_N:]; olds = [x for x in olds if x is not None]
         if v is None or not olds: continue
         base = round(float(np.mean(olds)), 2); d = round(v - base, 2)
         if abs(d) < STEP: continue
@@ -38,7 +39,9 @@ if __name__ == "__main__":
     for r in runs:
         for g in r["groups"]:
             H.setdefault((g["player"], g["kind"]), []).append(dict(session=r["session"], date=r.get("date"), camera=r.get("camera") or "", n=g["n"], knee_src=g.get("knee_src"), items=_items(g)))
-    out = [dict(player=p, kind=k, history=h, flags=compare(h)) for (p, k), h in sorted(H.items())]
+    # only YYYY-MM-DD dates sort correctly as text; undated sessions are listed but never compared
+    dated = lambda h: [x for x in h if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(x["date"]))]
+    out = [dict(player=p, kind=k, history=h, flags=compare(dated(h))) for (p, k), h in sorted(H.items())]
     save(S / "trend.json", out)
     for t in out:
         print(f"== {t['player']} {t['kind']}")

@@ -35,11 +35,10 @@ def spread(vals):
     q1, q3 = np.percentile(vals, [25, 75]); return float((q3 - q1) / 1.349)
 
 
-def _value(s, m):
+def _value(s, m, knee_src="knee"):
     """The stroke's value for metric m, or None when a quality gate drops it (docs/scoring.md §3)."""
     if m == "knee":
-        if s.get("knee_warn"): return None
-        return s["knee3d"] if _num(s.get("knee3d")) else s.get("knee")
+        return None if s.get("knee_warn") else s.get(knee_src)
     if m == "contact_h" and (not _num(s.get("vis")) or s["vis"] < 0.5): return None  # missing or NaN vis fails the gate
     return s.get(m)
 
@@ -52,19 +51,20 @@ def _r(x, d=1): return None if x is None else round(x, d)
 
 
 def score_group(strokes, show_open):
+    # one knee source per group: 2D shifts 9-19 deg with view angle, so a 2D/3D mix is not comparable
+    ok = [s for s in strokes if not s.get("knee_warn")]
+    knee_src = "knee3d" if sum(_num(s.get("knee3d")) for s in ok) > len(ok) / 2 else "knee"
     out = {}
     for m, cfg in METRICS.items():
         if m == "open_min" and not show_open: continue
-        vals = [v for v in (_value(s, m) for s in strokes) if _num(v)]
+        vals = [v for v in (_value(s, m, knee_src) for s in strokes) if _num(v)]
         med = float(np.median(vals)) if len(vals) >= MIN_N else None
         sp = spread(vals) if len(vals) >= MIN_N_CONS else None
         sc = lin(med, *cfg["lin"]) if "lin" in cfg else band(med, *cfg["band"])
         out[m] = dict(median=_r(med, 2), spread=_r(sp, 2), n=len(vals), score=_r(sc), cons=_r(lin(sp, *cfg["cons"])))
     form = _mean([x["score"] for x in out.values()]); cons = _mean([x["cons"] for x in out.values()])
     total = None if form is None else form if cons is None else 0.75 * form + 0.25 * cons
-    k3 = sum(_num(s.get("knee3d")) for s in strokes)
-    return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), metrics=out,
-                knee_src="knee3d" if k3 > len(strokes) / 2 else "knee")
+    return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), metrics=out, knee_src=knee_src)
 
 
 def score_session(strokes, show_open):

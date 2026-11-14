@@ -56,6 +56,12 @@ G = score_session([st(knee=120)] * 5 + [st(player="A", knee=160)] * 5 + [st(kind
 assert {(g["player"], g["kind"]) for g in G} == {("me", "FH"), ("A", "FH")}
 assert grp(G)["metrics"]["knee"]["score"] == 10 and grp(G, player="A")["metrics"]["knee"]["score"] == 1
 
+# one knee source per group: a 3D majority uses only 3D strokes, never a 2D/3D mix
+g = grp(score_session([st(knee=160, knee3d=k) for k in (110, 115, 120, 125, 130)] + [st(knee=160)] * 4, False))
+assert g["knee_src"] == "knee3d" and g["metrics"]["knee"]["median"] == 120 and g["metrics"]["knee"]["n"] == 5
+# strokes dropped by knee_warn do not count toward the source vote
+g = grp(score_session([st(knee3d=120, knee_warn=True)] * 4 + [st(knee=130)] * 3, False))
+assert g["knee_src"] == "knee" and g["metrics"]["knee"]["median"] == 130
 
 # trend.compare(history): history = [{"session", "camera", "items": {name: score|None}}] oldest first
 def h(s, cam="c", n=20, **items): return dict(session=s, camera=cam, n=n, items=items)
@@ -77,6 +83,8 @@ assert compare([h("a", knee=None), h("b", knee=2)]) == [] and compare([h("a", kn
 # 10: other cameras are not comparable
 assert compare([h("a", "ground", knee=9), h("b", "tripod", knee=3)]) == []
 assert compare([h("a", "x", knee=9), h("b", "y", knee=9), h("c", "x", knee=7)])[0]["base"] == 9
+# unknown camera ("") is not a camera: never comparable, even to another unknown
+assert compare([h("a", "", knee=9), h("b", "", knee=3)]) == []
 # 15: groups under 10 strokes are too noisy to compare (same-day retest, testset/results/score-trend_pred.md)
 assert compare([h("a", knee=9), h("b", n=5, knee=3)]) == []
 assert compare([h("a", knee=9), h("b", knee=3), h("c", n=5, knee=3)]) == []  # small latest must not flag an older session
