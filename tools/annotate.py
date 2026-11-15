@@ -1,0 +1,119 @@
+# annotate.py <session> [video] — whole practice video re-encoded with skeleton, stroke numbers, player names and a small live-stats panel
+# -> web/sessions/<s>/annotated_<video>.mp4 (1280x720, 60 fps, original audio), ready to send to a friend. No video argument = every video in the session.
+# Needs work/<s>/<video>/pose.npy (tools/prep.sh). Stroke numbers and figures come from web/sessions/<s>/strokes.json (final numbers shown on the page);
+# without it you still get the skeleton + live knee angle. Frames are streamed ffmpeg -> draw -> ffmpeg, so memory does not grow with video length.
+# Drawing constants (fonts, colours, knee colouring) mirror tools/highlights.py, which is a script and cannot be imported.
+import json, subprocess, sys, time, numpy as np, cv2
+from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
+from common import ROOT, FPS, session, work, web, videos, load
+
+LONG = 1280  # long side of the output, px
+FONTS = ["/System/Library/Fonts/STHeiti Medium.ttc", "/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc",
+         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", "C:/Windows/Fonts/msjh.ttc"]
+FONT = next((f for f in FONTS if Path(f).exists()), None) or sys.exit("no CJK font found; add one to FONTS in annotate.py")
+INK = (240, 240, 240); MUTE = (160, 165, 175); GOOD = (74, 222, 128); WARN = (251, 191, 36); BAD = (248, 113, 113); GOLD = (255, 214, 10)
+kc = lambda a: GOOD if a <= 130 else WARN if a <= 150 else BAD
+# MediaPipe landmark indices: shoulders 11/12, elbows 13/14, wrists 15/16, hips 23/24, knees 25/26, ankles 27/28
+EDGES = [(11, 12), (11, 13), (13, 15), (12, 14), (14, 16), (11, 23), (12, 24), (23, 24), (23, 25), (25, 27), (24, 26), (26, 28)]
+JOINTS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]
+KIND = {"FH": "正拍", "BH": "反拍", "SV": "發球", "OH": "高壓"}; DRILL = {"feed": "自拋", "rally": "對打", "high": "高球"}
+PRE, POST = 30, 150  # a stroke's tag shows from 0.5 s before contact to 2.5 s after
+MINVIS = 0.3
+_fonts = {}
+def F(n): return _fonts.setdefault(n, ImageFont.truetype(FONT, n))
+
+
+def probe(src):
+    """(w, h, seconds) after rotation, the same view ffmpeg decodes."""
+    j = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration:stream_side_data=rotation", "-of", "json", str(src)]))
+    st = j["streams"][0]; w, h = st["width"], st["height"]
+    if any(abs(int(sd.get("rotation", 0))) in (90, 270) for sd in st.get("side_data_list", [])): w, h = h, w
+    return w, h, float(st.get("duration") or 0)
+
+
+def angle(a, b, c):
+    v1, v2 = a - b, c - b; n = np.linalg.norm(v1) * np.linalg.norm(v2)
+    return float(np.degrees(np.arccos(np.clip(v1 @ v2 / n, -1, 1)))) if n else None
+
+
+def live_knee(p, w, size):
+    """(angle, knee landmark) of the more bent knee; 3D when pose_world exists (same rule as highlights.py), else 2D in pixels."""
+    pts = lambda a: [(w[i] if w is not None else p[i, :2] * size) for i in a]
+    r = angle(*pts((24, 26, 28))); l = angle(*pts((23, 25, 27)))
+    return (r, 26) if r is not None and l is not None and r <= l else (l, 25) if l is not None and r is not None else (None, None)
+
+
+def draw_text(img, x, y, s, size, col, anchor="la"):
+    """Draw CJK text with PIL on just the small region it covers, then paste it back (a full 720p PIL round trip per frame is too slow)."""
+    f = F(size); l, t, r, b = f.getbbox(s, anchor=anchor, stroke_width=3); x0, y0 = int(x + l) - 2, int(y + t) - 2; x1, y1 = int(x + r) + 2, int(y + b) + 2
+    H, W = img.shape[:2]; x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, W), min(y1, H)
+    if x1 <= x0 or y1 <= y0: return
+    pil = Image.fromarray(cv2.cvtColor(img[y0:y1, x0:x1], cv2.COLOR_BGR2RGB))
+    ImageDraw.Draw(pil).text((x - x0, y - y0), s, font=f, fill=col, anchor=anchor, stroke_width=3, stroke_fill=(0, 0, 0))
+    img[y0:y1, x0:x1] = cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)
+
+
+def stroke_info(x):
+    k = x["knee3d"] if x.get("knee3d") is not None else x["knee"]
+    head = f"#{x['no']:02d} {KIND.get(x['kind'], x['kind'])}" + (f"·{DRILL[x['drill']]}" if x.get("drill") in DRILL else "")
+    lines = [(f"準備時膝蓋 {k:.0f}°", kc(k))]
+    if x.get("prep") is not None: lines.append((f"準備時間 {x['prep']:.2f}s", INK))
+    if x.get("contact_h") is not None: lines.append((f"擊球高度 {x['contact_h']:.2f}", INK))
+    if x.get("knee_warn"): lines.append(("這拍角度不準", BAD))
+    return head, lines
+
+
+def annotate(s, name, src):
+    Wd = work(s) / name; pose = np.load(Wd / "pose.npy")
+    wp = Wd / "pose_world.npy"; world = np.load(wp) if wp.exists() else None
+    vn = videos(s).index(name) + 1
+    sp = web(s) / "strokes.json"; allS = load(sp) if sp.exists() else []
+    S = sorted(({**x, "no": i + 1, "c": round(x["t"] * FPS)} for i, x in enumerate(allS) if x["video"] == vn), key=lambda x: x["c"])
+    w, h, _ = probe(src); sc = LONG / max(w, h); W, H = int(round(w * sc / 2)) * 2, int(round(h * sc / 2)) * 2
+    out = web(s) / f"annotated_{name}.mp4"; out.parent.mkdir(parents=True, exist_ok=True)
+    enc = ["-c:v", "h264_videotoolbox", "-b:v", "6000k"] if sys.platform == "darwin" else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22"]
+    dec = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(src), "-an", "-vf", f"scale={W}:{H},fps={FPS}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"], stdout=subprocess.PIPE)
+    enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-i", str(src), "-map", "0:v", "-map", "1:a:0?",
+                            *enc, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", str(out)], stdin=subprocess.PIPE)
+    t0 = time.time(); n = 0
+    while True:
+        b = dec.stdout.read(W * H * 3)
+        if len(b) < W * H * 3: break
+        img = np.frombuffer(b, np.uint8).reshape(H, W, 3).copy()
+        p = pose[n] if n < len(pose) and not np.isnan(pose[n][0, 0]) else None
+        st = next((x for x in reversed(S) if x["c"] - PRE <= n <= x["c"] + POST), None)  # latest stroke whose window covers this frame
+        if p is not None:
+            P = lambda j: (int(p[j, 0] * W), int(p[j, 1] * H)); ok = lambda j: p[j, 2] >= MINVIS
+            for a, c in EDGES:
+                if ok(a) and ok(c): cv2.line(img, P(a), P(c), (255, 140, 70) if a % 2 == 0 and c % 2 == 0 else (90, 180, 255), 3, cv2.LINE_AA)  # BGR: left-side orange, right-side blue like highlights.py
+            for j in JOINTS:
+                if ok(j): cv2.circle(img, P(j), 4, (255, 255, 255), -1, cv2.LINE_AA)
+            a, j = live_knee(p, world[n] if world is not None and n < len(world) and not np.isnan(world[n][0, 0]) else None, (W, H))
+            if a is not None and ok(j): x, y = P(j); draw_text(img, x + 14, y - 18, f"{a:.0f}°", 26, kc(a))
+            if st is not None:
+                nx, ny = P(0); who = (f" {st['player']}" if st.get("player") else "")
+                draw_text(img, nx, max(ny - 44, 30), f"#{st['no']:02d}{who}", 30, INK, "ma")
+        if st is not None:
+            head, lines = stroke_info(st); x, y = 20, 16
+            ov = img.copy(); cv2.rectangle(ov, (10, 8), (330, 16 + 40 + 30 * len(lines) + 4), (24, 20, 18), -1); cv2.addWeighted(ov, 0.6, img, 0.4, 0, img)
+            draw_text(img, x, y, head, 30, INK)
+            for i, (t, col) in enumerate(lines): draw_text(img, x, y + 40 + i * 30, t, 24, col)
+            if abs(n - st["c"]) <= 3: draw_text(img, W // 2, H - 24, "擊球", 44, GOLD, "ms")
+        enc.stdin.write(img.tobytes()); n += 1
+    dec.stdout.close(); enc.stdin.close(); enc.wait(); dec.wait()
+    if enc.returncode or dec.returncode: sys.exit(f"ffmpeg failed on {name} (decode {dec.returncode}, encode {enc.returncode})")
+    dt = time.time() - t0
+    print(f"{name}: {n} frames ({n / FPS:.1f}s video, pose {len(pose)} frames), {len(S)} strokes, {W}x{H}, {dt:.0f}s ({n / FPS / dt:.2f}x realtime), {out.stat().st_size / 1e6:.1f} MB -> {out}")
+
+
+if __name__ == "__main__":
+    s = session(); names = videos(s)
+    if len(sys.argv) > 2:
+        want = Path(sys.argv[2]).stem
+        if want not in names: sys.exit(f"{want} not in work/{s}/videos.json: {names}")
+        names = [want]
+    for name in names:
+        src = next(iter(sorted(p for p in (ROOT / "videos" / s).iterdir() if p.stem == name and p.suffix.lower() in (".mov", ".mp4", ".m4v"))), None)
+        if src is None: sys.exit(f"no video named {name} in videos/{s}/")
+        annotate(s, name, src)
