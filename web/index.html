@@ -403,7 +403,7 @@ const hPct = s => s.contact_h==null ? null : s.contact_h*100;  // null*100 would
 const kneeSrc = g => { const ok=g.filter(s=>!s.knee_warn); return ok.filter(s=>s.knee3d!=null&&isFinite(s.knee3d)).length>ok.length/2?"knee3d":"knee"; };  // same source pick as score.py score_group
 const kneeOk = (s,src="knee") => !(s.knee_warn||(src==="knee"&&s.knee2d_ok===false));  // score.py _value gate
 // knee: s.knee is already 3D when there is one (see DAYS), so the 2D source reads knee2d
-const stats = g => ({knee:(src=>median(g.map(s=>!kneeOk(s,src)?null:src==="knee3d"?s.knee3d:s.knee2d??s.knee)))(kneeSrc(g)), open:median(g.map(s=>s.open_min)), h:median(g.map(hPct)), openC:median(g.map(s=>s.open_contact))});
+const stats = g => ({knee:(src=>median(g.map(s=>!kneeOk(s,src)?null:src==="knee3d"?s.knee3d:s.knee3d!=null?s.knee2d:s.knee)))(kneeSrc(g)), open:median(g.map(s=>s.open_min)), h:median(g.map(hPct)), openC:median(g.map(s=>s.open_contact))});
 const dayStats = data => { const k=(kind,drill)=>data.filter(s=>s.kind===kind&&(!drill||s.drill===drill)); return {FH:stats(k("FH")), BH:stats(k("BH")), SV:stats(k("SV")), feed:stats(k("FH","feed")), rally:stats(k("FH","rally"))}; };
 let filter="ALL", pfilter="ALL";
 let MED = dayStats(ALL);
@@ -533,8 +533,8 @@ function paint(cv, vid, s, f, opt){
 // ---------- session summary ----------
 function typicalFH(){ const fh=feedFH().length?feedFH():byKind("FH").length?byKind("FH"):mine(), m=feedFH().length?MED.feed:MED.FH, t=(a,b,w)=>a==null||b==null?0:Math.abs(a-b)/w, d=s=>t(s.knee,m.knee,20)+t(hPct(s),m.h,30)+t(s.open_min,m.open,15); return [...fh].sort((a,b)=>d(a)-d(b))[0]; }
 function drawSummary(){
-  const fh=byKind("FH"), bh=byKind("BH"), sv=byKind("SV"), fd=feedFH(), ry=rallyFH();
-  $("sub").textContent = `${DAYS[DAY].label} · ${DAYS[DAY].sub} · 找出 ${ALL.length} 拍（正拍 ${fh.length}、反拍 ${bh.length}${sv.length?`、發球 ${sv.length}`:""}）`;
+  const cnt=k=>ALL.filter(s=>s.kind===k).length, fh=cnt("FH"), bh=cnt("BH"), sv=cnt("SV");  // the whole session, not the picked player
+  $("sub").textContent = `${DAYS[DAY].label} · ${DAYS[DAY].sub} · 找出 ${ALL.length} 拍（正拍 ${fh}、反拍 ${bh}${sv?`、發球 ${sv}`:""}）`;
   const r=Math.round;
   const items = (DAYS[DAY].findings||[]).map(f=>({cls:f.good?"good":f.info?"info":"", t:f.title, p:f.text, j:(f.jump||[]).map(([n,l])=>[byNo(n),l]), c:f.cite||[]}));
   if(!items.length) items.push({cls:"info", t:"這場還沒有寫重點", p:"請 Claude 看完數字後寫進 notes.json 的 findings，再跑 tools/build_site.py。", j:[], c:[]});
@@ -621,7 +621,7 @@ function strip(id,title,hint,get,lo,hi,unit,ticks,fmt=Math.round){  // one metri
   for(const val of yt){ mk("line",{x1:pl,x2:W-pr,y1:y(val),y2:y(val),stroke:"var(--line)","stroke-width":1}); mk("text",{x:pl-4,y:y(val)+3,"text-anchor":"end","font-size":10,fill:"var(--muted)"}).textContent=fmt(val)+unit; }
   for(const i of [0,...[10,20,30,40,50,60,70,80,90].filter(k=>k<ALL.length)]) mk("text",{x:x(i),y:H-3,"text-anchor":"middle","font-size":10,fill:"var(--muted)"}).textContent="#"+String(i+1).padStart(2,"0");
   for(const k of ["FH","BH"]){
-    const g=byKind(k).filter(s=>get(s)!=null&&isFinite(get(s))), m=median(g.filter(s=>id!=="stripKnee"||kneeOk(s,s.knee3d!=null?"knee3d":"knee")).map(get)), col=`var(--${k.toLowerCase()})`;
+    const g=byKind(k).filter(s=>get(s)!=null&&isFinite(get(s))), m=id==="stripKnee"?MED[k].knee:median(g.map(get)), col=`var(--${k.toLowerCase()})`;
     if(g.length>1) mk("polyline",{points:g.map(s=>`${x(s.id)},${y(get(s))}`).join(" "),fill:"none",stroke:col,"stroke-opacity":0.35,"stroke-width":1.2});
     if(m!=null) mk("line",{x1:pl,x2:W-pr,y1:y(m),y2:y(m),stroke:col,"stroke-width":1.5,"stroke-dasharray":"5 4"});
   }
@@ -697,7 +697,7 @@ function drawChecks(){
 // ---------- stroke picker ----------
 function drawTabs(){
   $("tabs").innerHTML="";
-  const tabs=[["ALL",`全部 ${ALL.length}`],["FH",`正拍 ${byKind("FH").length}`],["BH",`反拍 ${byKind("BH").length}`]];
+  const tabs=[["ALL",`全部 ${mine().length}`],["FH",`正拍 ${byKind("FH").length}`],["BH",`反拍 ${byKind("BH").length}`]];
   if(byKind("SV").length) tabs.push(["SV",`發球 ${byKind("SV").length}`]);
   for(const [k,label] of tabs){ const b=document.createElement("button"); b.textContent=label; b.classList.toggle("on",filter===k); b.onclick=()=>{ filter=k; drawTabs(); drawList(); }; $("tabs").append(b); }
   const ps=DAYS[DAY].players; if(ps.length<2) return;
@@ -740,7 +740,7 @@ function load(id, scroll){
   const dn=drillName(S);
   $("nowTitle").textContent=strokeLabel(S)+(dn?" · "+dn:"");
   $("detailTitle").textContent=`這一拍：${strokeLabel(S)}${dn?"（"+dn+"）":""}`;
-  const m=S.kind==="FH"?(S.drill==="feed"?MED.feed:S.drill==="rally"?MED.rally:MED.FH):MED[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
+  const M=pfilter==="ALL"||who(S)===pfilter?MED:dayStats(ALL.filter(s=>who(s)===who(S))), m=S.kind==="FH"?(S.drill==="feed"?M.feed:S.drill==="rally"?M.rally:M.FH):M[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
   const fmt=(x,u)=>x==null?"–":`${Math.round(x)}<small>${u}</small>`;
   $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${m.knee==null?"–":Math.round(m.knee)+"°"}`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");
   // body-kinematics (docs/scoring.md §11): trunk share, turn and leg load read the same from any horizontal camera angle
