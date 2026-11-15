@@ -36,6 +36,7 @@ PREP_WIN = FPS  # frames (1.0 s) searched before contact; 84 caught the previous
 def _swing_dir(xy, J, c):
     """+1 / -1: image-x direction of the forward swing (hitting wrist, 0.33 s before contact -> contact). Medians, not the
     last few frames: the wrist already wraps back in the follow-through when the contact frame is a few frames late."""
+    if c < 20: return np.nan  # window would start before the video and wrap to its end
     d = np.nanmedian(xy[c - 2:c + 1, J['rw'], 0]) - np.nanmedian(xy[c - 20:c - 13, J['rw'], 0])
     return float(np.sign(d)) if np.isfinite(d) and d != 0 else np.nan
 
@@ -143,21 +144,29 @@ def _core(xy, vis, c, J, world=None, hand="R"):
     L = np.linalg.norm((xy[:, J['ls']] + xy[:, J['rs']]) / 2 - (xy[:, J['lh']] + xy[:, J['rh']]) / 2, axis=1)
     bh = np.linalg.norm(xy[:, J['nose']] - (xy[:, J['lh']] + xy[:, J['rh']]) / 2, axis=1)
     openp = np.clip(np.linalg.norm(xy[:, J['rs']] - xy[:, J['ls']], axis=1) / bh / SWMAX * 100, 0, 120)
-    hip = (xy[c - 2:c + 3, J['lh'], 1] + xy[c - 2:c + 3, J['rh'], 1]) / 2
-    k3 = _knee(world, J, c) if world is not None else np.nan
-    k2 = _knee(xy, J, c)
-    ok3 = bool(np.isfinite(k3))
-    d = _swing_dir(xy, J, c); hx = (xy[c - 2:c + 3, J['lh'], 0] + xy[c - 2:c + 3, J['rh'], 0]) / 2
-    fwd = _med(d * (xy[c - 2:c + 3, J['rw'], 0] - hx) / L[c - 2:c + 3])
+    # Incomplete windows give None, never a silently shortened or wrapped number (same rule as kinematics' c0 < 48)
+    pre = c >= 48; ct = 2 <= c <= len(xy) - 3; w = slice(c - 2, c + 3)
+    r = lambda x, n: None if x is None or not np.isfinite(x) else round(float(x), n)
+    k3 = _knee(world, J, c) if world is not None and pre else np.nan
+    k2 = _knee(xy, J, c) if pre else np.nan
+    ok3 = bool(np.isfinite(k3)); ok2 = bool(np.isfinite(k2))
+    d = _swing_dir(xy, J, c) if ct else np.nan
+    if ct:
+        hip = (xy[w, J['lh'], 1] + xy[w, J['rh'], 1]) / 2; hx = (xy[w, J['lh'], 0] + xy[w, J['rh'], 0]) / 2
+        fwd = _med(d * (xy[w, J['rw'], 0] - hx) / L[w])
+        ch = _med((hip - xy[w, J['rw'], 1]) / L[w]); oc = _med(openp[w]); el = _med([_angle(xy, i, J['rs'], J['re'], J['rw']) for i in range(c - 2, c + 3)])
+        vis_c = float(np.nanmean(vis[w, J['rw']])) if np.isfinite(vis[w, J['rw']]).any() else None
+    else: fwd = ch = oc = el = vis_c = None
     prep = _prep(xy, J, c, d) if np.isfinite(d) else None
-    return dict(knee=round(k2, 1), knee3d=round(k3, 1) if ok3 else None,
-                knee_warn=bool(abs(k3 - k2) > KNEE_GAP_MAX) if ok3 else None,
-                open_min=round(float(np.nanpercentile(openp[c - 48:c - 5], 10)), 1),
-                open_contact=round(_med(openp[c - 2:c + 3]), 1),
-                contact_h=round(_med((hip - xy[c - 2:c + 3, J['rw'], 1]) / L[c - 2:c + 3]), 2),
-                contact_fwd=None if fwd is None else round(fwd, 2), prep=prep,
-                elbow=round(_med([_angle(xy, i, J['rs'], J['re'], J['rw']) for i in range(c - 2, c + 3)]), 1),
-                vis=round(float(np.nanmean(vis[c - 2:c + 3, J['rw']])), 2),
+    op = openp[c - 48:c - 5] if pre else np.array([np.nan])
+    return dict(knee=r(k2, 1) if ok2 else None, knee3d=round(k3, 1) if ok3 else None,
+                knee_warn=bool(abs(k3 - k2) > KNEE_GAP_MAX) if ok3 and ok2 else None,
+                open_min=r(np.nanpercentile(op, 10), 1) if np.isfinite(op).any() else None,
+                open_contact=r(oc, 1),
+                contact_h=r(ch, 2),
+                contact_fwd=r(fwd, 2), prep=prep,
+                elbow=r(el, 1),
+                vis=r(vis_c, 2),
                 **kinematics(xy, J, c, "R", None if prep is None else c - round(prep * FPS)))  # J is already remapped for the racket hand
 
 

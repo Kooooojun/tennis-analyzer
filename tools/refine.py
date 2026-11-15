@@ -23,7 +23,7 @@ for r in d:
     r["t"] = round(r["t"] + df / 60, 3)
     m, sec = divmod(r["t"], 60); r["clock"] = f"{r['video']}·{int(m)}:{sec:04.1f}"
     if df != C.get("default_off", 0) or str(no) in C.get("set", {}):
-        print(f"raw #{no:02d} {df:+d} {r['kind']} {r.get('drill')} h {round(old * 100)} -> {round(r['contact_h'] * 100)}  knee {r['knee']}")
+        print(f"raw #{no:02d} {df:+d} {r['kind']} {r.get('drill')} h {None if old is None else round(old * 100)} -> {None if r['contact_h'] is None else round(r['contact_h'] * 100)}  knee {r['knee']}")
     out.append(r)
 for i, r in enumerate(out): r["id"] = i
 save(D / "strokes.json", out, compact=True)
