@@ -403,7 +403,8 @@ const hPct = s => s.contact_h==null ? null : s.contact_h*100;  // null*100 would
 const kneeSrc = g => { const ok=g.filter(s=>!s.knee_warn); return ok.filter(s=>s.knee3d!=null&&isFinite(s.knee3d)).length>ok.length/2?"knee3d":"knee"; };  // same source pick as score.py score_group
 const kneeOk = (s,src="knee") => !(s.knee_warn||(src==="knee"&&s.knee2d_ok===false));  // score.py _value gate
 // knee: s.knee is already 3D when there is one (see DAYS), so the 2D source reads knee2d
-const stats = g => ({knee:(src=>median(g.map(s=>!kneeOk(s,src)?null:src==="knee3d"?s.knee3d:s.knee3d!=null?s.knee2d:s.knee)))(kneeSrc(g)), open:median(g.map(s=>s.open_min)), h:median(g.map(hPct)), openC:median(g.map(s=>s.open_contact))});
+const kneeOf = (s,src) => src==="knee3d"?s.knee3d:s.knee3d!=null?s.knee2d:s.knee;
+const stats = g => ({knee:(src=>median(g.map(s=>kneeOk(s,src)?kneeOf(s,src):null)))(kneeSrc(g)), open:median(g.map(s=>s.open_min)), h:median(g.map(s=>s.vis>=0.5?hPct(s):null))  /* score.py vis gate */, openC:median(g.map(s=>s.open_contact))});
 const dayStats = data => { const k=(kind,drill)=>data.filter(s=>s.kind===kind&&(!drill||s.drill===drill)); return {FH:stats(k("FH")), BH:stats(k("BH")), SV:stats(k("SV")), feed:stats(k("FH","feed")), rally:stats(k("FH","rally"))}; };
 let filter="ALL", pfilter="ALL";
 let MED = dayStats(ALL);
@@ -552,7 +553,8 @@ function drawSummary(){
 }
 // charts measure their container, so they are drawn when the 圖表 tab is shown (a hidden tab is 0 px wide)
 function drawCharts(){
-  strip("stripKnee","準備時膝蓋角度","越低越蹲",s=>s.knee,90,180,"°",[90,110,130,150,170]);
+  const ks={FH:kneeSrc(byKind("FH")),BH:kneeSrc(byKind("BH"))};  // dots use the same 2D/3D source as the median line
+  strip("stripKnee","準備時膝蓋角度","越低越蹲",s=>kneeOf(s,ks[s.kind]),90,180,"°",[90,110,130,150,170]);
   strip("stripHeight","擊球高度","髖部 = 0、肩膀 = 100，綠帶是腰到胸口",hPct,-40,100,"",[-40,-20,0,20,40,60,80,100]);
   $("stripPrep").hidden=!mine().some(s=>s.prep!=null); $("contactPlot").hidden=$("stripPrep").hidden;  // sessions before prep-contact have neither field
   if(!$("stripPrep").hidden){ strip("stripPrep","準備時間","引拍完成到擊球，越高越早拉好",s=>s.prep,0,1,"s",[0,0.2,0.4,0.6,0.8,1],v=>v.toFixed(1)); drawContact(); }
@@ -674,15 +676,15 @@ function drawChecks(){
     ["擊球","在身體前方、腰到胸口的高度擊球（畫面上的綠色區）。低球用膝蓋降下去，不要用手撈。", you(`你：${[fd.h!=null&&`自己拋球時擊球高度 ${r(fd.h)}`,ry.h!=null&&`對打 ${r(ry.h)}`].filter(Boolean).join("，")}`,[fd.h??ry.h],(fd.h??ry.h)>=30)],
     ["收拍","從下往上揮，拍子收到非持拍手那側的肩膀上方。",""],
   ];
-  const B=MED.BH, bs=byKind("BH"), L=one(bs,"hand")==="L", off=L?"右":"左", front=L?"左腳":"右腳", type=one(bs,"backhand");
+  const B=MED.BH, bs=byKind("BH"), hd=one(bs,"hand"), off=hd==="L"?"右":hd==="R"?"左":"非持拍", side=hd?off:"非持拍手那側", front=hd==="L"?"前腳（左腳）":hd==="R"?"前腳（右腳）":"前腳",  /* unknown hand: no left/right */ type=one(bs,"backhand");
   const bh=type==="one"?[
-    ["準備",`${off}手扶拍喉，一起把拍子帶到${off}後方，背對來球方向。`, you(`你：反拍轉肩中位數 ${n(B.open,"%")}`,[B.open],DAYS[DAY].showOpen&&B.open<=35)],
-    ["蓄力",`前腳（${front}）踩出去，膝蓋彎。`, you(`你：反拍膝蓋中位數 ${n(B.knee,"°")}`,[B.knee],B.knee<=140)],
+    ["準備",`${off}手扶拍喉，一起把拍子帶到${side}後方，背對來球方向。`, you(`你：反拍轉肩中位數 ${n(B.open,"%")}`,[B.open],DAYS[DAY].showOpen&&B.open<=35)],
+    ["蓄力",`${front}踩出去，膝蓋彎。`, you(`你：反拍膝蓋中位數 ${n(B.knee,"°")}`,[B.knee],B.knee<=140)],
     ["擊球",`擊球點在前腳前方，手臂接近伸直。${off}手往後展開，讓肩膀在擊球時維持側身。`, you(`你：擊球時肩膀打開中位數 ${n(B.openC,"%")}`,[B.openC],DAYS[DAY].showOpen&&B.openC<=35)],
     ["收拍","持拍手往前上方延伸，胸口最後才轉向球網。",""],
   ]:[  // two-handed, or unknown: only what both backhands share
-    ["準備",`${type==="two"?"兩手握拍，":""}看到球就轉肩，把拍子帶到${off}後方。`, you(`你：反拍轉肩中位數 ${n(B.open,"%")}`,[B.open],DAYS[DAY].showOpen&&B.open<=35)],
-    ["蓄力",`前腳（${front}）踩出去，膝蓋彎。`, you(`你：反拍膝蓋中位數 ${n(B.knee,"°")}`,[B.knee],B.knee<=140)],
+    ["準備",`${type==="two"?"兩手握拍，":""}看到球就轉肩，把拍子帶到${side}後方。`, you(`你：反拍轉肩中位數 ${n(B.open,"%")}`,[B.open],DAYS[DAY].showOpen&&B.open<=35)],
+    ["蓄力",`${front}踩出去，膝蓋彎。`, you(`你：反拍膝蓋中位數 ${n(B.knee,"°")}`,[B.knee],B.knee<=140)],
     ["擊球","擊球點在身體前方。", ""],
     ["收拍",`${type==="two"?"兩手一起":"拍子"}往前上方送，收到持拍手那側的肩膀上方。`,""],
   ];
