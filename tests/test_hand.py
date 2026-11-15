@@ -10,8 +10,9 @@ from common import ROOT, load_profiles, profile_for
 
 NAMES = ROOT / "testset/labels/private_names.json"  # 檔名留在私有檔，公開 repo 只有別名
 PN = json.load(open(NAMES, encoding="utf-8")) if NAMES.exists() else dict(wall_a=["?"], wall_dir="?", wall_strokes="?")
-VIDS = PN["wall_a"]; V0 = VIDS[0]; WD = ROOT / PN["wall_dir"]; STROKES = ROOT / PN["wall_strokes"]
-NEED = [NAMES, STROKES, WD / V0 / "pose_t1.npy", ROOT / f"testset/labels/hits_{V0}.csv"]
+VIDS = PN.get("wall_a") or ["?"]; V0 = VIDS[0]; WD = ROOT / PN.get("wall_dir", "?"); STROKES = ROOT / PN.get("wall_strokes", "?")
+NEED = [NAMES, STROKES, WD / V0 / "pose_t1.npy", WD / V0 / "events.npy", ROOT / f"testset/labels/hits_{V0}.csv"]
+NEED += [WD / v / f for v in VIDS for f in ("pose.npy", "pose_world.npy")]
 if not all(p.exists() for p in NEED):  # private footage-derived data, only on the owner's machine
     print("skip: test_hand needs local wall-1 data"); sys.exit(0)
 
@@ -94,7 +95,10 @@ print("設定檔 OK")
 from metrics import arm_checks
 from common import KEEP
 LEFTY = [ROOT / d for d in PN.get("lefty", [])]
-if len(LEFTY) == 2 and all((d / "strokes_all.json").exists() for d in LEFTY):
+def _lefty_ok(d):  # strokes_all.json 與它用到的每支影片的姿態都在才跑
+    f = d / "strokes_all.json"
+    return f.exists() and all((d / s["video"] / n).exists() for s in json.load(open(f, encoding="utf-8")) for n in ("pose.npy", "pose_world.npy"))
+if len(LEFTY) == 2 and all(_lefty_ok(d) for d in LEFTY):
     got = {}
     for d in LEFTY:
         S = [s for s in json.load(open(d / "strokes_all.json", encoding="utf-8")) if s.get("player") and s["hand"] == "L"]; c = {}

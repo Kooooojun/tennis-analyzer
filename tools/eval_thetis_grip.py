@@ -39,7 +39,7 @@ def feats():
 
 
 def held_out(F, col, gate, splits):
-    """splits: [(train_mask, test_mask)]，門檻在 train&gate 上選；回傳 (test 命中, test 數, 覆蓋分母)。"""
+    """splits: [(train_mask, test_mask)]，門檻在 train&gate 上選；回傳 (test 命中, test 數)；覆蓋 = test 數 ÷ 全部拍數，由呼叫者算。"""
     k = n = 0
     ok = np.isfinite(F[:, col]) & (F[:, 3] >= gate)
     for tr, te in splits:
