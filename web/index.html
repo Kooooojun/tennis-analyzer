@@ -740,7 +740,8 @@ function load(id, scroll){
   const dn=drillName(S);
   $("nowTitle").textContent=strokeLabel(S)+(dn?" · "+dn:"");
   $("detailTitle").textContent=`這一拍：${strokeLabel(S)}${dn?"（"+dn+"）":""}`;
-  const M=pfilter==="ALL"||who(S)===pfilter?MED:dayStats(ALL.filter(s=>who(s)===who(S))), m=S.kind==="FH"?(S.drill==="feed"?M.feed:S.drill==="rally"?M.rally:M.FH):M[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
+  const M=dayStats(ALL.filter(s=>who(s)===who(S))),  // the stroke's own player, so switching the list filter never leaves this card stale
+  m=S.kind==="FH"?(S.drill==="feed"?M.feed:S.drill==="rally"?M.rally:M.FH):M[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
   const fmt=(x,u)=>x==null?"–":`${Math.round(x)}<small>${u}</small>`;
   $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${m.knee==null?"–":Math.round(m.knee)+"°"}`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");
   // body-kinematics (docs/scoring.md §11): trunk share, turn and leg load read the same from any horizontal camera angle
