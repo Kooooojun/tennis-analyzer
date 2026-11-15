@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from kind import classify
+from kind import classify, prefill, PREFILL_MIN, CONF_MIN
 
 N, F = 200, 120
 
@@ -76,4 +76,10 @@ for hw, want in ((15, "?"), (60, "FH")):
     for k, (x, y) in {0: (480, 160), 11: (450, 200), 12: (510, 200), 23: (480 - hw / 2, 300), 24: (480 + hw / 2, 300), 15: (440, 290), 16: (480 + hw * 1.5, 290)}.items():
         Q[:, k, 0] = x / 960; Q[:, k, 1] = y / 540
     assert classify(Q, F, "R", None, size=(960, 540))["kind"] == want, (hw, classify(Q, F, "R", None, size=(960, 540)))
+# 18: prefill() only writes the kind when the evidence is strong: just below PREFILL_MIN -> '?', at or above -> the kind
+assert PREFILL_MIN > CONF_MIN  # stricter than the old pre-fill line, and CONF_MIN itself is untouched (auto_kind / scoring)
+assert prefill("FH", PREFILL_MIN - 0.01) == "?" and prefill("FH", PREFILL_MIN) == "FH" and prefill("BH", PREFILL_MIN + 0.01) == "BH"
+assert prefill("FH", 0.5) == "?"  # the old line pre-filled this one
+assert prefill("?", 0.9) == "?" and prefill("FH", None) == "?"  # no kind / no conf (no hand profile) -> '?'
+assert prefill("FH", 0.5, 0.5) == "FH"  # explicit line = the old behaviour
 print("kind tests ok")

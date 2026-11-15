@@ -2,6 +2,7 @@
 import collections, hashlib, json, sys, numpy as np
 from common import session, work, load, save, size, track_file, players, load_profiles, profile_for
 from metrics import measure_full, hand_gate
+from kind import PREFILL_MIN
 
 KINDS = {"FH", "BH", "SV", "OH"}; DRILLS = {"feed", "rally", "high", "unsure", "-"}
 cands_fp = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()[:16]  # candidates.py writes it into labels.txt as '# cands <fp>'
@@ -21,6 +22,18 @@ def read_labels(Wd, C):
     if bad or len(rows) != len(C) or sorted(int(r[0]) for r in rows) != list(range(len(C))):
         sys.exit(f"labels.txt must have one line per candidate 0..{len(C) - 1}: '<idx> <FH|BH|SV|OH|x> <feed|rally|high|unsure|->' (text after that is ignored). bad lines: {bad[:5]}")
     return rows
+
+
+BULK_N = 10  # this many lines of one kind and not a single x: probably accepted wholesale (the user's wall video A: 79 x FH, ~2 in 7 fake)
+
+
+def bulk_warning(rows):
+    """A warning when no candidate was dropped and one kind fills >= BULK_N lines, else None. Only a hint: nothing is changed."""
+    n = collections.Counter(r[1] for r in rows)
+    k, c = n.most_common(1)[0] if n else ("", 0)
+    if n["x"] == 0 and c >= BULK_N:
+        return (f"WARNING: no line is x and {c} lines are {k}. Hit sounds include bounces, a ball dropped from the hand and shadow swings; "
+                "re-check every sheet and keep a line only where you see the ball on the strings or just leaving them")
 
 
 player_of = lambda i, who, C: who[i] or C[i].get("player") or "me"  # '@name' first; null / missing player = me
@@ -69,6 +82,8 @@ def main():
     out.sort(key=lambda x: (x["vn"], x["t"]))
     save(Wd / "strokes_all.json", out)
     print(len(out), "strokes", dict(collections.Counter((x["player"], x["kind"], x["drill"]) for x in out)))
+    if w := bulk_warning(rows): print(w)
+    print(f"kind_conf < {PREFILL_MIN} (weak swing evidence, look again):", [x["cand"] for x in out if x["kind_conf"] is None or x["kind_conf"] < PREFILL_MIN])
     print("auto-kind disagreements (worth a second look):", [x["cand"] for x in out if x["kind"] != x["auto_kind"]])
 
 
