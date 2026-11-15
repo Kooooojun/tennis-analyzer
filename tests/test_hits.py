@@ -109,8 +109,8 @@ assert edge_skipped(np.array([[44 / 60, -20, 12]]), N) == 1 and edge_skipped(np.
 assert edge_skipped(np.array([[(N - 30) / 60, -20, 12]]), N) == 0 and edge_skipped(np.array([[(N - 29) / 60, -20, 12]]), N) == 1
 assert edge_skipped(np.array([[1.0, -20, 12], [1.5, -20, 12]]), 60) == 2        # N < 75: every hit skipped
 assert edge_skipped(np.zeros((0, 3)), N) == 0
-# the count agrees with match(): rows kept + skipped-by-edge never exceeds events
+# the count agrees with match(): the edge hits never come back as rows
 p = body(N); p[:, 0, 1] = 0.2; p[:, [27, 28], 1] = 0.9
 ev = np.array([[44 / 60, -20, 12], [100 / 60, -20, 12], [(N - 29) / 60, -20, 12]])
-assert edge_skipped(ev, N) == 2 and len(match(p, ev, A)) <= 1
+assert edge_skipped(ev, N) == 2 and set(match(p, ev, A)[:, 0]) <= {100 / 60}
 print("ok")
