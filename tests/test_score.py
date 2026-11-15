@@ -51,9 +51,14 @@ g = grp(score_session([st(knee=160, knee3d=120)] * 6, False))
 assert g["metrics"]["knee"]["median"] == 120 and g["knee_src"] == "knee3d"
 g = grp(score_session([st(knee=130, knee3d=None)] * 6, False))
 assert g["metrics"]["knee"]["median"] == 130 and g["knee_src"] == "knee"
-# 9: players kept apart, default "me"; SV/OH not scored
-G = score_session([st(knee=120)] * 5 + [st(player="A", knee=160)] * 5 + [st(kind="SV")] * 5, False)
+# 9: players kept apart, default "me"; OH not scored; SV group exists only with SV strokes and carries only the serve metrics
+G = score_session([st(knee=120)] * 5 + [st(player="A", knee=160)] * 5 + [st(kind="OH")] * 5, False)
 assert {(g["player"], g["kind"]) for g in G} == {("me", "FH"), ("A", "FH")}
+G = score_session([st(knee=120)] * 5 + [st(kind="SV", reach=1.2, tilt=15, lean=8, stance=1.5)] * 5, False)
+assert {(g["player"], g["kind"]) for g in G} == {("me", "FH"), ("me", "SV")}
+assert set(grp(G, kind="SV")["metrics"]) == {"reach", "tilt", "lean", "stance"} and "finish" in grp(G)["metrics"] and "reach" not in grp(G)["metrics"]
+assert grp(G, kind="SV")["metrics"]["reach"]["status"] == "ok" and grp(G, kind="SV")["metrics"]["reach"]["score"] is None  # consistency only, no target
+G = score_session([st(knee=120)] * 5 + [st(player="A", knee=160)] * 5, False)
 assert grp(G)["metrics"]["knee"]["score"] == 10 and grp(G, player="A")["metrics"]["knee"]["score"] == 1
 
 # one knee source per group: a 3D majority uses only 3D strokes, never a 2D/3D mix
@@ -114,7 +119,7 @@ assert (c["n"], c["passed"], c["failed"], c["unclear"]) == (7, 4, 1, 2) and c["s
 assert check_session([sv(None)] * 6)[0]["status"] == "資料不足"  # nothing decided
 assert check_session([sv(True)] * 2)[0]["status"] == "資料不足"  # < 3 decided
 assert check_session([st("FH"), st("BH")]) == []  # old strokes without the new fields, FH, two-handed BH: no checks at all
-assert score_session([sv(True), st()], False) == score_session([st()], False)  # SV rows do not change FH/BH scores
+assert [g for g in score_session([sv(True), st()], False) if g["kind"] != "SV"] == score_session([st()], False)  # SV rows do not change FH/BH scores
 print("ok")
 
 # prep-contact（testset/results/prep-contact_pred.md）：準備時間越長越好；擊球前後位置只評一致性、不評好壞
@@ -126,5 +131,5 @@ assert cf["score"] is None and cf["cons"] == 10 and cf["status"] == "ok" and cf[
 assert g["metrics"]["prep"]["score"] == 10 and g["form"] == 10  # a consistency-only metric does not drag the form score
 g = grp(score_session([st(contact_fwd=0.5, vis=0.2)] * 6, False))
 assert g["metrics"]["contact_fwd"]["n"] == 0 and g["metrics"]["contact_fwd"]["status"] == "資料不足"
-assert SCORE_VERSION == 3
+assert SCORE_VERSION == 4
 print("prep-contact score tests ok")
