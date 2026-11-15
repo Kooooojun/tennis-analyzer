@@ -784,14 +784,16 @@ function watchStall(vid){
   const m=document.createElement("button"); m.type="button"; m.className="vid-msg"; m.hidden=true; vid.parentElement.append(m);
   let sig="", since=0, wait=0, tries=0, src="";
   let restore=null, keep=null;  // the pending time restore of the last reload and its [time, playing]; dropped when the clip changes
-  const reload=(tap=false)=>{ tries++; since=Date.now(); const url=vid.currentSrc;
-    const [t,play,rate]=keep&&!vid.readyState?keep:[vid.readyState?vid.currentTime:null,vid.error?!!vid._want:!vid.paused,vid.playbackRate]; keep=[t,play||tap,rate];  // a reload that never got metadata keeps the first target (a retry tap means play); Chrome marks a failed clip paused before its error fires, so ask what the viewer wanted
+  const reload=(tap=false,still=false)=>{  // still: fetch again but stay paused (the compare retry keeps both sides in step)
+    tries++; since=Date.now(); const url=vid.currentSrc;
+    const [t,play,rate]=keep&&!vid.readyState?keep:[vid.readyState?vid.currentTime:null,vid.error?!!vid._want:!vid.paused,vid.playbackRate]; const want=!still&&(play||tap); keep=[t,want,rate];  // a reload that never got metadata keeps the first target (a retry tap means play); Chrome marks a failed clip paused before its error fires, so ask what the viewer wanted
     if(restore) vid.removeEventListener("loadedmetadata",restore);
-    restore=()=>{ const go=(play||tap)&&!!vid.offsetParent; restore=keep=null; vid._reloading=false; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t; if(!go||vid.paused){ vid.pause(); if(vid===v) $("play").textContent="▶ 播放"; else if(vid===vA) $("cmpPlay").textContent="▶ 同步播放"; } else if(vid===vA){ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); } else if(vid===v){ $("play").textContent="⏸ 暫停"; tick(); } };  // the play handlers skip a play fired before metadata; a blocked play() leaves the clip paused with no pause event, so the buttons are set here
+    restore=()=>{ const go=want&&!!vid.offsetParent; restore=keep=null; vid._reloading=false; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t; if(!go||vid.paused){ vid.pause(); if(vid===v) $("play").textContent="▶ 播放"; else if(vid===vA) $("cmpPlay").textContent="▶ 同步播放"; } else if(vid===vA){ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); } else if(vid===v){ $("play").textContent="⏸ 暫停"; tick(); } };  // the play handlers skip a play fired before metadata; a blocked play() leaves the clip paused with no pause event, so the buttons are set here
     vid.addEventListener("loadedmetadata",restore,{once:true});
-    vid._reloading=url; vid.src=url; vid.playbackRate=rate; if(play||tap) playSafe(vid,vid.parentElement.querySelector(".badge")); };
+    vid._reloading=url; vid.src=url; vid.playbackRate=rate; if(want) playSafe(vid,vid.parentElement.querySelector(".badge")); };
   const fail=()=>{ stopDead(vid); m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; };
-  m.onclick=()=>{ delete m.dataset.fail; tries=0; m.textContent="影片下載中…"; reload(true); };
+  m.onclick=()=>{ delete m.dataset.fail; tries=0; m.textContent="影片下載中…"; reload(!m._still,!!m._still); m._still=false; };
+  vid.addEventListener("loadedmetadata",()=>{ tries=0; delete m.dataset.fail; m.hidden=true; });  // metadata means the clip is alive again, even with the same src
   setInterval(()=>{
     if(!vid.currentSrc||!vid.offsetParent) return;
     if(vid.currentSrc!==src){ src=vid.currentSrc; if(restore){ vid.removeEventListener("loadedmetadata",restore); restore=null; } keep=null; vid._reloading=false; tries=0; wait=0; delete m.dataset.fail; m.hidden=true; }
@@ -937,7 +939,7 @@ vA.addEventListener("play",()=>{ if(!vA.readyState) return; $("cmpPlay").textCon
 vA.addEventListener("pause",()=>{ if(vA._reloading&&!vA.readyState) return; $("cmpPlay").textContent="▶ 同步播放"; hold(vB); });  // ignored only for the reload's own pause, before its metadata
 for(const vid of [vA,vB]) vid.addEventListener("seeked",()=>{ if(vA.paused) cmpRender(Math.floor(vA.currentTime*FPS+1e-3)); });
 $("cmpPlay").onclick=()=>{ const dead=[vA,vB].filter(x=>x.parentElement.querySelector(".vid-msg[data-fail]"));
-  if(dead.length){ for(const x of dead) x.parentElement.querySelector(".vid-msg").click(); for(const x of [vA,vB]) if(!dead.includes(x)){ x.playbackRate=cmpRate; playSafe(x,$(x===vA?"badgeA":"badgeB")); } return; }  // a side that gave up: play means retry it
+  if(dead.length){ for(const x of dead){ const m=x.parentElement.querySelector(".vid-msg"); m._still=true; m.click(); } return; }  // a side that gave up: play means retry it; both stay paused until the next tap so they start together
   if(vA.paused||!vA.readyState){ vB.currentTime=cmpBt(); vA.playbackRate=vB.playbackRate=cmpRate; playSafe(vA,$("badgeA")); playSafe(vB,$("badgeB")); } else vA.pause(); };
 $("cmpPrev").onclick=()=>cmpGoto(cmpCur-1); $("cmpNext").onclick=()=>cmpGoto(cmpCur+1); $("cmpContact").onclick=()=>cmpGoto(A.contact);
 cmpSeek.oninput=()=>cmpGoto(+cmpSeek.value);
