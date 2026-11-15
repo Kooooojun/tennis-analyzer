@@ -25,11 +25,11 @@ def F(n): return _fonts.setdefault(n, ImageFont.truetype(FONT, n))
 
 
 def probe(src):
-    """(w, h, seconds) after rotation, the same view ffmpeg decodes."""
-    j = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration:stream_side_data=rotation", "-of", "json", str(src)]))
+    """(w, h) after rotation, the same view ffmpeg decodes."""
+    j = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:stream_side_data=rotation", "-of", "json", str(src)]))
     st = j["streams"][0]; w, h = st["width"], st["height"]
     if any(abs(int(sd.get("rotation", 0))) in (90, 270) for sd in st.get("side_data_list", [])): w, h = h, w
-    return w, h, float(st.get("duration") or 0)
+    return w, h
 
 
 def angle(a, b, c):
@@ -65,17 +65,19 @@ def stroke_info(x):
 
 
 def annotate(s, name, src):
-    Wd = work(s) / name; pose = np.load(Wd / "pose.npy")
+    Wd = work(s) / name
+    if not (Wd / "pose.npy").exists(): sys.exit(f"missing work/{s}/{name}/pose.npy; run tools/prep.sh {s}")
+    pose = np.load(Wd / "pose.npy")
     wp = Wd / "pose_world.npy"; world = np.load(wp) if wp.exists() else None
     vn = videos(s).index(name) + 1
     sp = web(s) / "strokes.json"; allS = load(sp) if sp.exists() else []
     S = sorted(({**x, "no": i + 1, "c": round(x["t"] * FPS)} for i, x in enumerate(allS) if x["video"] == vn), key=lambda x: x["c"])
-    w, h, _ = probe(src); sc = LONG / max(w, h); W, H = int(round(w * sc / 2)) * 2, int(round(h * sc / 2)) * 2
+    w, h = probe(src); sc = LONG / max(w, h); W, H = int(round(w * sc / 2)) * 2, int(round(h * sc / 2)) * 2
     out = web(s) / f"annotated_{name}.mp4"; out.parent.mkdir(parents=True, exist_ok=True)
-    enc = ["-c:v", "h264_videotoolbox", "-b:v", "6000k"] if sys.platform == "darwin" else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22"]
+    vcodec = ["-c:v", "h264_videotoolbox", "-b:v", "6000k"] if sys.platform == "darwin" else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22"]
     dec = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(src), "-an", "-vf", f"scale={W}:{H},fps={FPS}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"], stdout=subprocess.PIPE)
     enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-i", str(src), "-map", "0:v", "-map", "1:a:0?",
-                            *enc, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", str(out)], stdin=subprocess.PIPE)
+                            *vcodec, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", str(out)], stdin=subprocess.PIPE)
     t0 = time.time(); n = 0
     while True:
         b = dec.stdout.read(W * H * 3)
@@ -86,7 +88,7 @@ def annotate(s, name, src):
         if p is not None:
             P = lambda j: (int(p[j, 0] * W), int(p[j, 1] * H)); ok = lambda j: p[j, 2] >= MINVIS
             for a, c in EDGES:
-                if ok(a) and ok(c): cv2.line(img, P(a), P(c), (255, 140, 70) if a % 2 == 0 and c % 2 == 0 else (90, 180, 255), 3, cv2.LINE_AA)  # BGR: left-side orange, right-side blue like highlights.py
+                if ok(a) and ok(c): cv2.line(img, P(a), P(c), (255, 140, 70) if a % 2 == 0 and c % 2 == 0 else (90, 180, 255), 3, cv2.LINE_AA)  # BGR: right side (even landmark ids) orange, left blue, like highlights.py
             for j in JOINTS:
                 if ok(j): cv2.circle(img, P(j), 4, (255, 255, 255), -1, cv2.LINE_AA)
             a, j = live_knee(p, world[n] if world is not None and n < len(world) and not np.isnan(world[n][0, 0]) else None, (W, H))
@@ -96,13 +98,19 @@ def annotate(s, name, src):
                 draw_text(img, nx, max(ny - 44, 30), f"#{st['no']:02d}{who}", 30, INK, "ma")
         if st is not None:
             head, lines = stroke_info(st); x, y = 20, 16
-            ov = img.copy(); cv2.rectangle(ov, (10, 8), (330, 16 + 40 + 30 * len(lines) + 4), (24, 20, 18), -1); cv2.addWeighted(ov, 0.6, img, 0.4, 0, img)
+            roi = img[8:16 + 40 + 30 * len(lines) + 4, 10:330]; cv2.addWeighted(np.full_like(roi, (24, 20, 18)), 0.6, roi, 0.4, 0, roi)  # dim only the panel, not a full-frame copy
             draw_text(img, x, y, head, 30, INK)
             for i, (t, col) in enumerate(lines): draw_text(img, x, y + 40 + i * 30, t, 24, col)
             if abs(n - st["c"]) <= 3: draw_text(img, W // 2, H - 24, "擊球", 44, GOLD, "ms")
-        enc.stdin.write(img.tobytes()); n += 1
-    dec.stdout.close(); enc.stdin.close(); enc.wait(); dec.wait()
-    if enc.returncode or dec.returncode: sys.exit(f"ffmpeg failed on {name} (decode {dec.returncode}, encode {enc.returncode})")
+        try: enc.stdin.write(img.tobytes())
+        except BrokenPipeError: dec.kill(); break  # encoder died (bad codec, disk full); its exit code is reported below
+        n += 1
+    dec.stdout.close()
+    try: enc.stdin.close()
+    except BrokenPipeError: pass
+    enc.wait(); dec.wait()
+    if enc.returncode or dec.returncode:
+        out.unlink(missing_ok=True); sys.exit(f"ffmpeg failed on {name} (decode {dec.returncode}, encode {enc.returncode})")
     dt = time.time() - t0
     print(f"{name}: {n} frames ({n / FPS:.1f}s video, pose {len(pose)} frames), {len(S)} strokes, {W}x{H}, {dt:.0f}s ({n / FPS / dt:.2f}x realtime), {out.stat().st_size / 1e6:.1f} MB -> {out}")
 
