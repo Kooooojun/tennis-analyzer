@@ -13,7 +13,8 @@ fi
 state_line=${state_line//$'\r'/}
 read -r pr_state is_draft <<< "$state_line"
 
-if [ "$pr_state" = "OPEN" ] && [ "$is_draft" = "false" ]; then
+# Cancel only on a clear answer; anything unexpected runs CI anyway.
+if [ "$pr_state" != "CLOSED" ] && [ "$pr_state" != "MERGED" ] && [ "$is_draft" != "true" ]; then
   exit 0
 fi
 

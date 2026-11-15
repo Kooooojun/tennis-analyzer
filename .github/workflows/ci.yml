@@ -21,8 +21,10 @@ permissions:
   actions: write
   pull-requests: read
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}  # main pushes each keep their own run
+  # PR runs share a group per PR, so a new push or converted_to_draft cancels the old run.
+  # Every other run (push to main, workflow_dispatch) gets its own group: a shared group would drop a pending main run.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
 jobs:
   test:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
