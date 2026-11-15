@@ -11,9 +11,10 @@ def pose(rw=(0.3, 0.25, 0), lw=(-0.3, 0.25, 0), rs=(0.2, 0, 0), ls=(-0.2, 0, 0),
     P[:, 0] = 0.5 + W[:, 0] * K / (SIZE[0] / 540); P[:, 1] = 0.5 + W[:, 1] * K; P[:, 2] = vis
     return P.tolist(), W.tolist()
 
-def clip(per_frame, n=150):  # per_frame: {frame: pose kwargs}; others use defaults
+def clip(per_frame, n=150, az=60):  # per_frame: {frame: pose kwargs}; others use defaults. az: camera azimuth of the 3D body (cam_az), 2D is unchanged
+    t = np.radians(180 - az); R = np.array([[np.cos(t), 0, np.sin(t)], [0, 1, 0], [-np.sin(t), 0, np.cos(t)]])  # turn about the vertical axis
     ps = [pose(**per_frame.get(i, {})) for i in range(n)]
-    return [p[0] for p in ps], [p[1] for p in ps]
+    return [p[0] for p in ps], [(np.array(p[1]) @ R.T).tolist() for p in ps]
 
 c = 90
 # 1. finish: wrist rises to 0.5 m above shoulder (shoulder-hip = 0.5 m = 1.0 L) 20 frames after contact -> ~1.0; before contact doesn't count
@@ -45,4 +46,18 @@ fr, W = clip({i: dict(la=(-0.4, 1, 0), ra=(0.4, 1, 0)) for i in range(150)}); r 
 fr, W = clip({i: dict(vis=0.1) for i in range(150)}); r = form_checks(fr, c, SIZE, W, "FH"); assert all(r[k] is None for k in ("finish", "lean", "stance")), r
 r = form_checks([None] * 150, c, SIZE, [None] * 150, "SV"); assert all(v is None for v in r.values()), r
 fr, W = clip({}); r = form_checks(fr, 140, SIZE, W, "FH"); assert r["finish"] is None, r  # < 0.5 s after contact in the clip
+# 9. view gates (camera azimuth from the 3D body). Shoulders overlapping along the camera axis (side-on, az 90): tilt is None; normal width keeps the value
+sh = dict(rs=(0.2, 0.1, 0), ls=(-0.2, 0, 0))
+for az, want in ((90, None), (85, None), (60, 14.0), (180, 14.0), (10, 14.0)):
+    fr, W = clip({i: sh for i in range(c - 30, c - 4)}, az=az); r = form_checks(fr, c, SIZE, W, "SV")
+    assert (r["tilt"] is None) if want is None else abs(r["tilt"] - want) < 0.5, (az, r)
+# camera straight behind / in front: lean and reach are None; side view keeps them; no world (old data) keeps them
+mv = {i: dict(lean[i], rw=(0.3 + 0.01 * (i - c), 0.25, 0)) for i in range(150)}
+for az, ok in ((170, False), (10, False), (150, True), (90, True)):
+    fr, W = clip(mv, az=az); r = form_checks(fr, c, SIZE, W, "FH"); assert (r["lean"] is None) != ok and (not ok or abs(r["lean"] - 11.3) < 0.7), (az, r)
+    fr, W = clip({c + i: dict(rw=(0.2, -0.6, 0)) for i in range(-3, 4)}, az=az); r = form_checks(fr, c, SIZE, W, "SV"); assert abs(r["reach"] - 1.2) < 0.05 and (r["lean"] is None) != ok, (az, r)  # reach is not view-gated (front view had no evidence)
+fr, W = clip(mv, az=170); r = form_checks(fr, c, SIZE, None, "FH"); assert abs(r["lean"] - 11.3) < 0.7, r
+fr, W = clip({c + i: dict(rw=(0.2, -0.6, 0)) for i in range(-3, 4)}, az=170); r = form_checks(fr, c, SIZE, None, "SV"); assert abs(r["reach"] - 1.2) < 0.05 and r["lean"] is not None, r
+# tilt majority rule counts only frames dropped for overlap: 14 of 26 frames hidden by visibility, no overlap -> value kept (old behaviour)
+fr, W = clip({**{i: sh for i in range(c - 30, c - 4)}, **{i: dict(sh, vis=0.1) for i in range(c - 30, c - 16)}}); r = form_checks(fr, c, SIZE, W, "SV"); assert abs(r["tilt"] - 14.0) < 0.5, r
 print("ok")

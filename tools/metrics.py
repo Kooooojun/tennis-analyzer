@@ -39,6 +39,11 @@ def cam_az(world, J, frames):
     return float(np.degrees(np.arccos(np.clip(-fz / n, -1, 1))))
 
 
+def _front_back(az):
+    """True when the camera is within KNEE_VIEW_MIN of straight in front / behind (az from cam_az, None = unknown -> False)."""
+    return az is not None and min(az, 180 - az) < KNEE_VIEW_MIN
+
+
 def _knee(xy, J, c):
     ks = [min(_angle(xy, i, J['rh'], J['rk'], J['ra']), _angle(xy, i, J['lh'], J['lk'], J['la'])) for i in range(c - 48, c - 5)]
     return float(np.nanpercentile(ks, 10))
@@ -192,7 +197,7 @@ def _core(xy, vis, c, J, world=None, hand="R", prev=None):
     k2 = _knee(xy, J, c) if pre else np.nan
     ok3 = bool(np.isfinite(k3)); ok2 = bool(np.isfinite(k2))
     d = _swing_dir(xy, J, c) if ct else np.nan
-    view = az is not None and min(az, 180 - az) < KNEE_VIEW_MIN  # front / behind: the swing runs along depth, image x has no stable sign
+    view = _front_back(az)  # front / behind: the swing runs along depth, image x has no stable sign
     if ct:
         hip = (xy[w, J['lh'], 1] + xy[w, J['rh'], 1]) / 2; hx = (xy[w, J['lh'], 0] + xy[w, J['rh'], 0]) / 2
         fwd = None if view else _med(d * (xy[w, J['rw'], 0] - hx) / L[w])
@@ -358,6 +363,7 @@ def _front(frames, world, c, s, w, hand, ok):
 FINISH_WIN = FPS // 2  # frames after contact searched for the follow-through peak (0.5 s)
 FORM_VIS_MIN = 0.5
 LEAN_MAX = 90.0
+TILT_X_MIN = 0.35      # 3D shoulder line: |x| / shoulder width below this = the two shoulders overlap along the camera axis (left/right swap flips the sign); frame dropped
 STANCE_MAX = 3.0       # ankle gap / hip gap above this = hip width collapsed by the view (or a bad pose), drop it
 _WR = dict(R=6, L=5)   # CLIP index of the racket wrist per hand
 
@@ -377,7 +383,9 @@ def form_checks(frames, c, size=None, world=None, kind=None, hand="R"):
     P = np.array([nan if fr is None else fr for fr in frames], float)
     xy = P[:, :, :2] * _scale(size); xy[P[:, :, 2] < FORM_VIS_MIN] = np.nan
     W = np.array([nan if w is None else w for w in world], float) if world is not None else None
+    az = cam_az(W, dict(ls=1, rs=2, lh=7, rh=8), range(c - 48, c - 5)) if W is not None and c >= 48 else None  # same window and unmasked input as _core's knee gate
     if W is not None: W[P[:, :, 2] < FORM_VIS_MIN] = np.nan
+    view = _front_back(az)
     sc = (xy[:, 1] + xy[:, 2]) / 2; hc = (xy[:, 7] + xy[:, 8]) / 2
     L = _med(np.linalg.norm(sc[c - 2:c + 3] - hc[c - 2:c + 3], axis=1))
     wr = _WR.get(hand, 6); hi = np.nanmin(xy[:, 5:7, 1], axis=1)  # higher of the two wrists, per frame
@@ -388,18 +396,19 @@ def form_checks(frames, c, size=None, world=None, kind=None, hand="R"):
             sm = _rmed(seg, 1)
             out["finish"] = round(float(np.nanmax(sm)), 2)
     if kind in (None, "SV"):
-        r = _med(up[c - 2:c + 3]); out["reach"] = None if r is None else round(r, 2)
+        r = _med(up[c - 2:c + 3]); out["reach"] = None if r is None else round(r, 2)  # not view-gated: low from behind (PR #13) but not from the front, and az cannot tell the two apart
         rs, os_ = (2, 1) if hand != "L" else (1, 2)
         if W is not None and c >= 30:  # 3D only: 2D shoulder tilt swings 45-70 deg on one player's serves (docs/scoring.md §10)
             seg = slice(c - 30, c - 4); dy = W[seg, rs, 1] - W[seg, os_, 1]; ln = np.linalg.norm(W[seg, rs] - W[seg, os_], axis=1)
-            ang = np.degrees(np.arcsin(np.clip(dy / ln, -1, 1)))  # peak of the 5-frame median = the moment the racket shoulder is lowest (trophy), not the contact-time lift
-            sm = _rmed(ang, 2)
-            out["tilt"] = round(float(np.nanmax(sm)), 1) if np.isfinite(sm).any() else None
+            ang = np.degrees(np.arcsin(np.clip(dy / ln, -1, 1)))
+            drop = np.abs(W[seg, rs, 0] - W[seg, os_, 0]) / ln < TILT_X_MIN; ang[drop] = np.nan
+            sm = _rmed(ang, 2); sm[drop] = np.nan  # overlap frames stay out of the peak; peak of the 5-frame median = the moment the racket shoulder is lowest (trophy), not the contact-time lift
+            out["tilt"] = round(float(np.nanmax(sm)), 1) if np.isfinite(sm).any() and drop.sum() * 2 <= len(ang) else None  # more than half dropped for overlap = side-on throughout; visibility gaps count as before
     v = (sc - hc)[c - 2:c + 3]
     if kind == "SV": ln = _med(np.degrees(np.arctan2(np.abs(v[:, 0]), -v[:, 1])))  # serve direction cannot be read from the wrist x (from behind it flips), so size only
     else:
         d = _form_dir(xy, c, wr); ln = _med(np.degrees(np.arctan2(v[:, 0] * d, -v[:, 1]))) if np.isfinite(d) else None
-    out["lean"] = None if ln is None or abs(ln) > LEAN_MAX else round(ln, 1)  # > 90 deg = head below hips: a mis-tracked frame, not a lean
+    out["lean"] = None if view or ln is None or abs(ln) > LEAN_MAX else round(ln, 1)  # > 90 deg = head below hips: a mis-tracked frame, not a lean
     A = W if W is not None else xy
     st = _med(np.linalg.norm(A[c - 2:c + 3, 11] - A[c - 2:c + 3, 12], axis=1) / np.linalg.norm(A[c - 2:c + 3, 7] - A[c - 2:c + 3, 8], axis=1))
     out["stance"] = None if st is None or st > STANCE_MAX else round(st, 2)
