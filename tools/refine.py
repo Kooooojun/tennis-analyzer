@@ -8,7 +8,8 @@ from metrics import measure_clip, arm_checks, form_checks
 
 s = session(); D = web(s); C = load(work(s) / "refine.json", {})
 d = load(D / "strokes_raw.json")
-err = max(abs((measure_clip(r["frames"], r["contact"], r.get("size"), r.get("world"))[k] or 0) - r[k]) for r in d for k in ("knee", "knee3d", "contact_h", "contact_fwd", "prep", "elbow") if r.get(k) is not None)
+hand_of = lambda r: C.get("hand", r.get("hand", "R")) if r.get("hand_guess") or not r.get("hand") else r["hand"]  # per-stroke (work/profiles.json via assemble); refine.json "hand" is the fallback for old strokes
+err = max(abs((measure_clip(r["frames"], r["contact"], r.get("size"), r.get("world"), hand_of(r))[k] or 0) - r[k]) for r in d for k in ("knee", "knee3d", "contact_h", "contact_fwd", "prep", "elbow") if r.get(k) is not None)
 print(f"clip vs full-video metrics at the raw contact: max diff {err:.1f} (a few degrees is coordinate rounding; much more means strokes_raw.json is stale)")
 out = []
 for r in d:
@@ -16,9 +17,9 @@ for r in d:
     if no in C.get("drop", []): continue
     df = C.get("off", {}).get(str(no), C.get("default_off", 0)); c = r["contact"] + df
     r.update(C.get("set", {}).get(str(no), {}))
-    old = r["contact_h"]; r.update(measure_clip(r["frames"], c, r.get("size"), r.get("world"))); r["contact"] = c
-    r.update(arm_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], C.get("hand", "R"), C.get("one_hand_bh") is True))  # refine.json: "hand": "L" for lefties, "one_hand_bh": true for one-handed backhands
-    r.update(form_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], C.get("hand", "R")))
+    old = r["contact_h"]; r.update(measure_clip(r["frames"], c, r.get("size"), r.get("world"), hand_of(r))); r["contact"] = c
+    r.update(arm_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], hand_of(r), {"one": True, "two": False}.get(r.get("backhand"), C.get("one_hand_bh") is True)))  # profile first; refine.json "hand" / "one_hand_bh" only for strokes made before profiles
+    r.update(form_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], hand_of(r)))
     r["t"] = round(r["t"] + df / 60, 3)
     m, sec = divmod(r["t"], 60); r["clock"] = f"{r['video']}·{int(m)}:{sec:04.1f}"
     if df != C.get("default_off", 0) or str(no) in C.get("set", {}):
