@@ -39,4 +39,5 @@ assert rename_warning([rr(0, "FH")], Cr, {0: "p3"}, hands) is None  # 同手改�
 assert rename_warning([rr(2, "FH")], Cr, {2: "p2"}, hands) is None  # 沒預填（cands 沒有手）
 assert rename_warning([rr(3, "x")], Cr, {3: "p2"}, hands) is None and rename_warning([rr(3, "SV")], Cr, {3: "p2"}, hands) is None  # x、SV 不警告
 assert rename_warning([rr(4, "FH")], Cr, {4: None}, hands) is None and rename_warning([rr(4, "FH")], Cr, {4: "p1"}, hands) is None  # 沒改名
+assert rename_warning([rr(0, "FH")], [dict(player="p2", hand="R")], {0: "p2"}, hands) is None  # @同名（沒改名）不警告，即使 cands 的手與現在不同
 print("assemble labels OK")

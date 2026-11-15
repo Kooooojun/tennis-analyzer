@@ -36,4 +36,6 @@ for s in ("bad1", "bad2", "bad3"):
 sess("bad4", me={"hand": "X", "backhand": "two"})  # 值不合法：載入時過，取用時 profile_for 報錯（沿用既有行為）
 try: profile_for(load_session_profiles("bad4", root)[0], "me"); raise AssertionError("bad hand")
 except ValueError: pass
+try: load_session_profiles("bad1", root); raise AssertionError
+except ValueError as e: assert "work/bad1/profiles.json" in str(e), e  # 錯誤訊息帶檔名
 print("profiles OK")

@@ -11,9 +11,8 @@ from common import ROOT, session, work, videos, save, tracks, track_file, player
 from profiles import load_session_profiles
 from kind import classify, prefill
 from crop import square, wide, cut, brighten
-from match import match, WRIST
+from attrib import matched, wrist_hands, who_hit
 from assemble import cands_fp
-from metrics import hand_gate
 from platform_util import imwrite, read_text, unlink, write_text
 
 OFF = [-45, -25, -8, 0, 12]  # --legacy sheets: 24 candidates per sheet, 5 small square crops each
@@ -123,37 +122,16 @@ PROF = load_session_profiles(s)[0]
 hand = lambda name: (profile_for(PROF, name) or {"hand": None})["hand"]  # racket hand; None = no profile yet: look at both wrists (assemble.py guesses it later)
 
 
-def matched(P, E, wh, hand):
-    """match() rows by hit time for the racket wrist; unknown hand: the wrist that swung more (bigger arc) at each hit,
-    so a left-hander without a profile does not lose hits (default-R missed 6 of 45 on a left-handed test video)."""
-    M = {}
-    for h in ([hand] if hand else "RL"):
-        for r in match(P, E, wh, h):
-            if r[0] not in M or r[4] > M[r[0]][4]: M[r[0]] = r
-    return M
-
-
-def swing(P, f, wh, wi=16):
-    """Wrist path from 0.33 s before a hit sound to 0.07 s after, in torso lengths. The hitter swings into contact;
-    the other player's big moves (getting ready for the next ball, walking in) mostly come after it or without a visible wrist."""
-    xy = P[:, wi, :2] * wh; xy[P[:, wi, 2] < 0.2] = np.nan
-    L = np.linalg.norm((P[f - 30:f + 30, 11, :2] + P[f - 30:f + 30, 12, :2] - P[f - 30:f + 30, 23, :2] - P[f - 30:f + 30, 24, :2]) / 2 * wh, axis=1)
-    return np.nansum(np.linalg.norm(np.diff(xy[f - 20:f + 5], axis=0), axis=1)) / np.nanmedian(L) if np.isfinite(L).any() else 0.0
-
-
 C = []
 for vi, v in enumerate(V):
     ks = [k for k in T[v] if names[(vi + 1, k)] != "x"]
     if not ks: continue
     Ps = {k: np.load(track_file(Wd / v, "pose", k)).astype(float) for k in ks}; prof = {k: hand(names[(vi + 1, k)]) for k in ks}
-    wh = np.array(size(Wd / v / "proxy.mp4"), float) / 540; E = np.load(Wd / v / "events.npy"); Hd = dict(prof)
-    for k in ks:  # no profile: guess from this track's own matched hits (as assemble does), only to pick the wrist; None = both wrists
-        if Hd[k] is None:
-            ts = [t for t, _, _, sp, arc in matched(Ps[k], E, wh, None).values() if sp >= 0.05 and arc >= 0.7]
-            if ts: Hd[k] = hand_gate([Ps[k]], size(Wd / v / "proxy.mp4"), [ts])[0]
+    wh = np.array(size(Wd / v / "proxy.mp4"), float) / 540; E = np.load(Wd / v / "events.npy")
+    Hd = wrist_hands(Ps, prof, E, wh, size(Wd / v / "proxy.mp4"))
     M = {k: matched(Ps[k], E, wh, Hd[k]) for k in ks}
     for t in sorted({t for m in M.values() for t in m}):
-        k = max(ks, key=lambda k: max(swing(Ps[k], int(round(t * 60)), wh, WRIST[h]) for h in ([Hd[k]] if Hd[k] else "RL"))) if len(ks) > 1 else ks[0]  # who hit it, then: is it a stroke for them
+        k = who_hit(Ps, Hd, t, wh)  # who hit it, then: is it a stroke for them
         if t not in M[k]: continue
         _, pk, on, sp, arc = M[k][t]
         if sp >= 0.05 and arc >= 0.7:

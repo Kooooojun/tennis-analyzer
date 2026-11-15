@@ -41,7 +41,7 @@ def bulk_warning(rows):
 def rename_warning(rows, C, who, hands):
     """A warning when '@name' moved a FH/BH line to someone whose hand differs from the hand its pre-fill was computed with
     (cands.json 'hand' = the original player's profile hand; None = nothing was pre-filled). Only a hint: nothing is changed."""
-    idx = [int(r[0]) for r in rows if r[1] in ("FH", "BH") and who[int(r[0])] and C[int(r[0])].get("hand") and hands.get(who[int(r[0])]) not in (None, C[int(r[0])]["hand"])]
+    idx = [int(r[0]) for r in rows if r[1] in ("FH", "BH") and who[int(r[0])] not in (None, C[int(r[0])].get("player")) and C[int(r[0])].get("hand") and hands.get(who[int(r[0])]) not in (None, C[int(r[0])]["hand"])]
     if idx:
         return f"WARNING: lines {', '.join(map(str, idx))} were renamed to a player with the other racket hand: their FH/BH pre-fill was worked out for the original player's hand (it mirrors). Check the kind on those sheets again"
 

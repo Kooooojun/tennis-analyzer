@@ -8,7 +8,7 @@ from metrics import measure_clip, arm_checks, form_checks
 
 s = session(); D = web(s); C = load(work(s) / "refine.json", {})
 d = load(D / "strokes_raw.json")
-hand_of = lambda r: C.get("hand", r.get("hand", "R")) if r.get("hand_guess") or not r.get("hand") else r["hand"]  # per-stroke (work/profiles.json via assemble); refine.json "hand" is the fallback for old strokes
+hand_of = lambda r: C.get("hand", r.get("hand", "R")) if r.get("hand_guess") or not r.get("hand") else r["hand"]  # per-stroke (work/<s>/profiles.json, else work/profiles.json, via assemble); refine.json "hand" is the fallback for old strokes
 err = max([abs(v - r[k]) for r in d for m in [measure_clip(r["frames"], r["contact"], r.get("size"), r.get("world"), hand_of(r))]
            for k in ("knee", "knee3d", "contact_h", "contact_fwd", "elbow") if r.get(k) is not None and (v := m.get(k)) is not None], default=0)  # None now = gated (e.g. contact_fwd for a front / back camera), not 0; prep follows the previous hit, which this check does not pass
 off = lambda r: C.get("off", {}).get(str(r["id"] + 1), C.get("default_off", 0))
