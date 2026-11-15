@@ -188,6 +188,7 @@ main.noplayer>.col{max-width:820px}
 .highlights{list-style:none;padding:0;margin:0;display:grid;gap:6px}
 .highlights button{width:100%;text-align:left;background:var(--chip);border-color:transparent;border-left:3px solid var(--warn);border-radius:6px}
 .highlights button.good{border-left-color:var(--good)} .highlights button.info{border-left-color:var(--line)}
+body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{padding:24px;color:var(--muted)}  /* data.js is MBs: hide the half-built page until it has run */
 </style>
 <header>
   <h1><a href="#home" class="home-link" id="homeLink">網球練習</a><span id="h1Sub"></span></h1>
@@ -195,6 +196,7 @@ main.noplayer>.col{max-width:820px}
   <div class="days" id="days" role="tablist" aria-label="選擇練習日期"></div>
   <nav class="tabbar" id="tabbar" aria-label="這場的分頁"></nav>
 </header>
+<p class="loading">載入練習資料中…</p>
 <section id="home" class="home" hidden></section>
 <main>
   <section class="player" data-tab="video stroke">
@@ -362,10 +364,11 @@ main.noplayer>.col{max-width:820px}
   </section>
 </main>
 
-<script src="sessions/manifest.js"></script>
+<script>document.write(`<script src="sessions/manifest.js?v=${Date.now()}"><\/script>`);</script>
 <script src="sessions/trend.js"></script>
-<script>for(const id of window.SESSION_IDS||[]) document.write(`<script src="sessions/${id}/data.js?v=${Date.now()}"><\/script>`);</script>
+<script>for(const id of window.SESSION_IDS||[]) document.write(`<script src="sessions/${id}/data.js?v=${(window.SESSION_VER||{})[id]||Date.now()}"><\/script>`);</script>  <!-- content hash: the browser keeps data.js until it is rebuilt -->
 <script>
+document.body.classList.add("ready");  // data.js scripts above have run; before route() so canvases get their real size
 const FPS = 60, NAMES = {FH:"正拍", BH:"反拍", SV:"發球"};
 // one entry per practice session (built by tools/build_site.py); strokes carry their day so compare can mix sessions
 const DAYS = Object.fromEntries((window.SESSIONS||[]).map(d=>[d.id,{...d,players:d.players||["me"],data:d.strokes}]));
