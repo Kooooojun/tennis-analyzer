@@ -139,9 +139,10 @@ def check_session(strokes):
         for p in sorted({who(s) for s in strokes if s.get("kind") == kind and _num(s.get(conf))}):
             g = [s for s in strokes if who(s) == p and s.get("kind") == kind and _num(s.get(conf))]
             ps, fl = sum(s.get(field) is True for s in g), sum(s.get(field) is False for s in g); n = len(g)
+            ok = ps + fl >= MIN_DECIDED and (ps + fl) / n >= MIN_COVER
             out.append(dict(player=p, kind=kind, field=field, name=name, n=n, passed=ps, failed=fl, unclear=n - ps - fl, coverage=_r((ps + fl) / n, 2),
-                            status="ok" if ps + fl >= MIN_DECIDED and (ps + fl) / n >= MIN_COVER else "資料不足", formula=rule,
-                            verified=field in VERIFIED and ps > 0 and fl == 0))  # needs >= 1 pass; False verdicts were never checked against truth. The web does not read this yet (greys every row)
+                            status="ok" if ok else "資料不足", formula=rule,
+                            verified=field in VERIFIED and ok and ps > 0 and fl == 0))  # needs status ok and >= 1 pass; False verdicts were never checked against truth. The web does not read this yet (greys every row)
     return out
 
 

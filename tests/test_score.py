@@ -234,3 +234,6 @@ r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)]
 r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] * 4 + [dict(kind="SV", serve_arm_straight=False, serve_arm_conf=0.9)])[0]; assert r["verified"] is False, r
 r = check_session([dict(kind="SV", serve_arm_straight=None, serve_arm_conf=0.9)] * 4)[0]; assert r["verified"] is False, r  # nothing decided, nothing verified
 print("verified tests ok")
+r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] + [dict(kind="SV", serve_arm_straight=None, serve_arm_conf=0.0)] * 5)[0]
+assert r["status"] == "資料不足" and r["verified"] is False, r  # 1 pass + 5 unclear: not enough to call anything verified
+print("verified status tests ok")
