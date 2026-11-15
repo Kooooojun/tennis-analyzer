@@ -67,7 +67,7 @@ near_hit[:85] = np.nan; near_hit[110:] = np.nan; before[np.r_[:55, 85:200]] = np
 A, ev = np.array([16 / 9, 1.0]), np.array([[100 / 60, -20, 12]])
 assert len(match(near_hit, ev, A)) == 1, match(near_hit, ev, A)
 assert len(match(before, ev, A)) == 0
-assert len(match(p, np.array([[10 / 60, -20, 12]]), A)) == 0               # window would start before frame 0
+assert len(match(p, np.array([[40 / 60, -20, 12]]), A)) == 0               # window would start before frame 0
 
 # T9: the near track's pose hops to another body for a few frames at a sound (hip 45 torso lengths/s): its wrist is not
 # trusted, so no hit from it. A far person swinging then confirms it.

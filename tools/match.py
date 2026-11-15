@@ -24,7 +24,7 @@ def match(P, O, A, hand="R"):
         out = []
         for t, pk, on in O:
             f = int(round(t * 60))
-            if f < 15 or f > N - 30: continue  # the window is f-15..f+16; a negative start would wrap to the end
+            if f < 45 or f > N - 30: continue  # not f-15: candidates.py swing() reads f-30.. and would wrap to the end
             win = v[f - 12:f + 13]
             # only the frames the features use must be seen: far players are tracked in fragments (often 20-40% of a
             # second), and the hitter's fragment usually covers the hit itself
