@@ -6,8 +6,8 @@
 
 ## 需要
 
-- macOS 或 Linux。
-- Python 3.10–3.12、ffmpeg（`brew install python@3.12 ffmpeg`）。
+- macOS、Linux 或 Windows 10/11（Windows 見下方「Windows」）。
+- Python 3.11–3.12（3.13 沒測過）、ffmpeg（macOS：`brew install python@3.12 ffmpeg`；Linux：`apt install python3.12-venv ffmpeg libegl1 libgles2 fonts-noto-cjk`，後兩個是 MediaPipe 要的系統庫，CJK 字型給標註圖用）。
 - Claude Code。
 
 ## 安裝
@@ -15,15 +15,41 @@
 ```
 git clone <這個 repo>
 cd tennis-analyzer
-./setup.sh
+python3 setup.py      # 或 ./setup.sh；會自己找 Python 3.12／3.11
 ```
+
+結尾會印出 venv 的 Python 路徑。之後的指令都寫成 `python tools/run.py <script> ...`：它會用 venv 的 Python 跑（Mac/Linux 是 `.venv/bin/python`，Windows 是 `.venv\Scripts\python.exe`），任何 Python 都能啟動它。
+
+### Windows
+
+在 PowerShell 貼上（一般 Windows，不是 WSL）：
+
+```
+winget install Python.Python.3.12
+winget install Gyan.FFmpeg
+```
+
+裝完**關掉並重開終端機**，讓 PATH 生效。再：
+
+```
+cd C:\dev
+git clone <這個 repo> tennis-analyzer
+cd tennis-analyzer
+py -3.12 setup.py
+```
+
+- 有 NVIDIA 顯示卡：`py -3.12 setup.py --cuda`（偵測到 `nvidia-smi` 也會自動裝 CUDA 版 torch）。AMD／Intel 顯示卡不支援，走 CPU。CUDA 版 torch 需要夠新的 NVIDIA 驅動；setup 結尾若警告 `cuda False`，先更新驅動（https://www.nvidia.com/drivers），不然會用 CPU。
+- 沒有 GPU 時追球很慢：CPU 約每秒影片 60–70 秒（橫式；直式約 4 倍；只在 CI 機器量過），前處理開始前會印預估時間。
+- clone 到短路徑（如 `C:\dev\tennis-analyzer`）；路徑太長時 prep 會先報錯。必要時開啟 Windows 的 LongPathsEnabled。
+- 匯入 mediapipe 失敗時：`winget install Microsoft.VCRedist.2015+.x64`。
+- 前處理：`python tools/run.py prep.py wall-1`；看結果：`python tools/run.py open web/index.html`。
 
 ## 使用
 
 1. 把一次練習的影片放進 `videos/<日期>/`，例如 `videos/2026-11-20/`。一次練習可以有好幾支影片。
 2. 在這個資料夾開 Claude Code，說「幫我分析 videos/2026-11-20」。
-3. 前處理（影片縮放、姿勢、擊球聲、追球）要的時間比影片長。實測：Mac mini M 系列、橫拍 1080p60、wall-1 三支共 308 秒，`time tools/prep.sh wall-1` 從空的 work 目錄跑完是 16 分 52 秒（約影片長度的 3.3 倍；CPU 時間約 8.6 分；當時機器同時有很多工作在跑，只測了這一次，僅供參考）。跑完後 Claude 會看縮圖、標註、修正擊球瞬間，最後寫重點。
-4. 打開 `web/index.html` 就能看結果，不需要開 server。首頁依玩家列出所有場次和分數走勢；點進一場後分成總覽、影片、圖表、每一拍、建議五個分頁。
+3. 前處理（影片縮放、姿勢、擊球聲、追球）要的時間比影片長。實測：Mac mini M 系列、橫拍 1080p60、wall-1 三支共 308 秒，`time tools/prep.sh wall-1`（Windows PowerShell 可用 `Measure-Command { python tools/run.py prep.py wall-1 }`）從空的 work 目錄跑完是 16 分 52 秒（約影片長度的 3.3 倍；CPU 時間約 8.6 分；當時機器同時有很多工作在跑，只測了這一次，僅供參考）。跑完後 Claude 會看縮圖、標註、修正擊球瞬間，最後寫重點。
+4. 打開 `web/index.html`（`python tools/run.py open web/index.html`）就能看結果，不需要開 server。首頁依玩家列出所有場次和分數走勢；點進一場後分成總覽、影片、圖表、每一拍、建議五個分頁。
 
 之後可以直接問：「#12 是幾分幾秒」、「有沒有比較長的來回」、「幫我做精華」。
 

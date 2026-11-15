@@ -1,5 +1,7 @@
 # 擊球種類自動判斷（stroke-classify）
 
+> 本文的指令為 macOS/zsh（`kind_prep.sh` 只能在 Mac 跑）；Windows 改用 `python tools/run.py <script>`。
+
 日期 2026-11-15。程式：`tools/kind.py`（`classify`）；`metrics.measure_full` 輸出 `auto_kind`（FH／BH／SV／OH／`?`）與 `kind_conf`（0–1）；`candidates.py` 預填 labels.txt 的種類欄（信心 ≥ 0.5 才填，否則維持 `?`）。重現：`docs/research/kind_prep.sh`（proxy＋骨架）→ `kind_cands.py`（候選與縮圖板）→ 眼睛標 → `kind_eval.py`。測試 `tests/test_kind.py`。
 
 ## 做法
