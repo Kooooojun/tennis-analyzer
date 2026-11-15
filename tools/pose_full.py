@@ -139,7 +139,8 @@ def main():
     if source and ft.is_file():
         c = cv2.VideoCapture(source); r = c.get(cv2.CAP_PROP_FPS); SW, SH = int(c.get(cv2.CAP_PROP_FRAME_WIDTH)), int(c.get(cv2.CAP_PROP_FRAME_HEIGHT)); c.release()
         if (SW > SH) != (W > H): SW, SH = SH, SW  # rotation metadata: ffmpeg outputs it upright, like the proxy
-        if ft.read_text(encoding="utf-8").strip().isdigit() and int(ft.read_text(encoding="utf-8").strip()) < 50 and r > 0: fps = r
+        sf = ft.read_text(encoding="utf-8").strip()
+        if sf.isdigit() and int(sf) < 50 and r > 0: fps = r
         probe = mk(N, "IMAGE"); step = max(1, n60 // 60)
         crop = use_crop([len(probe.detect(img_of(f)).pose_landmarks) for f in frames(["-i", src, "-vf", f"select=not(mod(n\\,{step}))", "-vsync", "0"], W, H)])
         probe.close()
@@ -168,7 +169,8 @@ def main():
         # skeleton, scaled to 640 px, by a single-person landmarker (this replaces the second model pass above); empty slots are
         # searched in overlapping 600 px tiles every TILE_EVERY frames. All skeletons then go through the same Tracker.
         one, many = mk(1, "IMAGE"), mk(N, "IMAGE"); box = [None] * N
-        tiles = [(x, y) for y in sorted({*range(0, SH - TILE, TILE // 2), SH - TILE}) for x in sorted({*range(0, SW - TILE, TILE // 2), SW - TILE})]
+        ts_ = min(TILE, SW, SH)  # a source smaller than a tile (negative offsets would wrap) is searched as one tile
+        tiles = [(x, y) for y in sorted({*range(0, SH - ts_, ts_ // 2), SH - ts_}) for x in sorted({*range(0, SW - ts_, ts_ // 2), SW - ts_})]
         def look(img, b, det):  # skeletons in a crop, as full-frame normalized landmarks
             r = det.detect(img_of(cv2.resize(img[b[1]:b[1] + b[2], b[0]:b[0] + b[2]], (CROP_SIDE, CROP_SIDE))))
             return [(np.c_[crop_to_full([[q.x, q.y] for q in a], b, SW, SH), [q.visibility for q in a]], [[q.x, q.y, q.z] for q in w])
@@ -176,7 +178,7 @@ def main():
         for img in frames(["-i", source] + (["-vf", "fps=60"] if fps >= 50 else []), SW, SH):
             got = [x for b in box if b for x in look(img, b, one)]
             if (None in box and n % TILE_EVERY == 0) or not got:
-                found = [x for t in tiles for x in look(img, (*t, TILE), many)]  # tallest first: crowd and far background lose
+                found = [x for t in tiles for x in look(img, (*t, ts_), many)]  # tallest first: crowd and far background lose
                 got += sorted(found, key=lambda x: -np.ptp(x[0][:, 1]))[:N]
             lms = [[types.SimpleNamespace(x=v[0], y=v[1], visibility=v[2]) for v in a] for a, _ in got]
             ds = [describe(a, img) for a in lms]

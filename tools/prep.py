@@ -128,7 +128,8 @@ def main(argv):
         pt, pose = D / "people.txt", D / "pose.npy"
         if pt.is_file() and pose.is_file() and pt.read_text(encoding="utf-8").strip() != str(N): delete(pose)
         pm = D / "pose_method.txt"  # pose from an older algorithm (no file = before versions existed) is redone
-        if pose.is_file() and (not pm.is_file() or pm.read_text(encoding="utf-8").strip() != POSE_METHOD): delete(pose)
+        if pose.is_file() and (not pm.is_file() or pm.read_text(encoding="utf-8").strip() != POSE_METHOD):
+            print(f"{n}: pose 是舊方法算的（pose_method {POSE_METHOD}），重算", flush=True); delete(pose)
         for t in D.glob("pose*_t*.npy"):  # extra tracks from an earlier, larger run
             k = t.stem.rsplit("_t", 1)[1]
             if k.isdigit() and int(k) >= N: delete(t)
