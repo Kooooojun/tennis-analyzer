@@ -5,7 +5,7 @@
 # on its own median (like tools/score.py _cons_spread). CI: 95% bootstrap over pairs, resampled within each player.
 # --front: also print turn for given frames of a whole-video 2D+world landmark npz (p2, p3; 1920x1080).
 import sys, os, csv, numpy as np
-sys.path[:0] = [os.path.dirname(__file__), "tools"]
+HERE = os.path.dirname(os.path.abspath(__file__)); sys.path[:0] = [HERE, os.path.join(HERE, "..", "..", "..", "tools")]
 from metrics import measure_full
 
 MATCH = 0.2  # s; ct_eval peaks of the same swing on the two timelines (sync residual is about +-1 frame)
@@ -23,7 +23,8 @@ def ratios(a, b, g, centre=False):
     s = rsd(v); return np.median(d) / s if s > 0 else np.nan
 
 
-def table(pairs, label, rng=np.random.default_rng(0)):
+def table(pairs, label):
+    rng = np.random.default_rng(0)  # same draws for every table, whatever ran before
     print(f"\n{label}: n={len(pairs)}")
     print("field        n  med(a-b)  med|a-b|   rSD  ratio  [95% CI]       ratio_c  bias/rSD")
     for k in F:
@@ -33,8 +34,9 @@ def table(pairs, label, rng=np.random.default_rng(0)):
         if s <= 0: print(f"{k:11s} {len(p):2d}  rSD 0, n/a"); continue
         idx = [np.flatnonzero(g == x) for x in np.unique(g)]
         bs = [ratios(a[j], b[j], g[j]) for j in (np.concatenate([rng.choice(i, len(i)) for i in idx]) for _ in range(2000))]
-        lo, hi = np.nanpercentile(bs, [2.5, 97.5]); rc = ratios(a, b, g, True)
-        print(f"{k:11s} {len(p):2d} {np.median(d):9.3f} {np.median(np.abs(d)):8.3f} {s:6.3f} {np.median(np.abs(d)) / s:6.2f}  [{lo:.2f}, {hi:.2f}]   {rc:6.2f}  {abs(np.median(d)) / s:8.2f}")
+        bs = np.array(bs); bs = bs[np.isfinite(bs)]; lo, hi = np.percentile(bs, [2.5, 97.5]) if len(bs) else (np.nan, np.nan)
+        f = lambda x, w: f"{x:{w}.2f}" if np.isfinite(x) else f"{'n/a':>{w}s}"
+        print(f"{k:11s} {len(p):2d} {np.median(d):9.3f} {np.median(np.abs(d)):8.3f} {s:6.3f} {f(np.median(np.abs(d)) / s, 6)}  [{f(lo, 4)}, {f(hi, 4)}]   {f(ratios(a, b, g, True), 6)}  {f(abs(np.median(d)) / s, 8)}")
 
 
 POSES, MEAS = {}, {}  # npz members decompress on every access, and both vmin passes share the same strokes
@@ -64,6 +66,7 @@ def main(pdir, ev, vmin):
             q = min(same, key=lambda s: abs(float(s["t"]) - float(r["t"])))
             pairs.append((m(r) | dict(az=float(r["az_contact"]), player=a), m(q) | dict(az=float(q["az_contact"]), player=a)))
     print(f"\n=== speed >= {vmin} m/s: {len(pairs)} pairs ({skipped} in window with only a different reference hand, dropped)")
+    if not pairs: print("no pairs"); return
     table(pairs, "all pairs")
     # az split: the camera nearer to side-on (|az - 90| smaller) vs the other one of the same stroke
     side = lambda x: abs(abs(x["az"]) - 90)
