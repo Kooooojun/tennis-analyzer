@@ -9,12 +9,12 @@ def sm(a, k=5): return np.convolve(np.nan_to_num(a), np.ones(k) / k, mode="same"
 if mode == "serve":
     # wrist above the nose and moving fast: take local minima of wrist y (highest point) over both wrists
     hi = np.where(ok, np.minimum(xy[:, 15, 1], xy[:, 16, 1]) - xy[:, 0, 1], 9e9)
-    cand = [i for i in range(10, n - 10) if hi[i] < -30 and hi[i] == hi[i - 40:i + 41].min()]
+    cand = [i for i in range(10, n - 10) if hi[i] < -30 and hi[i] == hi[max(0, i - 40):i + 41].min()]
 else:
     sp = np.zeros(n)
     for j in (15, 16): sp = np.maximum(sp, sm(np.r_[0, np.linalg.norm(np.diff(xy[:, j], axis=0), axis=1)]))
     sp = np.where(ok, sp, 0)
-    cand = [i for i in range(10, n - 10) if sp[i] > 14 and sp[i] == sp[i - 45:i + 46].max()]
+    cand = [i for i in range(10, n - 10) if sp[i] > 14 and sp[i] == sp[max(0, i - 45):i + 46].max()]
 json.dump(cand, open(D / "cands.json", "w")); print(len(cand), "candidates", cand)
 cap = cv2.VideoCapture(str(D / "proxy.mp4")); fr = {}
 need = sorted({c + o for c in cand for o in range(-8, 9, 4)})

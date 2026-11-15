@@ -4,6 +4,7 @@
 # Wrist motion per hit (match.py) runs in candidates.py, once the racket hand of each person is known.
 # Re-running skips finished steps, so it is safe to resume after an interruption; a step re-runs when its output is missing or an input is newer.
 set -e -o pipefail
+del() { if command -v trash >/dev/null; then trash "$@"; else command rm -f -- "$@"; fi; }  # trash when installed, so a mistake can be undone
 R=${0:A:h:h}; S=$1; N=${2:-2}; PY=$R/.venv/bin/python
 [ -n "$S" ] && [ -d $R/videos/$S ] || { echo "usage: tools/prep.sh <session> [people]  (folder under videos/)"; exit 1; }
 [ -x $PY ] || { echo "run ./setup.sh first"; exit 1; }
@@ -22,8 +23,8 @@ for V in $R/videos/$S/*.(mov|MOV|mp4|MP4|m4v)(N); do
   stale $D/audio_hp.f32 $V && ffmpeg -v error -y -i $V -vn -ac 1 -ar 16000 -af "highpass=f=1500" -f f32le $D/audio_hp.f32
   stale $D/audio.f32 $V && ffmpeg -v error -y -i $V -vn -ac 1 -ar 16000 -f f32le $D/audio.f32
   # a different people count means a different pose run; no people.txt (older work dir) = trust what is there
-  [ -f $D/people.txt ] && [ -f $D/pose.npy ] && [ "$(<$D/people.txt)" != $N ] && trash $D/pose.npy
-  for t in $D/pose*_t*.npy(N); do (( ${${t:t:r}##*_t} >= N )) && trash $t; done  # extra tracks from an earlier, larger run
+  [ -f $D/people.txt ] && [ -f $D/pose.npy ] && [ "$(<$D/people.txt)" != $N ] && del $D/pose.npy
+  for t in $D/pose*_t*.npy(N); do (( ${${t:t:r}##*_t} >= N )) && del $t; done  # extra tracks from an earlier, larger run
   stale $D/pose.npy $D/proxy.mp4 && $PY -I $R/tools/pose_full.py $D/proxy.mp4 $R/models/pose_heavy.task $D/pose.npy $N 2>$D/pose.log
   echo $N > $D/people.txt
   stale $D/sounds.npy $D/audio_hp.f32 $D/audio.f32 && $PY -I $R/tools/hits.py $D/audio_hp.f32 $D/audio.f32 $D/sounds.npy
