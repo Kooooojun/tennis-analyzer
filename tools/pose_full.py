@@ -108,6 +108,17 @@ def crop_to_full(q, box, W, H):
     return (np.asarray(q, float) * side + (x0, y0)) / (W, H)
 
 
+def distinct(cands, n, keep=(), aspect=1.0):
+    """Skeletons (normalized (33, 3) landmarks, world) from overlapping tiles -> up to n different people, tallest first.
+    One whose hip is within half a torso of a taller one, or of one in `keep` (found by a crop), is the same person seen twice."""
+    def hip(a): return a[[23, 24], :2].mean(0) * (aspect, 1), max(np.hypot(*((a[[11, 12], :2].mean(0) - a[[23, 24], :2].mean(0)) * (aspect, 1))), 1e-3)
+    out, seen = [], [hip(a) for a, _ in keep]
+    for x in sorted(cands, key=lambda x: -np.ptp(x[0][:, 1])):
+        h, L = hip(x[0])
+        if len(out) < n and all(np.hypot(*(h - q)) >= 0.5 * max(L, M) for q, M in seen): out.append(x); seen.append((h, L))
+    return out
+
+
 def use_crop(found):
     """found: people seen per sampled full frame. Crop when the full frame misses everyone in most of them (far camera).
     Measured on 1 frame/s samples: a far-camera dataset (people 150-300 px of 1088) 0.05-0.31, wall practice and web clips
@@ -178,8 +189,8 @@ def main():
         for img in frames(["-i", source] + (["-vf", "fps=60"] if fps >= 50 else []), SW, SH):
             got = [x for b in box if b for x in look(img, b, one)]
             if (None in box and n % TILE_EVERY == 0) or not got:
-                found = [x for t in tiles for x in look(img, (*t, ts_), many)]  # tallest first: crowd and far background lose
-                got += sorted(found, key=lambda x: -np.ptp(x[0][:, 1]))[:N]
+                found = [x for t in tiles for x in look(img, (*t, ts_), many)]  # tallest first: crowd and far background lose; tile overlaps and crops already found are dropped
+                got += distinct(found, N - len(got), keep=got, aspect=SW / SH)
             lms = [[types.SimpleNamespace(x=v[0], y=v[1], visibility=v[2]) for v in a] for a, _ in got]
             ds = [describe(a, img) for a in lms]
             fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy(); fc = np.full((N, 3), np.nan); box = [None] * N

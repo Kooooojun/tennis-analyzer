@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from pose_full import to60, crop_box, crop_to_full
+from pose_full import to60, crop_box, crop_to_full, distinct
 import numpy as np
 
 # --- to60: source-fps rows -> 60 fps rows (failure 5, 6) ---
@@ -55,5 +55,15 @@ for W_, H_ in ((1920, 1080), (1080, 1920), (1920, 1088)):
     q = (pts - box[:2]) / box[2]  # what the landmarker reports on the square crop
     back = crop_to_full(q, box, W_, H_) * (W_, H_)
     assert np.abs(back - pts).max() < 1, (W_, H_, back, pts)
+
+# --- distinct: overlapping tiles see one person twice; copies must not use up the N people (Codex review) ---
+def sk(x, y, h):  # skeleton standing at hip (x, y), shoulder-to-ankle h, normalized
+    a = np.zeros((33, 3)); a[:, 0] = x; a[:, 2] = 1
+    a[[11, 12], 1] = y - h / 3; a[[23, 24], 1] = y; a[[27, 28], 1] = y + 2 * h / 3; a[0, 1] = y - h / 2
+    return (a, None)
+big, big2, small = sk(0.3, 0.5, 0.3), sk(0.301, 0.502, 0.29), sk(0.7, 0.4, 0.1)
+assert [x[0][0, 0] for x in distinct([big, big2, small], 2, aspect=16 / 9)] == [0.3, 0.7]
+assert [x[0][0, 0] for x in distinct([big2, small], 2, keep=[big], aspect=16 / 9)] == [0.7]  # already found by a crop
+assert len(distinct([big, small, sk(0.1, 0.5, 0.2)], 2, aspect=1)) == 2
 
 print("ok")

@@ -9,7 +9,6 @@ from pathlib import Path
 
 R = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(R / "tools"))  # run with -I: the script's folder is not on sys.path
-from pose_full import METHOD as POSE_METHOD
 from platform_util import h264_args, need_ffmpeg, replace, stale, unlink, utf8_stdout, venv_python, write_text
 
 EXTS = {".mov", ".mp4", ".m4v"}
@@ -98,6 +97,7 @@ def main(argv):
     src = R / "videos" / S
     if not src.is_dir(): usage()
     need_ffmpeg()
+    from pose_full import METHOD as POSE_METHOD  # here, not at the top: pose_full needs numpy, which only the venv has
     # dotfiles (macOS ._A.mp4 sidecars) skipped like the old zsh glob; sorted by name ignoring case (as that glob did), ties broken by exact name so the order never depends on the OS
     vids = sorted((v for v in src.iterdir() if v.is_file() and v.suffix.lower() in EXTS and not v.name.startswith(".")), key=lambda v: (v.name.casefold(), v.name))
     if not vids: sys.exit(f"no videos in videos/{S}")
