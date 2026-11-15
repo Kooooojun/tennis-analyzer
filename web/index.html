@@ -554,10 +554,10 @@ function drawOverview(){
         return `<span>${ITEM[m]||m}</span><span class="bar"><i style="width:${(s??0)*10}%"></i></span><span class="num" title="中位數 ${x.median??"–"}，${x.n} 拍">${val}</span>`;
       }).join("");
       const flags=(window.TREND||[]).filter(t=>t.player===g.player&&t.kind===g.kind&&t.history.at(-1)?.session===d.id).flatMap(t=>t.flags);
-      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?PN(g.player)+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
+      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?esc(PN(g.player))+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
     }).join("")+`</div>`;
     const ck=(sc.checks||[]).filter(c=>c.status==="ok");
-    if(ck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+ck.map(c=>`<li>${multi?PN(c.player)+" · ":""}${esc(c.name)}：通過 ${c.passed}、不通過 ${c.failed}、看不出來 ${c.unclear}</li>`).join("")+`</ul>`;
+    if(ck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+ck.map(c=>`<li>${multi?esc(PN(c.player))+" · ":""}${esc(c.name)}：通過 ${c.passed}、不通過 ${c.failed}、看不出來 ${c.unclear}</li>`).join("")+`</ul>`;
     h+=`<p class="caveat">1–10 分，怎麼算見 docs/scoring.md。灰色「資料不足」= 能用的拍不到一半，不打分。</p>`;
   }
   const fs=[...(d.findings||[])].sort((a,b)=>(!!a.info-!!b.info)).slice(0,3);
