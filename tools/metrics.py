@@ -39,12 +39,17 @@ def _swing_dir(xy, J, c):
     return float(np.sign(d)) if np.isfinite(d) and d != 0 else np.nan
 
 
+def _rmed(a, h):
+    """Rolling median over +-h samples (edges shrink); NaN where the whole window is NaN."""
+    return np.array([np.nanmedian(a[max(0, i - h):i + h + 1]) if np.isfinite(a[max(0, i - h):i + h + 1]).any() else np.nan for i in range(len(a))])
+
+
 def _prep(xy, J, c, d):
     """Seconds from backswing end to contact. Backswing end = the frame, within PREP_WIN before contact, where the hitting
     wrist is furthest back relative to the hip centre along the swing direction (5-frame median against pose jitter)."""
     a = max(0, c - PREP_WIN)
     back = d * (xy[a:c - 3, J['rw'], 0] - (xy[a:c - 3, J['lh'], 0] + xy[a:c - 3, J['rh'], 0]) / 2)
-    sm = np.array([np.nanmedian(back[max(0, i - 2):i + 3]) if np.isfinite(back[max(0, i - 2):i + 3]).any() else np.nan for i in range(len(back))])
+    sm = _rmed(back, 2)
     if not np.isfinite(sm).any(): return None
     return round((c - a - int(np.nanargmin(sm))) / FPS, 3)
 
@@ -195,11 +200,8 @@ STANCE_MAX = 3.0       # ankle gap / hip gap above this = hip width collapsed by
 _WR = dict(R=6, L=5)   # CLIP index of the racket wrist per hand
 
 
-def _form_dir(xy, c, kind, wr):
-    """+1 / -1 image-x direction of the stroke (lean sign). FH/BH: same definition as contact_fwd. SV: unused for lean (see below), kept for the stroke kinds."""
-    if kind == "SV":
-        d = np.nanmedian(xy[c + 8:c + 17, wr, 0]) - np.nanmedian(xy[c - 8:c - 2, wr, 0])
-        return float(np.sign(d)) if np.isfinite(d) and d != 0 else np.nan
+def _form_dir(xy, c, wr):
+    """+1 / -1 image-x direction of the FH/BH stroke (lean sign), same definition as contact_fwd. The serve has no usable direction (see form_checks)."""
     return _swing_dir(xy, dict(rw=wr), c)
 
 
@@ -221,18 +223,20 @@ def form_checks(frames, c, size=None, world=None, kind=None, hand="R"):
     if kind in (None, "FH", "BH") and c + FINISH_WIN < n:
         seg = up[c:c + FINISH_WIN + 1]
         if np.isfinite(seg).sum() >= FINISH_WIN // 3:
-            sm = [np.nanmedian(seg[max(0, i - 1):i + 2]) if np.isfinite(seg[max(0, i - 1):i + 2]).any() else np.nan for i in range(len(seg))]
+            sm = _rmed(seg, 1)
             out["finish"] = round(float(np.nanmax(sm)), 2)
     if kind in (None, "SV"):
         r = _med(up[c - 2:c + 3]); out["reach"] = None if r is None else round(r, 2)
-        rs, os_ = (2, 1) if hand != "L" else (1, 2); A = W if W is not None else xy
-        seg = slice(c - 30, c - 4); dy = A[seg, rs, 1] - A[seg, os_, 1]; ln = np.linalg.norm(A[seg, rs] - A[seg, os_], axis=1)
-        ang = np.degrees(np.arcsin(np.clip(dy / ln, -1, 1)))  # peak of the 5-frame median = the moment the racket shoulder is lowest (trophy), not the contact-time lift
-        sm = [np.nanmedian(ang[max(0, i - 2):i + 3]) if np.isfinite(ang[max(0, i - 2):i + 3]).any() else np.nan for i in range(len(ang))]
-        out["tilt"] = round(float(np.nanmax(sm)), 1) if np.isfinite(sm).any() else None
-    d = _form_dir(xy, c, kind, wr); v = (sc - hc)[c - 2:c + 3]
-    ln = _med(np.degrees(np.arctan2(v[:, 0] * d, -v[:, 1]))) if np.isfinite(d) else None
+        rs, os_ = (2, 1) if hand != "L" else (1, 2)
+        if W is not None and c >= 30:  # 3D only: 2D shoulder tilt swings 45-70 deg on one player's serves (docs/scoring.md §10)
+            seg = slice(c - 30, c - 4); dy = W[seg, rs, 1] - W[seg, os_, 1]; ln = np.linalg.norm(W[seg, rs] - W[seg, os_], axis=1)
+            ang = np.degrees(np.arcsin(np.clip(dy / ln, -1, 1)))  # peak of the 5-frame median = the moment the racket shoulder is lowest (trophy), not the contact-time lift
+            sm = _rmed(ang, 2)
+            out["tilt"] = round(float(np.nanmax(sm)), 1) if np.isfinite(sm).any() else None
+    v = (sc - hc)[c - 2:c + 3]
     if kind == "SV": ln = _med(np.degrees(np.arctan2(np.abs(v[:, 0]), -v[:, 1])))  # serve direction cannot be read from the wrist x (from behind it flips), so size only
+    else:
+        d = _form_dir(xy, c, wr); ln = _med(np.degrees(np.arctan2(v[:, 0] * d, -v[:, 1]))) if np.isfinite(d) else None
     out["lean"] = None if ln is None or abs(ln) > LEAN_MAX else round(ln, 1)  # > 90 deg = head below hips: a mis-tracked frame, not a lean
     A = W if W is not None else xy
     st = _med(np.linalg.norm(A[c - 2:c + 3, 11] - A[c - 2:c + 3, 12], axis=1) / np.linalg.norm(A[c - 2:c + 3, 7] - A[c - 2:c + 3, 8], axis=1))

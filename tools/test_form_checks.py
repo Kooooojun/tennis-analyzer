@@ -31,7 +31,7 @@ assert r["finish"] is None, r
 sh = dict(rs=(0.2, 0.1, 0), ls=(-0.2, 0, 0)); fr, W = clip({i: sh for i in range(c - 30, c - 4)})
 r = form_checks(fr, c, SIZE, W, "SV"); assert abs(r["tilt"] - 14.0) < 0.5, r
 r = form_checks(fr, c, SIZE, W, "SV", hand="L"); assert abs(r["tilt"] + 14.0) < 0.5, r
-r = form_checks(fr, c, SIZE, None, "SV"); assert abs(r["tilt"] - 14.0) < 1.0, r  # 2D fallback gives the same on an orthographic front view
+r = form_checks(fr, c, SIZE, None, "SV"); assert r["tilt"] is None and r["reach"] is not None, r  # no 3D world data: tilt is not trusted in 2D
 # 6. lean: shoulders 0.1 m ahead of hips in the swing direction (wrist moves +x) -> atan(0.1/0.5) = 11.3 deg; moving -x flips the sign
 lean = {i: dict(rs=(0.3, 0, 0), ls=(-0.1, 0, 0)) for i in range(0, 150)}  # shoulder centre x = 0.1, hip centre x = 0
 mv = {i: dict(lean[i], rw=(0.3 + 0.01 * (i - c), 0.25, 0)) for i in range(150)}

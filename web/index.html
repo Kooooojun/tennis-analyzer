@@ -374,7 +374,7 @@ if(!DAY_KEYS.length){ document.querySelector("main").innerHTML='<p style="paddin
 let DAY = DAY_KEYS[DAY_KEYS.length-1], ALL = DAYS[DAY].data;
 const who = s => s.player||"me";  // "player": null or missing = the single-player "me", same as score.py
 const PN = p => p==="me" ? "我" : p;
-const ITEM = {total:"總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球高度", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘"};
+const ITEM = {total:"總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球高度", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜", lean:"軀幹前傾", stance:"站姿寬度"};
 const STAT = {median:"中位數", mean:"平均", min:"最小", max:"最大", n:"拍數", score:"分數", cons:"一致性分", spread:"散佈"};
 const esc = x => String(x).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // landmark id → index in the trimmed per-frame arrays
@@ -697,7 +697,7 @@ function load(id, scroll){
   $("mPrep").innerHTML=S.prep==null?"–":`${S.prep.toFixed(2)}<small>s</small>`; $("cPrep").textContent=S.prep==null?"":`${grp}中位數 ${median(ALL.filter(x=>x.kind===S.kind&&(!(S.kind==="FH"&&dn)||x.drill===S.drill)).map(x=>x.prep))?.toFixed(2)??"–"}s`;  // same group as the cards beside it
   const sv=S.kind==="SV", f1=sv?S.reach:S.finish, num=(x,u,d=1)=>x==null?"–":`${x.toFixed(d)}<small>${u}</small>`;  // form_checks fields (docs/scoring.md §10); null = gate failed
   const med=(f,g=S.kind)=>median(ALL.filter(x=>x.kind===g).map(x=>x[f]));
-  $("kForm1").textContent=sv?"擊球伸展":"收拍"; $("mForm1").innerHTML=num(f1,"軀幹長",2); $("cForm1").textContent=sv?"擊球瞬間較高的手高於肩膀多少；中位數 "+(med("reach")?.toFixed(2)??"–"):"擊球後 0.5 秒手最高點高於肩膀多少；中位數 "+(med("finish")?.toFixed(2)??"–");
+  $("kForm1").parentElement.hidden=S.kind==="OH"; $("kForm1").textContent=sv?"擊球伸展":"收拍"; $("mForm1").innerHTML=num(f1,"軀幹長",2); $("cForm1").textContent=sv?"擊球瞬間較高的手高於肩膀多少；中位數 "+(med("reach")?.toFixed(2)??"–"):"擊球後 0.5 秒手最高點高於肩膀多少；中位數 "+(med("finish")?.toFixed(2)??"–");
   $("boxTilt").hidden=!sv; $("mTilt").innerHTML=num(S.tilt,"°"); $("cTilt").textContent="擊球前持拍側肩比另一側低幾度（負＝較高）";
   $("mLean").innerHTML=num(S.lean,"°"); $("cLean").textContent="往揮拍前進方向傾為正；單機位只看得到側面那一半，換視角不能比";
   $("mStance").innerHTML=num(S.stance,"×",2); $("cStance").textContent=S.stance==null?"看不出來（髖寬被視角壓縮或腳被擋）":"兩踝距離 ÷ 兩髖距離";
