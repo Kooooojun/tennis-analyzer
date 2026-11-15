@@ -6,20 +6,21 @@ import numpy as np
 
 # field, 10-point end, 1-point end (or band lo, hi, lo_bad, hi_bad), consistency 10/1 ends; no lin/band = consistency only
 METRICS = {
-    "knee": dict(lin=(125, 160), cons=(5, 20)),
+    # abs_kinds: kinds that get the absolute score; other kinds get consistency only (the 125 anchor is a forehand front-knee value, docs/scoring.md §2)
+    "knee": dict(lin=(125, 160), cons=(5, 20), abs_kinds=("FH",)),
     "contact_h": dict(band=(0.3, 0.8, -0.2, 1.3), cons=(0.08, 0.30)),
     "contact_fwd": dict(cons=(0.10, 0.40)),  # no target: "in front" has no measured optimum and the x projection depends on the camera
     "prep": dict(lin=(0.7, 0.2), cons=(0.05, 0.20)),
-    "open_min": dict(lin=(15, 60), cons=(5, 20)),
+    "open_min": dict(lin=(15, 60), cons=(5, 20), abs_kinds=("FH",)),
     # form_checks fields (docs/scoring.md §10): no measured optimum in the literature, so consistency only. Gate = the field is None when landmarks are under vis 0.5
     "finish": dict(cons=(0.15, 0.5), kinds=("FH", "BH")),
     "reach": dict(cons=(0.1, 0.4), kinds=("SV",)),
     "tilt": dict(cons=(3, 12), kinds=("SV",)),
     "lean": dict(cons=(3, 10), kinds=("FH", "BH", "SV")),
     "stance": dict(cons=(0.15, 0.6), kinds=("FH", "BH", "SV")),
-    # power (FH/BH): not in form/consistency, only caps the total (docs/scoring.md §11); no cons anchors
+    # power (FH/BH): not in form/consistency, only caps the total (docs/scoring.md §11); no cons anchors.
+    # turn is not here: a front camera reads 0 deg for real rotation and capped totals by 3.3 (docs/research/body-kinematics.md); strokes.json keeps it for display
     "wrist_speed": dict(lin=(12, 4), power=True),
-    "turn": dict(lin=(90, 20), power=True),
     "leg_load": dict(lin=(0.15, 0.02), power=True),
 }
 POWER_MARGIN = 1.2  # total <= power + 1.2: Tennis-AI-Coach's +12 on 0-100, same share of a 10-point scale
@@ -27,7 +28,7 @@ BASE_KINDS = ("FH", "BH")  # metrics without `kinds` apply here (knee etc. are n
 KINDS = ("FH", "BH", "SV")  # SV group exists only when the session has SV strokes
 MIN_N, MIN_N_CONS = 3, 5
 MIN_COVER = 0.5  # usable strokes / strokes in the group; below it the metric says 資料不足 (docs/scoring.md §1)
-SCORE_VERSION = 6  # 6: knee view gate (camera within 30 deg of front/back -> knee_warn) + kinematics get visibility-masked xy (knee-view-gate). 5: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate (body-kinematics). 4: + finish, reach, tilt, lean, stance and the SV group (serve-finish). 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
+SCORE_VERSION = 7  # 7: BH knee / open_min consistency only, turn out of the power cap, consistency spread centred per (video, drill) (score-groups-consistency). 6: knee view gate (camera within 30 deg of front/back -> knee_warn) + kinematics get visibility-masked xy (knee-view-gate). 5: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate (body-kinematics). 4: + finish, reach, tilt, lean, stance and the SV group (serve-finish). 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
 
 
 def _num(v):
@@ -51,6 +52,17 @@ def spread(vals):
     q1, q3 = np.percentile(vals, [25, 75]); return float((q3 - q1) / 1.349)
 
 
+def _cons_spread(strokes, m, knee_src="knee"):
+    """Robust SD after centring each (video, drill) on its own median, so a camera or drill change between clips is not read as inconsistency.
+    Keys with < 3 values are centred on the whole-group median instead. One key (or old strokes without video) = plain spread()."""
+    pairs = [((s.get("video"), s.get("drill")), v) for s in strokes if _num(v := _value(s, m, knee_src))]
+    keys = {k for k, _ in pairs}
+    if len(keys) < 2: return spread([v for _, v in pairs])
+    whole = float(np.median([v for _, v in pairs]))
+    mid = {k: float(np.median(vs)) if len(vs := [v for kk, v in pairs if kk == k]) >= MIN_N else whole for k in keys}
+    return spread([v - mid[k] for k, v in pairs])
+
+
 def _value(s, m, knee_src="knee"):
     """The stroke's value for metric m, or None when a quality gate drops it (docs/scoring.md §3)."""
     if m == "knee":
@@ -66,10 +78,11 @@ def _mean(xs):
 def _r(x, d=1): return None if x is None else round(x, d)
 
 
-def _explain(cfg, n, total, med, sp, ok):
+def _explain(cfg, n, total, med, sp, ok, kind="FH"):
     """Why the metric got (or did not get) a score: status, formula text and the inputs that fed it."""
     cover = n / total if total else 0
-    if "lin" in cfg: g, b = cfg["lin"]; f = f"10 − 9 × clip((中位數 − {g}) / ({b} − {g}), 0, 1)"
+    if kind not in cfg.get("abs_kinds", (kind,)): cfg = {k: v for k, v in cfg.items() if k not in ("lin", "band")}; f = f"{kind} 只評一致性（參考值只有正拍來源）"
+    elif "lin" in cfg: g, b = cfg["lin"]; f = f"10 − 9 × clip((中位數 − {g}) / ({b} − {g}), 0, 1)"
     elif "band" in cfg: lo, hi, lb, hb = cfg["band"]; f = f"中位數在 {lo}–{hi} 內 10 分；外側往 {lb} / {hb} 線性降到 1 分"
     else: f = "只評一致性，不評好壞"
     if "cons" in cfg: cg, cb = cfg["cons"]; f += f"；一致性 = 10 − 9 × clip((穩健SD − {cg}) / ({cb} − {cg}), 0, 1)"
@@ -89,15 +102,16 @@ def score_group(strokes, show_open, kind="FH"):
         vals = [v for v in (_value(s, m, knee_src) for s in strokes) if _num(v)]
         enough = len(vals) >= MIN_N and len(vals) / len(strokes) >= MIN_COVER
         med = float(np.median(vals)) if enough else None
-        sp = spread(vals) if enough and len(vals) >= MIN_N_CONS and "cons" in cfg else None
-        sc = lin(med, *cfg["lin"]) if "lin" in cfg else band(med, *cfg["band"]) if "band" in cfg else None
-        out[m] = dict(median=_r(med, 2), spread=_r(sp, 2), n=len(vals), score=_r(sc), cons=_r(lin(sp, *cfg["cons"])) if "cons" in cfg else None, **_explain(cfg, len(vals), len(strokes), med, sp, enough))
+        sp = _cons_spread(strokes, m, knee_src) if enough and len(vals) >= MIN_N_CONS and "cons" in cfg else None
+        sc = None if kind not in cfg.get("abs_kinds", (kind,)) else lin(med, *cfg["lin"]) if "lin" in cfg else band(med, *cfg["band"]) if "band" in cfg else None
+        out[m] = dict(median=_r(med, 2), spread=_r(sp, 2), n=len(vals), score=_r(sc), cons=_r(lin(sp, *cfg["cons"])) if "cons" in cfg else None, **_explain(cfg, len(vals), len(strokes), med, sp, enough, kind))
     tech = [x for m, x in out.items() if not METRICS[m].get("power")]
     form = _mean([x["score"] for x in tech]); cons = _mean([x["cons"] for x in tech])
     power = _mean([x["score"] for m, x in out.items() if METRICS[m].get("power")])
     raw = None if form is None else form if cons is None else 0.75 * form + 0.25 * cons
     total = raw if raw is None or power is None else min(raw, power + POWER_MARGIN)  # no power data -> no cap (old sessions keep their scale)
-    return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), power=_r(power), uncapped=_r(raw),
+    power_n = sum(any(_num(s.get(m)) for m, c in METRICS.items() if c.get("power")) for s in strokes)  # cap is per group (docs/scoring.md §11); the web can show how many strokes fed it
+    return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), power=_r(power), power_n=power_n if kind in BASE_KINDS else None, uncapped=_r(raw),
                 capped=raw is not None and total < raw, metrics=out, knee_src=knee_src, score_version=SCORE_VERSION)
 
 

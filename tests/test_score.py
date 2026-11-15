@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+import numpy as np
 from score import lin, band, spread, score_session, check_session, SCORE_VERSION
 from trend import compare
 
@@ -134,20 +135,19 @@ assert g["metrics"]["contact_fwd"]["n"] == 0 and g["metrics"]["contact_fwd"]["st
 print("prep-contact score tests ok")
 
 # body-kinematics（testset/results/body-kinematics_pred.md）：力量上限、2D 膝縮短閘門
-assert SCORE_VERSION == 6
-W, T, LL = (METRICS[m]["lin"] for m in ("wrist_speed", "turn", "leg_load"))
-strong = dict(wrist_speed=W[0], turn=T[0], leg_load=LL[0])  # power 10
-weak = dict(wrist_speed=W[1], turn=T[1], leg_load=LL[1])     # power 1: arm-only, upright
+W, LL = (METRICS[m]["lin"] for m in ("wrist_speed", "leg_load"))
+strong = dict(wrist_speed=W[0], leg_load=LL[0])  # power 10
+weak = dict(wrist_speed=W[1], leg_load=LL[1])     # power 1: arm-only, upright
 g = grp(score_session([st(knee=120, **strong)] * 6, False))
 assert g["power"] == 10 and g["total"] == 10 and g["form"] == 10 and not g["capped"]  # power metrics do not enter form
 g = grp(score_session([st(knee=120, **weak)] * 6, False))
 assert g["power"] == 1 and g["form"] == 10 and g["uncapped"] == 10 and close(g["total"], 1 + 1.2) and g["capped"]
-assert g["metrics"]["turn"]["cons"] is None and g["consistency"] == 10  # no consistency score for power metrics
+assert g["metrics"]["wrist_speed"]["cons"] is None and g["consistency"] == 10  # no consistency score for power metrics
 # no power data (old sessions) -> no cap, power null
 g = grp(score_session([st(knee=120)] * 6, False)); assert g["power"] is None and g["total"] == 10 and not g["capped"]
-# coverage gate applies to power metrics too: 2 of 6 strokes with turn -> 資料不足, not used for the cap
-g = grp(score_session([st(knee=120, turn=T[1])] * 2 + [st(knee=120)] * 4, False))
-assert g["metrics"]["turn"]["status"] == "資料不足" and g["power"] is None
+# coverage gate applies to power metrics too: 2 of 6 strokes with wrist_speed -> 資料不足, not used for the cap
+g = grp(score_session([st(knee=120, wrist_speed=W[1])] * 2 + [st(knee=120)] * 4, False))
+assert g["metrics"]["wrist_speed"]["status"] == "資料不足" and g["power"] is None
 # 2D knee gate: only when the group uses 2D; a foreshortened leg drops the stroke's 2D knee
 g = grp(score_session([st(knee=120, knee2d_ok=False)] * 6, False)); assert g["metrics"]["knee"]["score"] is None
 g = grp(score_session([st(knee=150, knee3d=120, knee2d_ok=False)] * 6, False)); assert g["metrics"]["knee"]["median"] == 120
@@ -157,3 +157,46 @@ from score import check_session
 r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] * 3 + [dict(kind="SV", serve_arm_straight=None, serve_arm_conf=0.0)])
 assert r[0]["n"] == 4 and r[0]["unclear"] == 1, r
 print("arm conf tests ok")
+
+# score-groups-consistency（testset/results/score-groups-consistency_pred.md）
+from statistics import NormalDist
+from score import _cons_spread, spread
+from trend import _entry
+assert SCORE_VERSION == 7
+nd = [NormalDist().inv_cdf((i + 0.5) / 10) for i in range(10)]; nd = [x * 0.15 / spread(nd) for x in nd]  # 10 values, robust SD exactly 0.15
+two = [st(video=1, contact_fwd=0.4 + x) for x in nd] + [st(video=2, contact_fwd=0.75 + x) for x in nd]
+assert spread([s["contact_fwd"] for s in two]) > 0.2  # 0.244: medians 0.35 apart widen the pooled IQR (the brief guessed >= 0.3)
+sp = _cons_spread(two, "contact_fwd", "knee"); assert abs(sp - 0.15) < 0.03, sp
+g = grp(score_session(two, False)); assert abs(g["metrics"]["contact_fwd"]["spread"] - 0.15) < 0.03 and close(g["metrics"]["contact_fwd"]["median"], round(float(np.median([s["contact_fwd"] for s in two])), 2))
+# drill centering uses the same key: two drills far apart behave like two videos; SV drill None = one drill
+twod = [dict(s, video=1, drill="feed" if s["contact_fwd"] < 0.6 else "rally") for s in two]
+assert abs(_cons_spread(twod, "contact_fwd", "knee") - 0.15) < 0.03
+# a video with < 3 strokes is not dropped: n and coverage unchanged, it is centred on the whole-group median
+three = two + [st(video=3, contact_fwd=0.6), st(video=3, contact_fwd=0.6)]
+m = grp(score_session(three, False))["metrics"]["contact_fwd"]; assert m["n"] == 22 and m["coverage"] == 1.0
+# 4: one video (or no video field) -> identical to the plain spread
+one = [dict(s, video=1) for s in two]
+assert _cons_spread(one, "contact_fwd", "knee") == spread([s["contact_fwd"] for s in one])
+old = [{k: v for k, v in s.items() if k != "video"} for s in two]
+assert _cons_spread(old, "contact_fwd", "knee") == spread([s["contact_fwd"] for s in old])
+# 2: BH knee / open_min are consistency only; FH unchanged
+for kind in ("BH", "FH"):
+    g = grp(score_session([st(kind=kind, knee=130 + i % 3, op=20 + i % 3) for i in range(10)], True), kind=kind)
+    k, o = g["metrics"]["knee"], g["metrics"]["open_min"]
+    assert k["cons"] is not None and o["cons"] is not None
+    if kind == "BH": assert k["score"] is None and o["score"] is None and "只評一致性" in k["formula"] and k["inputs"]["anchors"] is None
+    else: assert k["score"] == round(lin(131, 125, 160), 1) and o["score"] is not None
+# 3: turn no longer caps the total; power = mean(wrist_speed, leg_load); power_n stored
+g = grp(score_session([st(knee=120, turn=0, **strong)] * 7, False))
+assert "turn" not in g["metrics"] and g["power"] == 10 and not g["capped"] and g["power_n"] == 7
+assert grp(score_session([st(knee=120)] * 6, False))["power_n"] == 0
+# 5: Codex PR #3 — only-consistency metrics differ (stance spread vs stance None): total / consistency not comparable
+A = grp(score_session([st(knee=130, stance=x) for x in (0.8, 1.0, 1.2, 1.4, 1.6, 0.9, 1.1, 1.3, 1.5, 1.7)], False))
+B = grp(score_session([st(knee=130, stance=None)] * 10, False))
+run = lambda name: dict(session=name, date=name, camera="c")
+assert compare([_entry(run("a"), A), _entry(run("b"), B)]) == []
+# 6: comparable / series_key
+e = _entry(run("a"), A); assert e["comparable"] and e["series_key"] == ["c", A["knee_src"], 7]
+assert not _entry(dict(run("a"), camera=""), A)["comparable"]
+assert not _entry(run("a"), grp(score_session([st()] * 6, False)))["comparable"]
+print("score-groups-consistency tests ok")
