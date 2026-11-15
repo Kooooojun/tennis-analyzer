@@ -7,7 +7,8 @@
 # and labels.txt lines carry '@name' so a wrong prefill can be corrected.
 import sys, cv2, numpy as np
 import warnings; warnings.filterwarnings("ignore")
-from common import ROOT, session, work, videos, save, tracks, track_file, players, size, FPS, load_profiles, profile_for
+from common import ROOT, session, work, videos, save, tracks, track_file, players, size, FPS, profile_for
+from profiles import load_session_profiles
 from kind import classify, prefill
 from crop import square, wide, cut, brighten
 from match import match, WRIST
@@ -87,6 +88,11 @@ def sheet(c, idx, Ps, mark, src, low):
         if len(Ps) > 1:
             hp = np.nanmean(P[max(0, f + o - 5):f + o + 6, [23, 24], :2].astype(float), axis=(0, 1))
             if np.isfinite(hp).all(): cv2.circle(t, (int(hp[0] * gw), int(hp[1] * TILE[1])), 6, (0, 255, 255), -1)
+            for j, Q in enumerate(Ps):  # the others' wrists as small hollow rings (never cover the ball or racket); several people only
+                if j != mark:
+                    q = Q[max(0, f + o - 5):f + o + 6, [15, 16]].astype(float); q[q[..., 2] < 0.2] = np.nan
+                    for w in np.nanmean(q[..., :2], axis=0):
+                        if np.isfinite(w).all(): cv2.circle(t, (int(w[0] * gw), int(w[1] * TILE[1])), 5, (255, 160, 0), 1)
         text(t, f"whole frame {o:+d}"); g.append(t)
     g = np.hstack(g); pad = 4 * TILE[0] - g.shape[1]
     g = np.hstack([g, np.zeros((TILE[1], pad, 3), np.uint8)]) if pad >= 0 else cv2.resize(g, (4 * TILE[0], TILE[1]))
@@ -113,7 +119,7 @@ if names or any(len(t) > 1 for t in T.values()):
         sys.exit(f"{len(missing)} tracked people need a name: look at {Wd / 'players.jpg'} and replace the ? in {Wd / 'players.txt'}, then re-run")
 multi = bool(names)
 names = names or {(vn, 0): "me" for vn in range(1, len(V) + 1)}
-PROF = load_profiles()
+PROF = load_session_profiles(s)[0]
 hand = lambda name: (profile_for(PROF, name) or {"hand": None})["hand"]  # racket hand; None = no profile yet: look at both wrists (assemble.py guesses it later)
 
 
