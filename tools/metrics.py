@@ -85,10 +85,10 @@ CLIP = dict(nose=0, ls=1, rs=2, le=3, re=4, lw=5, rw=6, lh=7, rh=8, lk=9, rk=10,
 
 
 def measure_full(P, t, size, Wd=None, hand="R"):
-    """P: pose.npy (frames,33,3). t: contact time in seconds. size: proxy (w, h). Adds an automatic stroke kind (tools/kind.py): auto_kind FH/BH/SV/OH or '?', with kind_conf 0-1 and two_hand.
+    """P: pose.npy (frames,33,3). t: contact time in seconds. size: proxy (w, h). Adds an automatic stroke kind (tools/kind.py): auto_kind FH/BH/SV/OH or '?', with kind_conf 0-1.
     hand "L": kind.classify mirrors its racket-side test."""
     xy = P[:, :, :2] * _scale(size); f = int(round(t * 60)); k = classify(P, f, hand, Wd)
-    return dict(f=f, auto_kind=k["kind"], kind_conf=k["conf"], two_hand=k["two_hand"], **_core(xy, P[:, :, 2], f, FULL, Wd, hand))
+    return dict(f=f, auto_kind=k["kind"], kind_conf=k["conf"], **_core(xy, P[:, :, 2], f, FULL, Wd, hand))
 
 
 def measure_clip(frames, c, size=None, world=None, hand="R"):
