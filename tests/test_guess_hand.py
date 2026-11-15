@@ -23,3 +23,12 @@ h, ratio, why = hand_gate([body(16, 15)], SZ, T); assert h is None and "height" 
 h, ratio, why = hand_gate([body(high=0, slow_amp=0.15)], SZ, T); assert h is None and "ratio" in why, (h, ratio, why)  # 兩手一樣快
 h, ratio, why = hand_gate([body()[:20]], SZ, None); assert h is None and "too little" in why, (h, ratio, why)
 print("hand_gate OK")
+
+# candidates.py：沒 profile 時就算手猜得出來，cands 的 hand 也要是 None，預填拍種留 '?'（猜錯手時 FH/BH 整個鏡像）
+import ast
+src = (Path(__file__).resolve().parent.parent / "tools/candidates.py").read_text()
+fn = {n.name: n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef)}
+g = {}; exec(ast.get_source_segment(src, fn["guess"]), g)
+assert g["guess"](dict(v="a", t=1.0, track=0, hand=None)) == "?"
+assert "hand=prof[k]" in src, "cands.json 'hand' must be the profile hand only, not the guessed one"
+print("prefill OK")

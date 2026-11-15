@@ -81,17 +81,19 @@ C = []
 for vi, v in enumerate(V):
     ks = [k for k in T[v] if names[(vi + 1, k)] != "x"]
     if not ks: continue
-    Ps = {k: np.load(track_file(Wd / v, "pose", k)).astype(float) for k in ks}; Hd = {k: hand(names[(vi + 1, k)]) for k in ks}
-    wh = np.array(size(Wd / v / "proxy.mp4"), float) / 540; E = np.load(Wd / v / "events.npy")
-    for k in ks:  # no profile: the hand this track swings with around the hit events, when speed and height agree (else None = both wrists)
-        if Hd[k] is None and len(E): Hd[k] = hand_gate([Ps[k]], size(Wd / v / "proxy.mp4"), [list(E[:, 0])])[0]
+    Ps = {k: np.load(track_file(Wd / v, "pose", k)).astype(float) for k in ks}; prof = {k: hand(names[(vi + 1, k)]) for k in ks}
+    wh = np.array(size(Wd / v / "proxy.mp4"), float) / 540; E = np.load(Wd / v / "events.npy"); Hd = dict(prof)
+    for k in ks:  # no profile: guess from this track's own matched hits (as assemble does), only to pick the wrist; None = both wrists
+        if Hd[k] is None:
+            ts = [t for t, _, _, sp, arc in matched(Ps[k], E, wh, None).values() if sp >= 0.05 and arc >= 0.7]
+            if ts: Hd[k] = hand_gate([Ps[k]], size(Wd / v / "proxy.mp4"), [ts])[0]
     M = {k: matched(Ps[k], E, wh, Hd[k]) for k in ks}
     for t in sorted({t for m in M.values() for t in m}):
         k = max(ks, key=lambda k: max(swing(Ps[k], int(round(t * 60)), wh, WRIST[h]) for h in ([Hd[k]] if Hd[k] else "RL"))) if len(ks) > 1 else ks[0]  # who hit it, then: is it a stroke for them
         if t not in M[k]: continue
         _, pk, on, sp, arc = M[k][t]
         if sp >= 0.05 and arc >= 0.7:
-            C.append(dict(v=v, vn=vi + 1, t=float(t), arc=float(arc), sp=float(sp), track=k, player=names[(vi + 1, k)], hand=Hd[k]))
+            C.append(dict(v=v, vn=vi + 1, t=float(t), arc=float(arc), sp=float(sp), track=k, player=names[(vi + 1, k)], hand=prof[k]))  # profile hand only: a guessed hand must not pre-fill FH/BH (a wrong guess mirrors them)
 save(Wd / "cands.json", C)
 
 for old in Wd.glob("sheet*.jpg"): old.unlink()
