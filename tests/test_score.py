@@ -131,5 +131,24 @@ assert cf["score"] is None and cf["cons"] == 10 and cf["status"] == "ok" and cf[
 assert g["metrics"]["prep"]["score"] == 10 and g["form"] == 10  # a consistency-only metric does not drag the form score
 g = grp(score_session([st(contact_fwd=0.5, vis=0.2)] * 6, False))
 assert g["metrics"]["contact_fwd"]["n"] == 0 and g["metrics"]["contact_fwd"]["status"] == "資料不足"
-assert SCORE_VERSION == 4
 print("prep-contact score tests ok")
+
+# body-kinematics（testset/results/body-kinematics_pred.md）：力量上限、2D 膝縮短閘門
+assert SCORE_VERSION == 5
+W, T, LL = (METRICS[m]["lin"] for m in ("wrist_speed", "turn", "leg_load"))
+strong = dict(wrist_speed=W[0], turn=T[0], leg_load=LL[0])  # power 10
+weak = dict(wrist_speed=W[1], turn=T[1], leg_load=LL[1])     # power 1: arm-only, upright
+g = grp(score_session([st(knee=120, **strong)] * 6, False))
+assert g["power"] == 10 and g["total"] == 10 and g["form"] == 10 and not g["capped"]  # power metrics do not enter form
+g = grp(score_session([st(knee=120, **weak)] * 6, False))
+assert g["power"] == 1 and g["form"] == 10 and g["uncapped"] == 10 and close(g["total"], 1 + 1.2) and g["capped"]
+assert g["metrics"]["turn"]["cons"] is None and g["consistency"] == 10  # no consistency score for power metrics
+# no power data (old sessions) -> no cap, power null
+g = grp(score_session([st(knee=120)] * 6, False)); assert g["power"] is None and g["total"] == 10 and not g["capped"]
+# coverage gate applies to power metrics too: 2 of 6 strokes with turn -> 資料不足, not used for the cap
+g = grp(score_session([st(knee=120, turn=T[1])] * 2 + [st(knee=120)] * 4, False))
+assert g["metrics"]["turn"]["status"] == "資料不足" and g["power"] is None
+# 2D knee gate: only when the group uses 2D; a foreshortened leg drops the stroke's 2D knee
+g = grp(score_session([st(knee=120, knee2d_ok=False)] * 6, False)); assert g["metrics"]["knee"]["score"] is None
+g = grp(score_session([st(knee=150, knee3d=120, knee2d_ok=False)] * 6, False)); assert g["metrics"]["knee"]["median"] == 120
+print("body-kinematics score tests ok")

@@ -334,6 +334,7 @@ main.noplayer>.col{max-width:820px}
         <div class="metric"><div class="k">引拍轉肩</div><div class="v" id="mOpen">–</div><div class="cmp" id="cOpen"></div></div>
         <div class="metric"><div class="k">擊球高度</div><div class="v" id="mHeight">–</div><div class="cmp" id="cHeight"></div></div>
         <div class="metric"><div class="k">準備時間</div><div class="v" id="mPrep">–</div><div class="cmp" id="cPrep"></div></div>
+        <div class="metric" id="bodyCard"><div class="k">身體出力</div><div class="v" id="mBody">–</div><div class="cmp" id="cBody"></div></div>
         <div class="metric"><div class="k" id="kForm1">收拍</div><div class="v" id="mForm1">–</div><div class="cmp" id="cForm1"></div></div>
         <div class="metric" id="boxTilt"><div class="k">肩膀傾斜</div><div class="v" id="mTilt">–</div><div class="cmp" id="cTilt"></div></div>
         <div class="metric"><div class="k">軀幹前傾</div><div class="v" id="mLean">–</div><div class="cmp" id="cLean"></div></div>
@@ -374,7 +375,7 @@ if(!DAY_KEYS.length){ document.querySelector("main").innerHTML='<p style="paddin
 let DAY = DAY_KEYS[DAY_KEYS.length-1], ALL = DAYS[DAY].data;
 const who = s => s.player||"me";  // "player": null or missing = the single-player "me", same as score.py
 const PN = p => p==="me" ? "我" : p;
-const ITEM = {total:"總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球高度", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜", lean:"軀幹前傾", stance:"站姿寬度"};
+const ITEM = {total:"總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球高度", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜", lean:"軀幹前傾", stance:"站姿寬度", wrist_speed:"手速", turn:"轉肩幅度", leg_load:"下蹲", power:"力量"};
 const STAT = {median:"中位數", mean:"平均", min:"最小", max:"最大", n:"拍數", score:"分數", cons:"一致性分", spread:"散佈"};
 const esc = x => String(x).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // landmark id → index in the trimmed per-frame arrays
@@ -551,7 +552,7 @@ function drawOverview(){
         return `<span>${ITEM[m]||m}</span><span class="bar"><i style="width:${(s??0)*10}%"></i></span><span class="num" title="中位數 ${x.median??"–"}，${x.n} 拍">${val}</span>`;
       }).join("");
       const flags=(window.TREND||[]).filter(t=>t.player===g.player&&t.kind===g.kind&&t.history.at(-1)?.session===d.id).flatMap(t=>t.flags);
-      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?PN(g.player)+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
+      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?PN(g.player)+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
     }).join("")+`</div>`;
     const ck=(sc.checks||[]).filter(c=>c.status==="ok");
     if(ck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+ck.map(c=>`<li>${multi?PN(c.player)+" · ":""}${esc(c.name)}：通過 ${c.passed}、不通過 ${c.failed}、看不出來 ${c.unclear}</li>`).join("")+`</ul>`;
@@ -691,7 +692,12 @@ function load(id, scroll){
   $("detailTitle").textContent=`這一拍：${strokeLabel(S)}${dn?"（"+dn+"）":""}`;
   const m=S.kind==="FH"?(S.drill==="feed"?MED.feed:S.drill==="rally"?MED.rally:MED.FH):MED[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
   const fmt=(x,u)=>x==null?"–":`${Math.round(x)}<small>${u}</small>`;
-  $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${Math.round(m.knee)}°`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"");
+  $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${Math.round(m.knee)}°`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");
+  // body-kinematics (docs/scoring.md §11): trunk share, turn and leg load read the same from any horizontal camera angle
+  $("bodyCard").hidden=S.trunk_share==null&&S.turn==null&&S.leg_load==null;  // sessions before body-kinematics have none
+  const pc=x=>x==null?"–":Math.round(x*100)+"%";
+  $("mBody").innerHTML=S.trunk_share==null?"–":`${Math.round(S.trunk_share*100)}<small>%</small>`;
+  $("cBody").textContent=`肩膀速度占手腕 ${pc(S.trunk_share)} · 轉肩 ${S.turn==null?"–":Math.round(S.turn)+"°"} · 下蹲 ${pc(S.leg_load)} · 手速 ${S.wrist_speed==null?"–":S.wrist_speed.toFixed(1)}；只用手臂打時這幾個都偏低`;
   $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${Math.round(m.open)}%`:"這場鏡頭角度不適合看轉肩，參考就好";
   $("mHeight").innerHTML=fmt(S.contact_h*100,""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
   $("mPrep").innerHTML=S.prep==null?"–":`${S.prep.toFixed(2)}<small>s</small>`; $("cPrep").textContent=S.prep==null?"":`${grp}中位數 ${median(ALL.filter(x=>x.kind===S.kind&&(!(S.kind==="FH"&&dn)||x.drill===S.drill)).map(x=>x.prep))?.toFixed(2)??"–"}s`;  // same group as the cards beside it
