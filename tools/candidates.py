@@ -40,7 +40,7 @@ def tile(cap, Ps, f, label, mark=None):
 def frames(src, ts):
     """{t: frame} for times ts (s) from video src: one seek, then decode forward, keeping only the frame nearest each time
     (the source may be 59.94 fps: times, not frame numbers). None where the clip has no frame."""
-    cap = cv2.VideoCapture(str(src)); cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, min(ts) - 0.1) * 1000); best = {t: (1 / 50, None) for t in ts}
+    cap = cv2.VideoCapture(str(src)); cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, min(ts) - 0.1) * 1000); best = {t: (0.03, None) for t in ts}
     while True:
         ok, im = cap.read()
         if not ok: break
@@ -66,7 +66,7 @@ def sheet(c, idx, Ps, mark, src, low):
     rows, row = [], []
     for o in OFF_NEW:
         q = P[max(0, f + o - 5):f + o + 6].astype(float); sh = np.nanmean(q[:, [11, 12], :2], axis=(0, 1)) * wh; hp = np.nanmean(q[:, [23, 24], :2], axis=(0, 1)) * wh
-        L = float(np.linalg.norm(sh - hp)) if np.isfinite([*sh, *hp]).all() else H / 6
+        L = min(float(np.linalg.norm(sh - hp)), H / 3) if np.isfinite([*sh, *hp]).all() else H / 6  # cap: a pose glitch must not ask for a gigapixel crop
         x0, y0, w, h = wide((sh + hp) / 2 if np.isfinite([*sh, *hp]).all() else wh / 2, max(L, H / 20), W, H)
         t = cv2.resize(brighten(cut(F[T[o]], x0, y0, w, h)), TILE, interpolation=cv2.INTER_AREA if w > TILE[0] else cv2.INTER_CUBIC)
         text(t, f"{idx} {o:+d}" if o else f"{idx} v{c['vn']} {int(c['t'] // 60)}:{c['t'] % 60:04.1f} hit sound" + (f" @{c['player']}" if len(Ps) > 1 else ""))
@@ -165,11 +165,13 @@ if LEGACY:
         sheet_im = np.vstack([np.hstack(rows[i:i + 2]) for i in range(0, len(rows), 2)])
         cv2.imwrite(str(Wd / f"sheet{k // PER_SHEET}.jpg"), sheet_im, [cv2.IMWRITE_JPEG_QUALITY, 80])
 else:
-    low = set()
-    for i, c in enumerate(C):  # one video file open at a time, each candidate decodes only ~0.9 s of it
-        v = c["v"]; ks = [k2 for k2 in T[v] if names[(c["vn"], k2)] != "x"]
-        src = next((p for p in sorted((ROOT / "videos" / s).glob(v + ".*")) if p.suffix.lower() in (".mov", ".mp4", ".m4v")), None)
-        if src is None: src = Wd / v / "proxy.mp4"; low.add(v)
+    srcs, low = {}, set()
+    for v in dict.fromkeys(c["v"] for c in C):  # original video = the file whose stem is v (a glob "v.*" would also match "v.x.mov"); not openable (codec) -> proxy
+        src = next((p for p in sorted((ROOT / "videos" / s).iterdir()) if p.stem == v and p.suffix.lower() in (".mov", ".mp4", ".m4v") and cv2.VideoCapture(str(p)).isOpened()), None)
+        if src is None: low.add(v)
+        srcs[v] = src or Wd / v / "proxy.mp4"
+    for i, c in enumerate(C):  # each candidate decodes only ~0.9 s of its video
+        v = c["v"]; ks = [k2 for k2 in T[v] if names[(c["vn"], k2)] != "x"]; src = srcs[v]
         im = sheet(c, i, [poses[(v, k2)] for k2 in ks], ks.index(c["track"]), src, v in low)
         cv2.imwrite(str(Wd / f"sheet{i}.jpg"), im, [cv2.IMWRITE_JPEG_QUALITY, 85])
     if low: print("no original video for", sorted(low), "- sheets from proxy.mp4 only (about half the resolution, the ball is small)")
