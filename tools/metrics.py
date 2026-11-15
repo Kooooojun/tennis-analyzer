@@ -193,6 +193,15 @@ GUESS_WIN = (24, 12)  # frames before / after a hit that count as "swinging"
 GUESS_VIS = 0.9  # a hidden wrist jumps 3x faster than a real swing; only sharp frames count (0.5 picked the wrong hand on the mirrored wall-1 video)
 
 
+def _swing_mask(n, hit_times):
+    """n-frame bool mask of the frames within GUESS_WIN of a hit time (seconds); None = every frame."""
+    sel = np.ones(n, bool)
+    if hit_times is not None:
+        sel[:] = False
+        for tt in hit_times: sel[max(0, int(round(tt * FPS)) - GUESS_WIN[0]):int(round(tt * FPS)) + GUESS_WIN[1]] = True
+    return sel
+
+
 def guess_hand(poses, size=None, times=None):
     """Racket hand from the video: the wrist whose image speed (per torso length) has the higher 98th percentile (idea from
     Logan-Huang/Tennis-AI-Coach). poses: pose arrays (frames,33,3) of ONE player; times: per array the hit times in seconds, so only
@@ -204,10 +213,7 @@ def guess_hand(poses, size=None, times=None):
     for i, P in enumerate(poses):
         P = np.asarray(P, float); xy = P[:, :, :2] * _scale(sizes[i]); vis = P[:, :, 2]
         L = np.linalg.norm((xy[:, 11] + xy[:, 12]) / 2 - (xy[:, 23] + xy[:, 24]) / 2, axis=1)[1:]
-        sel = np.ones(len(P) - 1, bool)
-        if times is not None:
-            sel[:] = False
-            for tt in times[i]: sel[max(0, int(round(tt * FPS)) - GUESS_WIN[0]):int(round(tt * FPS)) + GUESS_WIN[1]] = True
+        sel = _swing_mask(len(P) - 1, times[i] if times is not None else None)
         for w in sp:
             fin = np.isfinite(xy[:, w, 0]); q = np.pad(np.where(fin[:, None], xy[:, w], 0), ((2, 2), (0, 0)), mode="edge")
             m = np.median(np.lib.stride_tricks.sliding_window_view(q, 5, axis=0), axis=2)  # 5-frame median: pose jitter is not a swing
@@ -235,10 +241,7 @@ def hand_gate(poses, size=None, times=None):
     for i, P in enumerate(poses):
         P = np.asarray(P, float); xy = P[:, :, :2] * _scale(sizes[i])
         sh = (xy[:, 11] + xy[:, 12]) / 2; L = np.linalg.norm(sh - (xy[:, 23] + xy[:, 24]) / 2, axis=1)
-        sel = np.ones(len(P), bool)
-        if times is not None:
-            sel[:] = False
-            for tt in times[i]: sel[max(0, int(round(tt * FPS)) - GUESS_WIN[0]):int(round(tt * FPS)) + GUESS_WIN[1]] = True
+        sel = _swing_mask(len(P), times[i] if times is not None else None)
         for w in hi:
             h = (sh[:, 1] - xy[:, w, 1]) / np.maximum(L, 1e-3)
             hi[w].append(h[sel & (P[:, w, 2] >= 0.5) & np.isfinite(h)])
