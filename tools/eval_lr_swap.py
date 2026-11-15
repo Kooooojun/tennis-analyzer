@@ -25,7 +25,8 @@ def main():
     rate = lambda k: (lambda v: round(np.mean(v), 3) if v else None)([r[k] for r in rows if r[k] is not None])  # unknown (null) strokes are not in the denominator
     out = dict(win=FLAG_WIN, per_video=per_video, strokes=len(rows), lr_swap_rate=rate("lr_swap"), pose_jump_rate=rate("pose_jump"), rows=rows)
     for k, v in per_video.items(): print(f"{k}: swap frames {v['swap_frames']}/{v['frames']} ({v['swap_rate']:.2%})")
-    print(f"{len(rows)} strokes: lr_swap within +-{FLAG_WIN} frames {out['lr_swap_rate']:.1%}, pose_jump {out['pose_jump_rate']:.1%}")
+    pc = lambda v: "unknown" if v is None else f"{v:.1%}"
+    print(f"{len(rows)} strokes: lr_swap within +-{FLAG_WIN} frames {pc(out['lr_swap_rate'])}, pose_jump {pc(out['pose_jump_rate'])}")
     if len(sys.argv) > 2: write_text(Path(sys.argv[2]), json.dumps(out, ensure_ascii=False, indent=1))
 
 
