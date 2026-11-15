@@ -49,7 +49,78 @@ def _prep(xy, J, c, d):
     return round((c - a - int(np.nanargmin(sm))) / FPS, 3)
 
 
-def _core(xy, vis, c, J, world=None):
+# --- view-robust body kinematics (docs/scoring.md §10). Idea from Logan-Huang/Tennis-AI-Coach (no licence: rewritten, nothing copied).
+TURN_REV = 0.15     # shoulder-width reversal (fraction of full width) needed to count a change of turning direction
+FULL_SW_MIN = 0.55  # full shoulder width is at least this many torso lengths
+LIMB_FULL = 0.8     # 2D knee only where thigh and shin both show >= 80% of their longest length in the clip
+
+
+def _smooth(a, k=2):
+    """Centred 5-frame nan-median along axis 0, against single-frame pose glitches."""
+    return np.array([np.nanmedian(a[max(0, i - k):i + k + 1], axis=0) for i in range(len(a))])
+
+
+def _zigzag(w, thr):
+    """Turning points of w that reverse by more than thr, plus the first value and the last extreme."""
+    piv = [w[0]]; hi = lo = w[0]; d = 0
+    for v in w[1:]:
+        if d >= 0 and v > hi: hi = v
+        if d <= 0 and v < lo: lo = v
+        if d >= 0 and hi - v > thr and hi > piv[-1]: piv.append(hi); d = -1; lo = v
+        elif d <= 0 and v - lo > thr and lo < piv[-1]: piv.append(lo); d = 1; hi = v
+    piv.append(hi if d > 0 else lo if d < 0 else (hi if hi - w[0] > w[0] - lo else lo))
+    return piv
+
+
+def kinematics(xy, J, c, hand="R", start=None):
+    """Leg load/drive, wrist speed, trunk share, shoulder turn and the 2D-knee foreshortening gate for the stroke at frame c.
+    xy: (frames, n, 2) in 540-px units, y down. hand: racket hand "R"/"L". start: backswing-end frame for the turn (default c-30)."""
+    a, b = max(0, c - 90), min(len(xy), c + 61)  # the 150-frame web clip
+    s, w = (J['rs'], J['rw']) if hand == "R" else (J['ls'], J['lw'])
+    X = _smooth(xy[a:b]); c0 = c - a
+    hip = (X[:, J['lh']] + X[:, J['rh']]) / 2
+    L = np.nanmedian(np.linalg.norm((X[:, J['ls']] + X[:, J['rs']]) / 2 - hip, axis=1))
+    out = dict(leg_load=None, leg_drive=None, knee_eq=None, wrist_speed=None, trunk_share=None, turn=None, knee2d_ok=None)
+    if not np.isfinite(L) or L <= 0: return out
+    # legs: hip height above the lower (grounded) ankle, as a share of the standing height in the clip
+    with np.errstate(all="ignore"):
+        h = np.nanmax(X[:, [J['la'], J['ra']], 1], axis=1) - hip[:, 1]
+    if np.isfinite(h[c0 - 48:c0 + 1]).any() and np.isfinite(h[c0 - 2:c0 + 3]).any():
+        stand = np.nanmax(h); low = np.nanmin(h[c0 - 48:c0 + 1])
+        load = (stand - low) / stand
+        out.update(leg_load=round(float(load), 3), leg_drive=round(float((np.nanmedian(h[c0 - 2:c0 + 3]) - low) / stand), 3),
+                   knee_eq=round(float(2 * np.degrees(np.arcsin(np.clip(1 - load, 0, 1)))), 1))
+    # speeds of the racket wrist and shoulder relative to the hip centre, torso lengths / s, peak over 0.4 s before contact
+    R = xy[a:b]; rhip = (R[:, J['lh']] + R[:, J['rh']]) / 2  # raw frames, then a median on the speed: a one-frame glitch makes two spikes, both dropped
+    sp = lambda j: _smooth(np.linalg.norm(np.diff(R[c0 - 27:c0 + 5, j] - rhip[c0 - 27:c0 + 5], axis=0), axis=1))[2:-2] * FPS / L
+    vw, vs = sp(w), sp(s)
+    if np.isfinite(vw).any():
+        pw = float(np.nanmax(vw)); out["wrist_speed"] = round(pw, 2)
+        if pw >= 1 and np.isfinite(vs).any(): out["trunk_share"] = round(float(np.nanmax(vs)) / pw, 3)
+    # shoulder turn: angle of the shoulder line to the image plane = arccos(width / full width), path from backswing end to +0.3 s
+    sw = np.linalg.norm(X[:, J['rs']] - X[:, J['ls']], axis=1) / L
+    if np.isfinite(sw).any():
+        full = max(float(np.nanmax(sw)), FULL_SW_MIN)
+        st = (c - 30 if start is None else start) - a
+        seg = sw[max(0, st):c0 + 19]; seg = seg[np.isfinite(seg)] / full
+        if len(seg) >= 5:
+            pv = np.clip(_zigzag(seg, TURN_REV), 0, 1); th = np.degrees(np.arccos(pv))
+            big = np.abs(np.diff(pv)) > TURN_REV  # a leg smaller than the reversal threshold is jitter, even at the ends (arccos amplifies it near square)
+            out["turn"] = round(float(np.abs(np.diff(th))[big].sum()), 1)
+    # 2D knee gate: on the leg that gives the smaller angle, thigh and shin both near full length (leg side-on to the camera)
+    seglen = lambda p, q: np.linalg.norm(X[:, p] - X[:, q], axis=1)
+    ok = []
+    for i in range(c0 - 48, c0 - 5):
+        legs = [(J['rh'], J['rk'], J['ra']), (J['lh'], J['lk'], J['la'])]
+        ang = [_angle(X, i, *g) for g in legs]
+        if not np.isfinite(ang).any(): continue
+        hh, kk, aa = legs[int(np.nanargmin(ang))]
+        ok.append(seglen(hh, kk)[i] >= LIMB_FULL * np.nanmax(seglen(hh, kk)) and seglen(kk, aa)[i] >= LIMB_FULL * np.nanmax(seglen(kk, aa)))
+    if ok: out["knee2d_ok"] = bool(np.mean(ok) >= 0.5)
+    return out
+
+
+def _core(xy, vis, c, J, world=None, hand="R"):
     """J maps names to landmark indices for this array layout. world: optional (frames, n, 3) metres, same layout, for knee3d.
     knee = 2D knee (unchanged definition); knee3d = same window/percentile on 3D angles, None without world data."""
     L = np.linalg.norm((xy[:, J['ls']] + xy[:, J['rs']]) / 2 - (xy[:, J['lh']] + xy[:, J['rh']]) / 2, axis=1)
@@ -61,35 +132,37 @@ def _core(xy, vis, c, J, world=None):
     ok3 = bool(np.isfinite(k3))
     d = _swing_dir(xy, J, c); hx = (xy[c - 2:c + 3, J['lh'], 0] + xy[c - 2:c + 3, J['rh'], 0]) / 2
     fwd = _med(d * (xy[c - 2:c + 3, J['rw'], 0] - hx) / L[c - 2:c + 3])
+    prep = _prep(xy, J, c, d) if np.isfinite(d) else None
     return dict(knee=round(k2, 1), knee3d=round(k3, 1) if ok3 else None,
                 knee_warn=bool(abs(k3 - k2) > KNEE_GAP_MAX) if ok3 else None,
                 open_min=round(float(np.nanpercentile(openp[c - 48:c - 5], 10)), 1),
                 open_contact=round(_med(openp[c - 2:c + 3]), 1),
                 contact_h=round(_med((hip - xy[c - 2:c + 3, J['rw'], 1]) / L[c - 2:c + 3]), 2),
-                contact_fwd=None if fwd is None else round(fwd, 2), prep=_prep(xy, J, c, d) if np.isfinite(d) else None,
+                contact_fwd=None if fwd is None else round(fwd, 2), prep=prep,
                 elbow=round(_med([_angle(xy, i, J['rs'], J['re'], J['rw']) for i in range(c - 2, c + 3)]), 1),
-                vis=round(float(np.nanmean(vis[c - 2:c + 3, J['rw']])), 2))
+                vis=round(float(np.nanmean(vis[c - 2:c + 3, J['rw']])), 2),
+                **kinematics(xy, J, c, hand, None if prep is None else c - round(prep * FPS)))
 
 
-FULL = dict(nose=0, ls=11, rs=12, re=14, rw=16, lh=23, rh=24, lk=25, rk=26, la=27, ra=28)
-CLIP = dict(nose=0, ls=1, rs=2, re=4, rw=6, lh=7, rh=8, lk=9, rk=10, la=11, ra=12)
+FULL = dict(nose=0, ls=11, rs=12, le=13, re=14, lw=15, rw=16, lh=23, rh=24, lk=25, rk=26, la=27, ra=28)
+CLIP = dict(nose=0, ls=1, rs=2, le=3, re=4, lw=5, rw=6, lh=7, rh=8, lk=9, rk=10, la=11, ra=12)
 
 
-def measure_full(P, t, size, Wd=None):
+def measure_full(P, t, size, Wd=None, hand="R"):
     """P: pose.npy (frames,33,3). t: contact time in seconds. size: proxy (w, h). Adds an automatic FH/BH/OH guess."""
     xy = P[:, :, :2] * _scale(size); f = int(round(t * 60))
     hip_x = np.nanmean((xy[f - 8:f + 9, 23, 0] + xy[f - 8:f + 9, 24, 0]) / 2)
     nose_y = np.nanmean(xy[f - 3:f + 4, 0, 1]); wy = np.nanmin(xy[f - 6:f + 7, 16, 1])
     dx = np.nanmean(xy[f + 15:f + 22, 16, 0]) - np.nanmean(xy[f - 12:f - 6, 16, 0]); side = np.nanmean(xy[f - 2:f + 3, 16, 0]) - hip_x
     auto = "OH" if wy < nose_y - 0.02 else "FH" if side > 0.04 else "BH" if side < -0.02 else ("FH" if dx < 0 else "BH")
-    return dict(f=f, auto_kind=auto, **_core(xy, P[:, :, 2], f, FULL, Wd))
+    return dict(f=f, auto_kind=auto, **_core(xy, P[:, :, 2], f, FULL, Wd, hand))
 
 
-def measure_clip(frames, c, size=None, world=None):
+def measure_clip(frames, c, size=None, world=None, hand="R"):
     nan = [[np.nan] * 3] * 17
     P = np.array([nan if fr is None else fr for fr in frames], float)
     Wd = np.array([nan if w is None else w for w in world], float) if world else None
-    return _core(P[:, :, :2] * _scale(size), P[:, :, 2], c, CLIP, Wd)
+    return _core(P[:, :, :2] * _scale(size), P[:, :, 2], c, CLIP, Wd, hand)
 
 
 # --- arm shape checks (docs/scoring.md §7): pass/fail with a confidence gate, never a degree score ---

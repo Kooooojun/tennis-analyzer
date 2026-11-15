@@ -11,11 +11,16 @@ METRICS = {
     "contact_fwd": dict(cons=(0.10, 0.40)),  # no target: "in front" has no measured optimum and the x projection depends on the camera
     "prep": dict(lin=(0.7, 0.2), cons=(0.05, 0.20)),
     "open_min": dict(lin=(15, 60), cons=(5, 20)),
+    # power: not in form/consistency, only caps the total (docs/scoring.md §10); no cons anchors
+    "wrist_speed": dict(lin=(12, 4), power=True),
+    "turn": dict(lin=(90, 20), power=True),
+    "leg_load": dict(lin=(0.15, 0.02), power=True),
 }
+POWER_MARGIN = 1.2  # total <= power + 1.2: Tennis-AI-Coach's +12 on 0-100, same share of a 10-point scale
 KINDS = ("FH", "BH")
 MIN_N, MIN_N_CONS = 3, 5
 MIN_COVER = 0.5  # usable strokes / strokes in the group; below it the metric says 資料不足 (docs/scoring.md §1)
-SCORE_VERSION = 3  # 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
+SCORE_VERSION = 4  # 4: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate. 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
 
 
 def _num(v):
@@ -42,7 +47,7 @@ def spread(vals):
 def _value(s, m, knee_src="knee"):
     """The stroke's value for metric m, or None when a quality gate drops it (docs/scoring.md §3)."""
     if m == "knee":
-        return None if s.get("knee_warn") else s.get(knee_src)
+        return None if s.get("knee_warn") or (knee_src == "knee" and s.get("knee2d_ok") is False) else s.get(knee_src)
     if m in ("contact_h", "contact_fwd") and (not _num(s.get("vis")) or s["vis"] < 0.5): return None  # missing or NaN vis fails the gate
     return s.get(m)
 
@@ -60,9 +65,10 @@ def _explain(cfg, n, total, med, sp, ok):
     if "lin" in cfg: g, b = cfg["lin"]; f = f"10 − 9 × clip((中位數 − {g}) / ({b} − {g}), 0, 1)"
     elif "band" in cfg: lo, hi, lb, hb = cfg["band"]; f = f"中位數在 {lo}–{hi} 內 10 分；外側往 {lb} / {hb} 線性降到 1 分"
     else: f = "只評一致性，不評好壞"
-    cg, cb = cfg["cons"]; f += f"；一致性 = 10 − 9 × clip((穩健SD − {cg}) / ({cb} − {cg}), 0, 1)"
+    if "cons" in cfg: cg, cb = cfg["cons"]; f += f"；一致性 = 10 − 9 × clip((穩健SD − {cg}) / ({cb} − {cg}), 0, 1)"
+    else: f += "；力量分項：不進技術分與一致性，只用來設總分上限"
     return dict(status="ok" if ok else "資料不足", coverage=_r(cover, 2), formula=f,
-                inputs=dict(median=_r(med, 2), spread=_r(sp, 2), n=n, n_total=total, anchors=list(cfg.get("lin") or cfg.get("band") or []) or None, cons_anchors=list(cfg["cons"])))
+                inputs=dict(median=_r(med, 2), spread=_r(sp, 2), n=n, n_total=total, anchors=list(cfg.get("lin") or cfg.get("band") or []) or None, cons_anchors=list(cfg["cons"]) if "cons" in cfg else None))
 
 
 def score_group(strokes, show_open):
@@ -75,12 +81,16 @@ def score_group(strokes, show_open):
         vals = [v for v in (_value(s, m, knee_src) for s in strokes) if _num(v)]
         enough = len(vals) >= MIN_N and len(vals) / len(strokes) >= MIN_COVER
         med = float(np.median(vals)) if enough else None
-        sp = spread(vals) if enough and len(vals) >= MIN_N_CONS else None
+        sp = spread(vals) if enough and len(vals) >= MIN_N_CONS and "cons" in cfg else None
         sc = lin(med, *cfg["lin"]) if "lin" in cfg else band(med, *cfg["band"]) if "band" in cfg else None
-        out[m] = dict(median=_r(med, 2), spread=_r(sp, 2), n=len(vals), score=_r(sc), cons=_r(lin(sp, *cfg["cons"])), **_explain(cfg, len(vals), len(strokes), med, sp, enough))
-    form = _mean([x["score"] for x in out.values()]); cons = _mean([x["cons"] for x in out.values()])
-    total = None if form is None else form if cons is None else 0.75 * form + 0.25 * cons
-    return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), metrics=out, knee_src=knee_src, score_version=SCORE_VERSION)
+        out[m] = dict(median=_r(med, 2), spread=_r(sp, 2), n=len(vals), score=_r(sc), cons=_r(lin(sp, *cfg["cons"])) if "cons" in cfg else None, **_explain(cfg, len(vals), len(strokes), med, sp, enough))
+    tech = [x for m, x in out.items() if not METRICS[m].get("power")]
+    form = _mean([x["score"] for x in tech]); cons = _mean([x["cons"] for x in tech])
+    power = _mean([x["score"] for m, x in out.items() if METRICS[m].get("power")])
+    raw = None if form is None else form if cons is None else 0.75 * form + 0.25 * cons
+    total = raw if raw is None or power is None else min(raw, power + POWER_MARGIN)  # no power data -> no cap (old sessions keep their scale)
+    return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), power=_r(power), uncapped=_r(raw),
+                capped=raw is not None and total < raw, metrics=out, knee_src=knee_src, score_version=SCORE_VERSION)
 
 
 def score_session(strokes, show_open):

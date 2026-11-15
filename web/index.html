@@ -271,6 +271,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
         <div class="metric"><div class="k">引拍轉肩</div><div class="v" id="mOpen">–</div><div class="cmp" id="cOpen"></div></div>
         <div class="metric"><div class="k">擊球高度</div><div class="v" id="mHeight">–</div><div class="cmp" id="cHeight"></div></div>
         <div class="metric"><div class="k">準備時間</div><div class="v" id="mPrep">–</div><div class="cmp" id="cPrep"></div></div>
+        <div class="metric" id="bodyCard"><div class="k">身體出力</div><div class="v" id="mBody">–</div><div class="cmp" id="cBody"></div></div>
         <div class="metric"><div class="k">手臂姿勢檢查</div><div class="v" id="mElbow">–</div><div class="cmp" id="cElbow"></div></div>
       </div>
       <div style="margin-top:12px"><canvas id="chart"></canvas></div>
@@ -571,7 +572,12 @@ function load(id, scroll){
   $("detailTitle").textContent=`這一拍：${strokeLabel(S)}${dn?"（"+dn+"）":""}`;
   const m=S.kind==="FH"?(S.drill==="feed"?MED.feed:S.drill==="rally"?MED.rally:MED.FH):MED[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
   const fmt=(x,u)=>x==null?"–":`${Math.round(x)}<small>${u}</small>`;
-  $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${Math.round(m.knee)}°`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"");
+  $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${Math.round(m.knee)}°`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");
+  // body-kinematics (docs/scoring.md §10): trunk share, turn and leg load read the same from any horizontal camera angle
+  $("bodyCard").hidden=S.trunk_share==null&&S.turn==null&&S.leg_load==null;  // sessions before body-kinematics have none
+  const pc=x=>x==null?"–":Math.round(x*100)+"%";
+  $("mBody").innerHTML=S.trunk_share==null?"–":`${Math.round(S.trunk_share*100)}<small>%</small>`;
+  $("cBody").textContent=`肩膀速度占手腕 ${pc(S.trunk_share)} · 轉肩 ${S.turn==null?"–":Math.round(S.turn)+"°"} · 下蹲 ${pc(S.leg_load)} · 手速 ${S.wrist_speed==null?"–":S.wrist_speed.toFixed(1)}；只用手臂打時這幾個都偏低`;
   $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${Math.round(m.open)}%`:"這場鏡頭角度不適合看轉肩，參考就好";
   $("mHeight").innerHTML=fmt(S.contact_h*100,""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
   $("mPrep").innerHTML=S.prep==null?"–":`${S.prep.toFixed(2)}<small>s</small>`; $("cPrep").textContent=S.prep==null?"":`${grp}中位數 ${median(ALL.filter(x=>x.kind===S.kind&&(!(S.kind==="FH"&&dn)||x.drill===S.drill)).map(x=>x.prep))?.toFixed(2)??"–"}s`;  // same group as the cards beside it
