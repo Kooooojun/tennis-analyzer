@@ -7,6 +7,8 @@ import sys, numpy as np
 from common import session, work, load, videos, tracks, track_file, players, size, FPS, profile_for
 from profiles import load_session_profiles
 from attrib import wrist_hands, who_hit
+from match import _edge
+from platform_util import read_text
 
 
 def setup(s):
@@ -21,22 +23,33 @@ def setup(s):
     return out
 
 
+def read_holdout(path, W):
+    """labels.csv -> ([(line no, video, t, name)], [skipped line nos]). Bad lines stop with their line number; hits that candidates.py
+    would not attribute either (match._edge: too near the clip's start or end) are skipped and listed."""
+    rows, skipped = [], []
+    for ln, l in enumerate(read_text(path).splitlines(), 1):  # read_text: utf-8-sig, so a BOM from Excel / Windows is fine
+        if not l.strip() or l.startswith("#"): continue
+        try: v, t, who = (x.strip() for x in l.split(",")); t = float(t)
+        except ValueError: sys.exit(f"{path} line {ln}: want '<video>,<t seconds>,<name>', got {l!r}")
+        if not np.isfinite(t): sys.exit(f"{path} line {ln}: time must be a finite number, got {l!r}")
+        if v not in W: sys.exit(f"{path} line {ln}: video {v!r} has no tracked player in this session (videos with every person x are skipped): {sorted(W)}")
+        if who not in W[v][3].values(): sys.exit(f"{path} line {ln}: {who!r} is not a player of {v}: {sorted(set(W[v][3].values()))}")
+        if _edge(round(t * FPS), len(next(iter(W[v][0].values())))): print(f"skip line {ln}: hit at {t} s is too near the clip's start or end (candidates.py skips it too)"); skipped.append(ln); continue
+        rows.append((ln, v, t, who))
+    return rows, skipped
+
+
 def main():
+    if len(sys.argv) < 3: sys.exit("usage: eval_attrib.py <session> <labels.csv> | --check")
     s = session(); W = setup(s)
     if sys.argv[2:3] == ["--check"]:
-        C = load(work(s) / "cands.json"); got = [(i, c["t"], c["track"], who_hit(*W[c["v"]][:2], c["t"], W[c["v"]][2])) for i, c in enumerate(C) if c["v"] in W]
+        C = load(work(s) / "cands.json"); got = [(i, c["t"], c.get("track", 0), who_hit(*W[c["v"]][:2], c["t"], W[c["v"]][2])) for i, c in enumerate(C) if c["v"] in W]
         if len(got) != len(C): sys.exit(f"cannot check {len(C) - len(got)} candidates: their video has every person x in players.txt now (re-run candidates.py)")
         bad = [g for g in got if g[2] != g[3]]
         sys.exit(f"MISMATCH with candidates.py on {len(bad)} of {len(C)}: {bad[:5]}" if bad else print(f"check OK: same track as candidates.py on all {len(C)} candidates") or 0)
-    if len(sys.argv) < 3: sys.exit("usage: eval_attrib.py <session> <labels.csv> | --check")
-    ok, wrong, skipped, n = 0, [], [], 0
-    for ln, l in enumerate(open(sys.argv[2], encoding="utf-8").read().splitlines(), 1):
-        if not l.strip() or l.startswith("#"): continue
-        try: v, t, who = (x.strip() for x in l.split(",")); t = float(t)
-        except ValueError: sys.exit(f"{sys.argv[2]} line {ln}: want '<video>,<t seconds>,<name>', got {l!r}")
-        if v not in W: sys.exit(f"line {ln}: video {v!r} has no tracked player in this session (videos with every person x are skipped): {sorted(W)}")
-        if round(t * FPS) < 30: print(f"skip line {ln}: hit at {t} s is before the 0.5 s torso window"); skipped.append(ln); continue
-        Ps, hands, wh, nm = W[v]; k = who_hit(Ps, hands, t, wh); n += 1
+    rows, skipped = read_holdout(sys.argv[2], W); ok, wrong, n = 0, [], len(rows)
+    for ln, v, t, who in rows:
+        Ps, hands, wh, nm = W[v]; k = who_hit(Ps, hands, t, wh)
         if nm[k] == who: ok += 1
         else: wrong.append((ln, v, t, who, nm[k]))
     if skipped: print(f"skipped {len(skipped)} line(s): {skipped}")

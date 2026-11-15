@@ -37,4 +37,5 @@ def swing(P, f, wh, wi=16):
 def who_hit(Ps, Hd, t, wh):
     """Track key of Ps whose racket wrist (Hd; None = best of both) swung most into a hit at time t. One person = that one."""
     f = int(round(t * FPS))
+    if any(f < 30 or f + 30 > len(P) for P in Ps.values()): raise ValueError(f"hit at {t} s needs 0.5 s of pose on both sides (a negative slice would wrap to the clip's end)")
     return max(Ps, key=lambda k: max(swing(Ps[k], f, wh, WRIST[h]) for h in ([Hd[k]] if Hd[k] else "RL"))) if len(Ps) > 1 else next(iter(Ps))

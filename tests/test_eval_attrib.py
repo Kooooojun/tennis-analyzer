@@ -27,4 +27,18 @@ attrib.matched = lambda P, E, wh, h: {1.0: (1.0, 0, 0, 0.5, 2.0)}
 attrib.hand_gate = lambda Ps, sz, ts: (calls.append(ts) or ("R", 2.0, "ok"))
 Hd = wrist_hands({0: lefty, 1: hitter}, {0: None, 1: "L"}, None, wh, (960, 540))
 assert Hd == {0: "R", 1: "L"} and calls == [[[1.0]]], (Hd, calls)  # 只猜沒 profile 的人；有 profile 的不動
+for bad_t in (10 / 60, 190 / 60):  # 邊界：前後不足 0.5 s 要報錯，不能讓負數切片繞到尾端
+    try: who_hit(Ps, {0: "R", 1: "R"}, bad_t, wh); raise AssertionError(bad_t)
+    except ValueError: pass
+# eval_attrib 的 CSV 檢查：BOM、非有限時間、名字打錯、靠頭尾的行跳過
+import tempfile
+from eval_attrib import read_holdout
+W = {"v": ({0: np.zeros((6000, 33, 3)), 1: np.zeros((6000, 33, 3))}, {}, wh, {0: "p1", 1: "p2"})}
+def csv(text):
+    p = Path(tempfile.mkdtemp()) / "l.csv"; p.write_bytes(text.encode("utf-8")); return p
+assert read_holdout(csv("\ufeffv,10.0,p1\nv,20.0,p2\n"), W) == ([(1, "v", 10.0, "p1"), (2, "v", 20.0, "p2")], [])
+for bad in ("v,nan,p1\n", "v,inf,p1\n", "v,10.0,p3\n", "v,abc,p1\n"):
+    try: read_holdout(csv("v,5.0,p1\n" + bad), W); raise AssertionError(bad)
+    except SystemExit as e: assert "line 2" in str(e), e
+assert read_holdout(csv("v,0.2,p1\nv,99.9,p2\nv,50,p1\n"), W) == ([(3, "v", 50.0, "p1")], [1, 2])  # 6000 格 = 100 s：頭 45 格、尾 30 格擋掉
 print("attrib OK")
