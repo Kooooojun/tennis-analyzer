@@ -122,7 +122,7 @@
 
 ### 7.1 公式、輸入與版本（`score_version`）
 
-`scores.json` 頂層與每一組都有 `score_version`（現為 7；改錨點、閘門或公式就加 1）。每個指標多這幾欄，讓人（和 `check_findings`）追得到分數怎麼來：
+`scores.json` 頂層與每一組都有 `score_version`（版本號以 `tools/score.py` 的 `SCORE_VERSION` 為準，各版改了什麼寫在那行註解；改錨點、閘門或公式就加 1）。每個指標多這幾欄，讓人（和 `check_findings`）追得到分數怎麼來：
 
 - `status`：`"ok"` 或 `"資料不足"`；`coverage`：可用拍數 / 該組拍數。
 - `formula`：這個指標的換算公式文字。
