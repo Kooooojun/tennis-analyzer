@@ -214,4 +214,7 @@ assert SCORE_VERSION == 8
 assert _value(dict(prep=1.5, prep_trunc=True), "prep") is None and _value(dict(prep=0.4, prep_trunc=False), "prep") == 0.4 and _value(dict(prep=0.4), "prep") == 0.4
 G = score_session([dict(kind="FH", prep=0.4)] * 5 + [dict(kind="FH", prep=1.5, prep_trunc=True)], False)[0]["metrics"]["prep"]
 assert G["n"] == 5 and G["median"] == 0.4, G
+# old sessions have no prep_trunc: a prep at the old 1.0 s window edge is the cut value, not a measurement -> left out too
+assert _value(dict(prep=1.0), "prep") is None and _value(dict(prep=0.999), "prep") is None and _value(dict(prep=0.98), "prep") == 0.98
+assert _value(dict(prep=1.0, prep_trunc=False), "prep") == 1.0  # new sessions: a real 1.0 s
 print("prep-trunc tests ok")

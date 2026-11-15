@@ -40,7 +40,7 @@ assert P(clip(np.full(150, np.nan)), J, c, 1) is None and np.isnan(_swing_dir(cl
 # prep-window-direction: a backswing end on the window's first frame is followed back; the walk stops where the wrist moves forward (previous stroke)
 f2 = np.arange(200); c2 = 120
 long = np.where(f2 < c2 - 80, -(f2 - (c2 - 100)) / 20, -1 + (f2 - (c2 - 80)) / 80.0); long[f2 < c2 - 100] = 0  # back at c-80, 1.33 s before contact
-assert _prep(clip(long), J, c2, 1) == (round(80 / 60, 3), False)  # c-80: past the 1.0 s window, before PREP_MAX
+r = _prep(clip(long), J, c2, 1); assert abs(r[0] - 80 / 60) <= 2.5 / 60 and r[1] is False, r  # c-80: past the 1.0 s window, before PREP_MAX
 assert _prep(clip(np.zeros(200)), J, c2, 1) == (1.5, True)  # still back at the walk limit (c-90): lower bound
 assert _prep(clip(np.zeros(200)), J, 50, 1)[1] is True  # clip starts inside the window
 # 3D axis: swing along depth (z), image x carries nothing
@@ -49,6 +49,21 @@ W = np.zeros((200, 3, 3)); W[:, 0, 2] = np.where(f2 < c2 - 20, -(f2 - (c2 - 60))
 u = _swing_vec(W, Jw, c2); assert u is not None and abs(u[2] - 1) < 1e-9 and u[1] == 0
 r = _prep(W, Jw, c2, u); assert r is not None and abs(r[0] - 20 / 60) <= 2.5 / 60 and r[1] is False
 assert _swing_vec(np.full((200, 3, 3), np.nan), Jw, c2) is None and _swing_vec(W, Jw, 10) is None
+# 7: camera in front instead of behind: the swing runs along -z; the 3D axis follows the motion, so the answer is the same
+Wm = W.copy(); Wm[:, 0, 2] *= -1
+u = _swing_vec(Wm, Jw, c2); assert u is not None and abs(u[2] + 1) < 1e-9
+r = _prep(Wm, Jw, c2, u); assert r is not None and abs(r[0] - 20 / 60) <= 2.5 / 60 and r[1] is False, r
+# 1: two quick strokes 0.7 s apart, the wrist never moves forward past tol in between (e.g. the last stroke was the other side):
+#    the walk stops after the previous hit instead of running into it
+flat = np.zeros(200); flat[c2 - 25:] = np.arange(200 - (c2 - 25)) / 20.0  # back (0) until c-25, then forward
+r = _prep(clip(flat), J, c2, 1, prev=c2 - 42); assert r is not None and r[0] <= (42 - 3) / 60 + 1e-9 and r[1] is False, r
+assert _prep(clip(flat), J, c2, 1) == (1.5, True)  # no previous hit known: the clip limit
+# 3: noise on a long backswing plateau does not stop the walk on a single spike
+rng = np.random.default_rng(0); noisy = np.where(f2 < c2 - 25, -1.0, -1 + (f2 - (c2 - 25)) / 10.0); noisy[: c2 - 85] = 1.0
+noisy[c2 - 85:c2 - 25] += rng.normal(0, 0.04, 60)
+r = _prep(clip(noisy), J, c2, 1); assert r is not None and r[0] >= 75 / 60, r
+# 5: contact in the first frames -> None, not a negative-index window
+assert _prep(clip(np.zeros(200)), J, 5, 1) is None
 print("prep-window tests ok")
 
 # --- knee view gate (testset/results/knee-view-gate_pred.md) ---

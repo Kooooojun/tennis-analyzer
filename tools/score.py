@@ -68,7 +68,7 @@ def _value(s, m, knee_src="knee"):
     """The stroke's value for metric m, or None when a quality gate drops it (docs/scoring.md §3)."""
     if m == "knee":
         return None if s.get("knee_warn") or (knee_src == "knee" and s.get("knee2d_ok") is False) else s.get(knee_src)
-    if m == "prep" and s.get("prep_trunc"): return None  # lower bound only: its score is 10 either way (>= 1.0 s), but the unknown true value would distort the spread
+    if m == "prep" and (s.get("prep_trunc") or "prep_trunc" not in s and _num(s.get("prep")) and s["prep"] >= 0.999): return None  # old sessions (no prep_trunc): 1.0 s = the old window edge.  lower bound only: its score is 10 either way (>= 1.0 s), but the unknown true value would distort the spread
     if m in ("contact_h", "contact_fwd") and (not _num(s.get("vis")) or s["vis"] < 0.5): return None  # missing or NaN vis fails the gate
     return s.get(m)
 

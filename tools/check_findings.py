@@ -27,7 +27,7 @@ def _usable(s, field, show_open=False):
     if field == "knee" and s.get("knee2d_ok") is False: return None
     if field == "open_min" and not show_open: return None
     if field in ("contact_h", "contact_fwd") and not (_num(s.get("vis")) and s["vis"] >= 0.5): return None
-    if field == "prep" and s.get("prep_trunc") is True: return None  # lower bound only, score.py leaves it out too
+    if field == "prep" and (s.get("prep_trunc") is True or "prep_trunc" not in s and _num(s.get("prep")) and s["prep"] >= 0.999): return None  # lower bound only, score.py leaves it out too
     v = s.get(field)
     return v if _num(v) else None
 

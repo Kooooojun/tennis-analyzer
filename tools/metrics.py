@@ -45,6 +45,7 @@ def _knee(xy, J, c):
 
 
 PREP_WIN = FPS  # frames (1.0 s) searched before contact; a fixed 1.4 s window caught the previous rally stroke (testset/results/prep-contact.md)
+PREV_GAP = 3  # frames after the previous hit that still belong to it (contact frames are +-2 frames)
 PREP_MAX = 90  # frames (1.5 s, the web clip before contact): how far a backswing end on the window's first frame is followed back
 
 
@@ -70,24 +71,29 @@ def _rmed(a, h):
     return np.array([np.nanmedian(a[max(0, i - h):i + h + 1]) if np.isfinite(a[max(0, i - h):i + h + 1]).any() else np.nan for i in range(len(a))])
 
 
-def _prep(P, J, c, u):
+def _prep(P, J, c, u, prev=None):
     """(seconds from backswing end to contact, truncated) or None. Backswing end = the frame where the hitting wrist is furthest back
     relative to the hip centre along the swing direction u (+1/-1 on image x, or a _swing_vec on world coordinates; 5-frame median against jitter).
-    truncated = the backswing end reaches back to the clip start (or PREP_MAX), so the time is a lower bound."""
+    prev: frame of the same player's previous hit in this array, if any; nothing at or before prev + PREV_GAP is searched.
+    truncated = the wrist is still furthest back at the search limit (c - PREP_MAX or the clip start), so the time is a lower bound."""
+    if c < 6: return None  # no frames before c-3
     o = max(0, c - PREP_MAX - 2)  # smooth only the frames used (+2 margin for the median): P can be a whole video, and _rmed is a per-frame python loop
     rel = P[o:c, J['rw']] - (P[o:c, J['lh']] + P[o:c, J['rh']]) / 2
     back = np.full(len(P), np.nan); back[o:c] = _rmed(rel[:, 0] * u if np.isscalar(u) else rel @ u, 2)
-    a = max(0, c - PREP_WIN); sm = back[a:c - 3]
-    if not np.isfinite(sm).any(): return None
+    lim = max(0, c - PREP_MAX); lo = lim if prev is None else max(lim, prev + PREV_GAP)
+    a = max(lo, c - PREP_WIN); sm = back[a:c - 3]
+    if not len(sm) or not np.isfinite(sm).any(): return None
     i = a + int(np.nanargmin(sm))
-    # minimum on the window's first frame: the wrist was back earlier. Follow it back while the wrist stays as far back (2% of the range);
-    # a previous stroke first swings forward, which stops the walk, so it is never caught
-    tol = 0.02 * (np.nanmax(sm) - np.nanmin(sm)); lo = max(0, c - PREP_MAX)
-    if i == a:  # walk back while the wrist stays within tol of the furthest-back point so far (not the current frame: slow drift must not chain)
-        m = back[a]
-        while a > lo and back[a - 1] <= m + tol: a -= 1; m = min(m, back[a])
-        i = a + int(np.nanargmin(back[a:i + 1]))
-    return round((c - i) / FPS, 3), bool(i == a and (a == lo or not np.isfinite(back[a - 1])))
+    # minimum on the window's first frame: the wrist was back earlier. Follow it back while the wrist stays within tol (5% of the range; 2% stopped on pose noise) of the
+    # furthest-back point so far (not of the current frame: slow drift must not chain); the best of the next 3 earlier frames counts, so one
+    # noise spike does not end the walk. A previous stroke first swings forward, which stops it; prev stops it at the previous hit
+    tol = 0.05 * (np.nanmax(sm) - np.nanmin(sm))
+    if back[a] <= back[i] + 0.4 * tol:  # the window starts on the backswing plateau (noise can put the minimum a few frames later); 2% of the range: 5% moved 1 in 10 normal strokes
+        m = back[i]; e = a
+        while a > lo and np.nanmin(np.r_[back[max(lo, a - 3):a], np.inf]) <= m + tol: a -= 1; m = np.fmin(m, back[a])
+        k = np.flatnonzero(back[a:e + 1] <= m + tol)
+        if len(k): i = a + int(k[0])  # first frame at the furthest-back level
+    return round((c - i) / FPS, 3), bool(i == a and lo == lim and (a == lim or not np.isfinite(back[a - 1])))
 
 
 # --- view-robust body kinematics (docs/scoring.md §11). Idea from Logan-Huang/Tennis-AI-Coach (no licence: rewritten, nothing copied).
@@ -170,7 +176,7 @@ def _hand(J, hand):
     return J if hand == "R" else {**J, "rs": J["ls"], "ls": J["rs"], "re": J["le"], "rw": J["lw"]}
 
 
-def _core(xy, vis, c, J, world=None, hand="R"):
+def _core(xy, vis, c, J, world=None, hand="R", prev=None):
     """J maps names to landmark indices for this array layout. world: optional (frames, n, 3) metres, same layout, for knee3d.
     knee = 2D knee (unchanged definition); knee3d = same window/percentile on 3D angles, None without world data.
     hand: racket hand, "R" or "L" (per-player setting, work/profiles.json); everything with the hitting arm follows it."""
@@ -194,7 +200,7 @@ def _core(xy, vis, c, J, world=None, hand="R"):
         vis_c = float(np.nanmean(vis[w, J['rw']])) if np.isfinite(vis[w, J['rw']]).any() else None
     else: fwd = ch = oc = el = vis_c = None
     u = _swing_vec(world, J, c) if view and ct else None
-    pr = _prep(world, J, c, u) if u is not None else None if view else _prep(xy, J, c, d) if np.isfinite(d) else None
+    pr = _prep(world, J, c, u, prev) if u is not None else None if view else _prep(xy, J, c, d, prev) if np.isfinite(d) else None
     prep, trunc = pr or (None, None)
     op = openp[c - 48:c - 5] if pre else np.array([np.nan])
     a = max(0, c - 90); xk = xy[a:c + 61].copy(); xk[vis[a:c + 61] < FORM_VIS_MIN] = np.nan  # same visibility cut as form_checks; only kinematics' 150-frame window, not the whole video
@@ -215,18 +221,18 @@ FULL = dict(nose=0, ls=11, rs=12, le=13, re=14, lw=15, rw=16, lh=23, rh=24, lk=2
 CLIP = dict(nose=0, ls=1, rs=2, le=3, re=4, lw=5, rw=6, lh=7, rh=8, lk=9, rk=10, la=11, ra=12)
 
 
-def measure_full(P, t, size, Wd=None, hand="R"):
+def measure_full(P, t, size, Wd=None, hand="R", prev_t=None):
     """P: pose.npy (frames,33,3). t: contact time in seconds. size: proxy (w, h). Adds an automatic stroke kind (tools/kind.py): auto_kind FH/BH/SV/OH or '?', with kind_conf 0-1.
-    hand "L": kind.classify mirrors its racket-side test."""
+    hand "L": kind.classify mirrors its racket-side test. prev_t: the same player's previous hit in this video (s), bounds the prep search."""
     xy = P[:, :, :2] * _scale(size); f = int(round(t * 60)); k = classify(P, f, hand, Wd, size)
-    return dict(f=f, auto_kind=k["kind"], kind_conf=k["conf"], **_core(xy, P[:, :, 2], f, FULL, Wd, hand))
+    return dict(f=f, auto_kind=k["kind"], kind_conf=k["conf"], **_core(xy, P[:, :, 2], f, FULL, Wd, hand, None if prev_t is None else int(round(prev_t * 60))))
 
 
-def measure_clip(frames, c, size=None, world=None, hand="R"):
+def measure_clip(frames, c, size=None, world=None, hand="R", prev=None):
     nan = [[np.nan] * 3] * 17
     P = np.array([nan if fr is None else fr for fr in frames], float)
     Wd = np.array([nan if w is None else w for w in world], float) if world else None
-    return _core(P[:, :, :2] * _scale(size), P[:, :, 2], c, CLIP, Wd, hand)
+    return _core(P[:, :, :2] * _scale(size), P[:, :, 2], c, CLIP, Wd, hand, prev)
 
 
 GUESS_MIN = 30  # sharp wrist-speed samples (0.5 s at 60 fps) needed per wrist before guessing a hand
