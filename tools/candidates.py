@@ -9,18 +9,26 @@ import warnings; warnings.filterwarnings("ignore")
 from common import session, work, videos, save, tracks, track_file, players, size, FPS, load_profiles, profile_for
 from kind import classify, CONF_MIN
 from match import match, WRIST
+from assemble import cands_fp
 
 OFF = [-45, -25, -8, 0, 12]
 PER_SHEET = 24
 
 
-def tile(cap, P, f, label):
+def tile(cap, Ps, f, label, mark=None):
+    """Square crop around the torsos of every pose in Ps at frame f (at least 220 px, so a lone player looks as before; with
+    several people the crop grows to hold them all, so a hit by someone other than the prefilled player is visible).
+    mark: index in Ps of the prefilled player, drawn as a dot on the hips."""
     cap.set(cv2.CAP_PROP_POS_FRAMES, f); ok, im = cap.read()
     H, W = im.shape[:2] if ok else (960, 540)
-    c = np.nanmean(P[max(0, f - 5):f + 6, [11, 12, 23, 24], :2], axis=(0, 1))
-    cx, cy = (W // 2, H * 5 // 8) if np.isnan(c).any() else (int(c[0] * W), int(c[1] * H))
-    x0 = min(max(cx - 110, 0), W - 220); y0 = min(max(cy - 130, 0), H - 220)
-    t = cv2.resize(im[y0:y0 + 220, x0:x0 + 220], (200, 200)) if ok else np.zeros((200, 200, 3), np.uint8)
+    cs = [np.nanmean(P[max(0, f - 5):f + 6, [11, 12, 23, 24], :2], axis=(0, 1)) * (W, H) for P in Ps]
+    pts = np.array([c for c in cs if np.isfinite(c).all()]).reshape(-1, 2)
+    lo, hi = (pts.min(0), pts.max(0)) if len(pts) else (np.array([W / 2, H * 5 / 8]),) * 2
+    side = int(min(max(220, *(hi - lo + 240)), H, W)); cx, cy = (lo + hi) / 2
+    x0 = int(min(max(cx - side / 2, 0), W - side)); y0 = int(min(max(cy - side * 0.6, 0), H - side))
+    t = cv2.resize(im[y0:y0 + side, x0:x0 + side], (200, 200)) if ok else np.zeros((200, 200, 3), np.uint8)
+    if mark is not None and len(Ps) > 1 and np.isfinite(cs[mark]).all():
+        cv2.circle(t, (int((cs[mark][0] - x0) * 200 / side), int((cs[mark][1] - y0) * 200 / side)), 5, (0, 255, 255), -1)
     cv2.putText(t, label, (3, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
     return t
 
@@ -35,7 +43,7 @@ if names or any(len(t) > 1 for t in T.values()):
             v = V[vn - 1]; P = np.load(track_file(Wd / v, "pose", k)); cap = cv2.VideoCapture(str(Wd / v / "proxy.mp4"))
             seen = np.flatnonzero(~np.isnan(P[:, 0, 0]))
             fs = seen[np.linspace(0, len(seen) - 1, 10).astype(int)] if len(seen) else []
-            row = [tile(cap, P, int(f), f"v{vn} t{k} {int(f / 60 // 60)}:{f / 60 % 60:04.1f}") for f in fs]
+            row = [tile(cap, [P], int(f), f"v{vn} t{k} {int(f / 60 // 60)}:{f / 60 % 60:04.1f}") for f in fs]
             rows.append(np.hstack(row + [np.zeros((200, 200, 3), np.uint8)] * (10 - len(row))))
         cv2.imwrite(str(Wd / "players.jpg"), np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 80])
         with open(Wd / "players.txt", "a") as fh:
@@ -76,12 +84,13 @@ caps, poses = {}, {}
 for k in range(0, len(C), PER_SHEET):
     rows = []
     for i, c in enumerate(C[k:k + PER_SHEET]):
-        v, key = c["v"], (c["v"], c["track"])
+        v = c["v"]; ks = [k2 for k2 in T[v] if names[(c["vn"], k2)] != "x"]
         if v not in caps: caps[v] = cv2.VideoCapture(str(Wd / v / "proxy.mp4"))
-        if key not in poses: poses[key] = np.load(track_file(Wd / v, "pose", c["track"]))
+        for k2 in ks:
+            if (v, k2) not in poses: poses[(v, k2)] = np.load(track_file(Wd / v, "pose", k2))
         f = int(round(c["t"] * 60))
         labs = [f"{k + i} v{c['vn']} {int(c['t'] // 60)}:{c['t'] % 60:04.1f}" + (f" @{c['player']}" if multi else "")] + [f"{o:+d}" for o in OFF[1:]]
-        row = np.hstack([tile(caps[v], poses[key], f + o, l) for o, l in zip(OFF, labs)]); row[:, -3:] = (0, 0, 255)
+        row = np.hstack([tile(caps[v], [poses[(v, k2)] for k2 in ks], f + o, l, ks.index(c["track"])) for o, l in zip(OFF, labs)]); row[:, -3:] = (0, 0, 255)
         rows.append(row)
     if len(rows) % 2: rows.append(np.zeros_like(rows[0]))
     sheet = np.vstack([np.hstack(rows[i:i + 2]) for i in range(0, len(rows), 2)])
@@ -99,11 +108,14 @@ def guess(c):
 worlds = {}
 lab = Wd / "labels.txt"
 if lab.exists():
-    print("labels.txt exists, left untouched")
+    old = next((l.split()[2] for l in lab.read_text().splitlines() if l.startswith("# cands ") and len(l.split()) > 2), None)
+    print("labels.txt exists, left untouched" + ("" if old in (None, cands_fp(Wd / "cands.json")) else
+          ". WARNING: it was written for other candidates, its lines now point at other hits; assemble.py will refuse it. Move it aside and re-run to get a fresh one"))
 else:
     G = [guess(c) for c in C]
     lab.write_text("# idx kind drill [@player]   kind: FH BH SV OH, or x = not a player / not a stroke (a kind already filled in is the automatic guess: confirm or change it)."
                    "  drill: feed rally high unsure (SV takes none). @player: who hit it (prefilled from players.txt, change it if the crop shows someone else). Anything after is a comment\n"
+                   + f"# cands {cands_fp(Wd / 'cands.json')}   (which candidates these lines belong to; leave it)\n"
                    + "".join(f"{i} {g} ?{' @' + c['player'] if multi else ''}\n" for i, (g, c) in enumerate(zip(G, C))))
     print("auto kind pre-filled for", sum(g != "?" for g in G), "of", len(G))
 print(len(C), "candidates,", (len(C) + PER_SHEET - 1) // PER_SHEET, "sheets in", Wd)
