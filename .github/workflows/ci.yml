@@ -125,5 +125,3 @@ jobs:
           probe("platform_util.imwrite + imdecode", lambda: imwrite(w / "圖2.jpg", img) and cv2.imdecode(np.fromfile(w / "圖2.jpg", np.uint8), 1) is not None)
           probe("np.save/load", lambda: (np.save(w / "姿態.npy", img), np.array_equal(np.load(w / "姿態.npy"), img))[1])
           PY
-# (S1 trigger)
-# (S2 trigger)
