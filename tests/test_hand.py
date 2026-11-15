@@ -1,5 +1,6 @@
 # 慣用手測試（純邏輯）：把右手的真實資料左右鏡像，hand="L" 的結果必須與原資料 hand="R" 相同。
-# 用法（repo 根目錄）：.venv/bin/python tests/test_hand.py   需要 work/wall-1/*/pose.npy 與 testset/archive/prep-contact 的結果。
+# 用法（repo 根目錄）：.venv/bin/python tests/test_hand.py   需要 testset/labels/private_names.json（私有影片的別名 -> 實際名稱，不進 git）、
+# 對牆影片 A 的 pose.npy 與 strokes.json；第 5 段另需網路左手影片 A／B 的姿態。
 # CI 排除：需要私人資料（testset/、work/），.github/workflows/ci.yml 不跑這支。
 import json, sys, numpy as np
 from pathlib import Path
@@ -7,7 +8,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from metrics import measure_full, measure_clip, guess_hand
 from common import ROOT, load_profiles, profile_for
 
-NEED = [ROOT / "testset/archive/prep-contact/web/sessions/wall-1/strokes.json", ROOT / "work/wall-1/IMG_8460/pose_t1.npy", ROOT / "testset/labels/hits_IMG_8460.csv"]
+NAMES = ROOT / "testset/labels/private_names.json"  # 檔名留在私有檔，公開 repo 只有別名
+PN = json.load(open(NAMES, encoding="utf-8")) if NAMES.exists() else dict(wall_a=["?"], wall_dir="?", wall_strokes="?")
+VIDS = PN.get("wall_a") or ["?"]; V0 = VIDS[0]; WD = ROOT / PN.get("wall_dir", "?"); STROKES = ROOT / PN.get("wall_strokes", "?")
+NEED = [NAMES, STROKES, WD / V0 / "pose_t1.npy", WD / V0 / "events.npy", ROOT / f"testset/labels/hits_{V0}.csv"]
+NEED += [WD / v / f for v in VIDS for f in ("pose.npy", "pose_world.npy")]
 if not all(p.exists() for p in NEED):  # private footage-derived data, only on the owner's machine
     print("skip: test_hand needs local wall-1 data"); sys.exit(0)
 
@@ -27,7 +32,7 @@ def close(a, b, tol, tag):
         assert abs(x - y) <= tol.get(k, 0.011), (tag, k, x, y)
 
 # 1. clip 版：35 拍 wall-1（含 3D world）
-S = json.load(open(ROOT / "testset/archive/prep-contact/web/sessions/wall-1/strokes.json", encoding="utf-8")); off = 0
+S = json.load(open(STROKES, encoding="utf-8")); off = 0
 for s in S:
     fr = s["frames"]; wd = s.get("world")
     a = measure_clip(fr, s["contact"], s.get("size"), wd)  # 預設右手
@@ -42,10 +47,10 @@ print("clip 鏡像 OK", len(S), "拍；左手資料當右手時手肘偏掉", of
 
 # 2. full 版：整支 pose.npy（auto_kind 也要鏡像）
 n = bad = 0
-for v in ("IMG_8460", "IMG_8462", "IMG_8466"):
-    d = ROOT / "work/wall-1" / v; P = np.load(d / "pose.npy").astype(float); W = np.load(d / "pose_world.npy").astype(float)
+for v in VIDS:
+    d = WD / v; P = np.load(d / "pose.npy").astype(float); W = np.load(d / "pose_world.npy").astype(float)
     for s in S:
-        if s["video"] != ["IMG_8460", "IMG_8462", "IMG_8466"].index(v) + 1: continue
+        if s["video"] != VIDS.index(v) + 1: continue
         try: a = measure_full(P, s["t"], (960, 540), W)
         except TypeError: continue  # 那一格沒抓到人
         b = measure_full(mir(P, SW33), s["t"], (960, 540), mirw(W, SW33), hand="L"); n += 1
@@ -57,8 +62,8 @@ print("full 鏡像 OK", n, "拍；左手資料當右手時 auto_kind 錯", bad)
 
 # 3. 猜慣用手：只看揮拍段；鏡像資料猜出相反邊；太短不猜
 import csv
-P = np.load(ROOT / "work/wall-1/IMG_8460/pose_t1.npy").astype(float)  # 白衣，右手（逐拍看圖確認過，見 testset/results/player-profile.md）
-ts = [[float(r["t_sec"]) for r in csv.DictReader(open(ROOT / "testset/labels/hits_IMG_8460.csv", encoding="utf-8", newline="")) if r["player"] == "white"]]
+P = np.load(WD / V0 / "pose_t1.npy").astype(float)  # 使用者本人，右手（逐拍看圖確認過，見 testset/results/player-profile.md）
+ts = [[float(r["t_sec"]) for r in csv.DictReader(open(ROOT / f"testset/labels/hits_{V0}.csv", encoding="utf-8", newline="")) if r["player"] == "white"]]
 h, ratio = guess_hand([P], (960, 540), ts); hm, _ = guess_hand([mir(P, SW33)], (960, 540), ts)
 assert (h, hm) == ("R", "L") and ratio > 1.15, (h, hm, ratio)
 assert guess_hand([P[:30]], (960, 540))[0] is None
@@ -66,9 +71,9 @@ print("猜慣用手 OK", h, ratio)
 
 # 3b. 多人：candidates.py 用每人自己的持拍手腕算 match / swing（左手玩家鏡像後要跟右手原資料相同）
 from match import match, WRIST
-E = np.load(ROOT / "work/wall-1/IMG_8460/events.npy"); A = np.array([960, 540]) / 540
+E = np.load(WD / V0 / "events.npy"); A = np.array([960, 540]) / 540
 for v in ("pose.npy", "pose_t1.npy"):
-    Q = np.load(ROOT / "work/wall-1/IMG_8460" / v).astype(float); a = match(Q, E, A, "R"); b = match(mir(Q, SW33), E, A, "L")
+    Q = np.load(WD / V0 / v).astype(float); a = match(Q, E, A, "R"); b = match(mir(Q, SW33), E, A, "L")
     assert len(a) and np.array_equal(a, b, equal_nan=True), v
     assert not np.array_equal(a, match(mir(Q, SW33), E, A, "R"), equal_nan=True), "對照組：左手資料當右手應該不同"
 from attrib import swing
@@ -81,4 +86,34 @@ assert profile_for({}, "x") is None and profile_for({"a": {"hand": "L", "backhan
 for bad_cfg in ({"a": {"hand": "left"}}, {"a": {"hand": "R", "backhand": "3"}}, {"a": "R"}):
     try: profile_for(bad_cfg, "a"); raise SystemExit(f"應該報錯：{bad_cfg}")
     except ValueError: pass
-print("設定檔 OK"); print("test_hand: ALL OK")
+print("設定檔 OK")
+
+# 5. 真實左手（網路左手影片 A：一人前方固定機位；B：兩位左手球員輪流發球、有剪接）。不是鏡像：真的左手姿態，hand="L" 對 "R"。
+# 門檻 = 2026-11-15 量到的數字（eval-labels-c19），只防退步；不為了過關調 kind.py。B 只用已標 @player 的拍，兩人都是左手，不算左右手混合測試。
+from metrics import arm_checks
+from common import KEEP
+LEFTY = [ROOT / d for d in PN.get("lefty", [])]
+def _lefty_ok(d):  # strokes_all.json 與它用到的每支影片的姿態都在才跑
+    f = d / "strokes_all.json"
+    return f.exists() and all((d / s["video"] / n).exists() for s in json.load(open(f, encoding="utf-8")) for n in ("pose.npy", "pose_world.npy"))
+if len(LEFTY) == 2 and all(_lefty_ok(d) for d in LEFTY):
+    got = {}
+    for d in LEFTY:
+        S = [s for s in json.load(open(d / "strokes_all.json", encoding="utf-8")) if s.get("player") and s["hand"] == "L"]; c = {}
+        for s in S:
+            v = d / s["video"]; P = np.load(v / "pose.npy").astype(float); W = np.load(v / "pose_world.npy").astype(float)
+            for h in "LR":
+                m = measure_full(P, s["t"], tuple(s["size"]), W, h); k = c.setdefault(h, dict(ok=0, fb=0, elbow=0, fwd=0, sv=0, sv_has=0))
+                if s["kind"] in ("FH", "BH"): k["fb"] += 1; k["ok"] += m["auto_kind"] == s["kind"]
+                k["elbow"] += m["elbow"] is not None and m["elbow"] == m["elbow"]; k["fwd"] += m["contact_fwd"] is not None and m["contact_fwd"] == m["contact_fwd"]
+                if s["kind"] == "SV":
+                    k["sv"] += 1; k["sv_has"] += arm_checks(list(P[:, KEEP]), m["f"], tuple(s["size"]), list(W[:, KEEP]), "SV", h)["serve_arm_straight"] is not None
+        got[len(got)] = (len(S), c)
+    (na, a), (nb, b) = got[0], got[1]
+    assert a["L"]["ok"] > a["R"]["ok"] and b["L"]["ok"] > b["R"]["ok"], got  # 左手設 L 的 FH/BH 對率要比當右手好
+    assert a["L"]["fb"] == 42 and a["L"]["ok"] >= 24 and b["L"]["ok"] >= 13, got  # 量到 A 24/42（FH 8/17、BH 16/25）、B 13/17
+    assert a["L"]["elbow"] == na and b["L"]["elbow"] == nb and a["L"]["fwd"] >= 0.85 * na and b["L"]["fwd"] >= 0.85 * nb, got
+    assert b["L"]["sv"] >= 15 and b["L"]["sv_has"] / b["L"]["sv"] >= 0.4, got  # 發球手臂有結論：量到 11/17；當右手只有 4/17
+    print("真實左手 OK", {i: (n, c["L"]["ok"], c["R"]["ok"]) for i, (n, c) in got.items()})
+else: print("skip: 真實左手段需要網路左手影片的姿態")
+print("test_hand: ALL OK")

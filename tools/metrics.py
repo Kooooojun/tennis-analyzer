@@ -225,12 +225,49 @@ def _core(xy, vis, c, J, world=None, hand="R", prev=None):
 FULL = dict(nose=0, ls=11, rs=12, le=13, re=14, lw=15, rw=16, lh=23, rh=24, lk=25, rk=26, la=27, ra=28)
 CLIP = dict(nose=0, ls=1, rs=2, le=3, re=4, lw=5, rw=6, lh=7, rh=8, lk=9, rk=10, la=11, ra=12)
 
+FLAG_WIN = 12  # frames each side of contact checked for skeleton glitches (record only, not scored: docs/scoring.md)
+JUMP_BODY, JUMP_ARM = 0.6, 1.0  # torso lengths; one-frame off-path move (distance from the midpoint of its neighbours) that counts as a jump.
+# Picked on the user's wall videos (testset/results/pose-flags.md). Arms get more room: a real swing bends the wrist path hard at contact.
+SWAP_GAP = 0.3  # torso lengths; hands closer than this (two-handed backhand) are never called a left/right swap
+_ARMS = ("le", "re", "lw", "rw")
+
+
+def swap_frames(xy, J, L, fr):
+    """Per frame in fr: (swapped, measurable) for the elbow pair and the wrist pair. Swapped = trading the left/right labels
+    fits the previous frame at least twice as well, and the hands were not together (SWAP_GAP)."""
+    out = []
+    for a, b in (("le", "re"), ("lw", "rw")):
+        l, r = xy[:, J[a]] / L, xy[:, J[b]] / L; d = lambda u, v: np.linalg.norm(u[fr] - v[fr - 1], axis=1)
+        keep, swap, gap = d(l, l) + d(r, r), d(l, r) + d(r, l), np.linalg.norm(l[fr - 1] - r[fr - 1], axis=1)
+        out.append(((swap < 0.5 * keep) & (gap > SWAP_GAP), np.isfinite(keep + swap)))
+    return out
+
+
+def pose_flags(xy, J, c):
+    """Glitch flags around contact c (record only). xy: (frames, n, 2) in any one unit; J: FULL or CLIP map (not hand-swapped).
+    pose_jump: a joint leaves its path for a frame (off-midpoint move / torso length over JUMP_BODY, JUMP_ARM for arms), with the joints and the max.
+    lr_swap: left and right elbow or wrist labels trade places (swapped labels fit the previous frame clearly better). None = nothing visible."""
+    none = dict(pose_jump=None, pose_jump_joints=None, pose_jump_max=None, lr_swap=None)
+    L = np.linalg.norm((xy[:, J['ls']] + xy[:, J['rs']]) / 2 - (xy[:, J['lh']] + xy[:, J['rh']]) / 2, axis=1)[max(0, c - 60):c + 61]
+    L = _med(L); fr = np.arange(max(1, c - FLAG_WIN), min(len(xy) - 2, c + FLAG_WIN) + 1)
+    if not L or not len(fr): return none
+    names = list(J); X = xy[:, [J[k] for k in names]] / L
+    sd = np.linalg.norm(X[fr] - (X[fr - 1] + X[fr + 1]) / 2, axis=2)  # (frames, joints); NaN neighbours give NaN, never a jump
+    th = np.array([JUMP_ARM if k in _ARMS else JUMP_BODY for k in names])
+    m = np.nanmax(sd, 0)
+    sw = [None if not ok.any() else bool(s[ok].any()) for s, ok in swap_frames(xy, J, L, fr)]
+    if not np.isfinite(m).any(): return {**none, "lr_swap": None if sw == [None, None] else any(sw)}
+    hit = [k for k, v, t in zip(names, m, th) if v > t]
+    return dict(pose_jump=bool(hit), pose_jump_joints=hit, pose_jump_max=round(float(np.nanmax(m)), 2), lr_swap=None if sw == [None, None] else any(sw))
+
 
 def measure_full(P, t, size, Wd=None, hand="R", prev_t=None):
     """P: pose.npy (frames,33,3). t: contact time in seconds. size: proxy (w, h). Adds an automatic stroke kind (tools/kind.py): auto_kind FH/BH/SV/OH or '?', with kind_conf 0-1.
     hand "L": kind.classify mirrors its racket-side test. prev_t: the same player's previous hit in this video (s), bounds the prep search."""
-    xy = P[:, :, :2] * _scale(size); f = int(round(t * 60)); k = classify(P, f, hand, Wd, size)
-    return dict(f=f, auto_kind=k["kind"], kind_conf=k["conf"], **_core(xy, P[:, :, 2], f, FULL, Wd, hand, None if prev_t is None else int(round(prev_t * 60))))
+    if Wd is not None and len(Wd) != len(P): Wd = None  # pose_world from another run: frames do not line up, use 2D only
+    xy = P[:, :, :2] * _scale(size); f = int(round(t * 60)); k = classify(P, f, hand, Wd, size or PORTRAIT)
+    return dict(f=f, auto_kind=k["kind"], kind_conf=k["conf"], **_core(xy, P[:, :, 2], f, FULL, Wd, hand, None if prev_t is None else int(round(prev_t * 60))),
+                **pose_flags(xy, FULL, f))
 
 
 def measure_clip(frames, c, size=None, world=None, hand="R", prev=None):

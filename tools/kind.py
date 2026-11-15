@@ -44,6 +44,7 @@ def classify(P, f, hand="R", Wd=None, size=None):
     (L mirrors: left side landmarks, and + = left). size: frame (w, h) so x and y are in the same units (None = raw normalised, old behaviour).
     -> dict(kind, conf 0-1, side = backswing side in hip widths, None for SV / OH)."""
     out = dict(kind="?", conf=0.0, side=None)
+    if Wd is not None and len(Wd) != len(P): Wd = None  # mismatched pose_world: use the 2D path, not a wrong frame alignment
     if f < 30 or f + 6 > len(P): return out
     rw, rs, os_, lh, rh = (16, 12, 11, 23, 24) if hand == "R" else (15, 11, 12, 24, 23)
     a0 = max(f - 100, 0); P = P[a0:f + 6]; Wd = None if Wd is None else Wd[a0:f + 6]; f -= a0  # only the windows read below, not the video
