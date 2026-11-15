@@ -5,6 +5,9 @@ import sys, warnings, numpy as np
 from pathlib import Path
 
 WRIST = {"R": 16, "L": 15}
+H_MIN = 0.06   # nose-to-ankle in portrait-frame heights
+SEEN = 0.3     # share of the 31 frames around the hit with the person tall enough and the wrist visible
+NAN_MAX = 0.8  # share of the 25 wrist speeds around the hit allowed missing (at least 5 left)
 
 
 def match(P, O, A, hand="R"):
@@ -13,18 +16,20 @@ def match(P, O, A, hand="R"):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         xy = P[:, :, :2] * A; vis = P[:, :, 2]
-        h = (np.nanmean(P[:, [27, 28], 1], 1) - P[:, 0, 1]) * A[1] * 9 / 16  # nose-to-ankle in portrait-frame heights, so 0.11 = 106 px either way
+        h = (np.nanmean(P[:, [27, 28], 1], 1) - P[:, 0, 1]) * A[1] * 9 / 16  # nose-to-ankle in portrait-frame heights, so 0.06 = 58 px either way (far doubles players are 60-90 px)
         L = np.linalg.norm((xy[:, 11] + xy[:, 12]) / 2 - (xy[:, 23] + xy[:, 24]) / 2, axis=1)
-        valid = (h > 0.11) & (vis[:, wi] > 0.2)
+        valid = (h > H_MIN) & (vis[:, wi] > 0.2)
         w = xy[:, wi].copy(); w[~valid] = np.nan
         v = np.full(N, np.nan); v[1:] = np.linalg.norm(w[1:] - w[:-1], axis=1) / L[1:]
         out = []
         for t, pk, on in O:
             f = int(round(t * 60))
-            if f < 45 or f > N - 30: continue  # window starts at f-45; a negative start would wrap to the end
+            if f < 45 or f > N - 30: continue  # not f-15: candidates.py swing() reads f-30.. and would wrap to the end
             win = v[f - 12:f + 13]
-            if np.isnan(win).mean() > 0.5 or valid[f - 45:f + 15].mean() < 0.6: continue
-            seg = w[f - 15:f + 16]; arc = np.nansum(np.linalg.norm(np.diff(seg, axis=0), axis=1) / L[f])
+            # only the frames the features use must be seen: far players are tracked in fragments (often 20-40% of a
+            # second), and the hitter's fragment usually covers the hit itself
+            if np.isnan(win).mean() > NAN_MAX or valid[f - 15:f + 16].mean() < SEEN: continue
+            seg = w[f - 15:f + 16]; arc = np.nansum(np.linalg.norm(np.diff(seg, axis=0), axis=1)) / np.nanmedian(L[f - 15:f + 16])  # a fragment may miss frame f
             out.append((t, pk, on, np.nanmax(win), arc))
     return np.array(out, dtype=np.float64).reshape(-1, 5)  # (0,5) when no hit events
 
