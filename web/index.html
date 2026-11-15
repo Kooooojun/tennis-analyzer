@@ -672,7 +672,7 @@ function drawList(){
     const b=document.createElement("button"); b.dataset.id=s.id;
     const bad = s.kind==="FH" && s.knee>150;
     const dn=drillName(s);
-    b.innerHTML=`<span class="row"><span class="tag ${s.kind}">${NAMES[s.kind]}</span><span class="clock">${s.clock}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
+    b.innerHTML=`<span class="row"><span class="tag ${s.kind}">${NAMES[s.kind]}</span><span class="clock">${esc(s.clock)}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
     b.title=strokeLabel(s);
     b.onclick=()=>load(s.id,false); box.append(b);
   }
@@ -787,12 +787,14 @@ function cmpLoad(a,b){
 }
 function cmpRender(f){
   if(!A||!B) return; cmpCur=f; cmpSeek.value=f;
-  const zo={...OPT,zoom:true}; paint(cvA,vA,A,f,zo); paint(cvB,vB,B,f,zo);
+  const zo={...OPT,zoom:true}; paint(cvA,vA,A,f,zo); paint(cvB,vB,B,f+cmpOff(),zo);
   const dt=(f-A.contact)/FPS, t=dt===0?"擊球":(dt>0?"+":"")+dt.toFixed(2)+"s"; $("badgeA").textContent=t; $("badgeB").textContent=t;
 }
-function cmpGoto(f){ f=Math.max(0,Math.min(149,f)); vA.pause(); vB.pause(); vA.currentTime=vB.currentTime=(f+0.5)/FPS; cmpRender(f); }
+const cmpOff=()=>B.contact-A.contact;  // clips cut at a video edge have their contact before/after frame 90, so B is shifted to keep both on contact
+const cmpBt=()=>Math.max(0,vA.currentTime+cmpOff()/FPS);
+function cmpGoto(f){ f=Math.max(0,Math.min(149,f)); vA.pause(); vB.pause(); vA.currentTime=(f+0.5)/FPS; vB.currentTime=Math.max(0,(f+cmpOff()+0.5)/FPS); cmpRender(f); }
 function cmpTick(){
-  if(Math.abs(vB.currentTime-vA.currentTime)>1.5/FPS) vB.currentTime=vA.currentTime;
+  if(Math.abs(vB.currentTime-cmpBt())>1.5/FPS) vB.currentTime=cmpBt();
   cmpRender(Math.max(0,Math.min(149,Math.floor(vA.currentTime*FPS+1e-3))));
   if(!vA.paused) (vA.requestVideoFrameCallback?vA.requestVideoFrameCallback(cmpTick):requestAnimationFrame(cmpTick));
 }
@@ -800,7 +802,7 @@ vA.loop=vB.loop=true;
 vA.addEventListener("play",()=>{ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
 vA.addEventListener("pause",()=>{ $("cmpPlay").textContent="▶ 同步播放"; vB.pause(); });
 for(const vid of [vA,vB]) vid.addEventListener("seeked",()=>{ if(vA.paused) cmpRender(Math.floor(vA.currentTime*FPS+1e-3)); });
-$("cmpPlay").onclick=()=>{ if(vA.paused){ vB.currentTime=vA.currentTime; vA.playbackRate=vB.playbackRate=cmpRate; vA.play(); vB.play(); } else vA.pause(); };
+$("cmpPlay").onclick=()=>{ if(vA.paused){ vB.currentTime=cmpBt(); vA.playbackRate=vB.playbackRate=cmpRate; vA.play(); vB.play(); } else vA.pause(); };
 $("cmpPrev").onclick=()=>cmpGoto(cmpCur-1); $("cmpNext").onclick=()=>cmpGoto(cmpCur+1); $("cmpContact").onclick=()=>cmpGoto(A.contact);
 cmpSeek.oninput=()=>cmpGoto(+cmpSeek.value);
 speedButtons($("cmpSpeeds"),()=>cmpRate,s=>{cmpRate=s;vA.playbackRate=vB.playbackRate=s;});

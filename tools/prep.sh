@@ -18,11 +18,11 @@ for V in $R/videos/$S/*.(mov|MOV|mp4|MP4|m4v)(N); do
     awk -F= '/^width/{w=$2} /^height/{h=$2} /^rotation/{r=$2} END{ if (r==90||r==-90||r==270||r==-270) print h, w; else print w, h }')
   echo "== $n"
   # shortcut: assumes 16:9 sources (phone video); other ratios get stretched, as before
-  stale $D/proxy.mp4 && ffmpeg -v error -y -i $V -an -vf "scale=$( (( w > h )) && echo 960:540 || echo 540:960 ),fps=60" $ENC -g 30 $D/proxy.mp4
-  stale $D/audio_hp.f32 && ffmpeg -v error -y -i $V -vn -ac 1 -ar 16000 -af "highpass=f=1500" -f f32le $D/audio_hp.f32
-  stale $D/audio.f32 && ffmpeg -v error -y -i $V -vn -ac 1 -ar 16000 -f f32le $D/audio.f32
+  stale $D/proxy.mp4 $V && ffmpeg -v error -y -i $V -an -vf "scale=$( (( w > h )) && echo 960:540 || echo 540:960 ),fps=60" $ENC -g 30 $D/proxy.mp4
+  stale $D/audio_hp.f32 $V && ffmpeg -v error -y -i $V -vn -ac 1 -ar 16000 -af "highpass=f=1500" -f f32le $D/audio_hp.f32
+  stale $D/audio.f32 $V && ffmpeg -v error -y -i $V -vn -ac 1 -ar 16000 -f f32le $D/audio.f32
   # a different people count means a different pose run; no people.txt (older work dir) = trust what is there
-  [ -f $D/people.txt ] && [ "$(<$D/people.txt)" != $N ] && trash $D/pose.npy 2>/dev/null
+  [ -f $D/people.txt ] && [ -f $D/pose.npy ] && [ "$(<$D/people.txt)" != $N ] && trash $D/pose.npy
   for t in $D/pose*_t*.npy(N); do (( ${${t:t:r}##*_t} >= N )) && trash $t; done  # extra tracks from an earlier, larger run
   stale $D/pose.npy $D/proxy.mp4 && $PY -I $R/tools/pose_full.py $D/proxy.mp4 $R/models/pose_heavy.task $D/pose.npy $N 2>$D/pose.log
   echo $N > $D/people.txt
