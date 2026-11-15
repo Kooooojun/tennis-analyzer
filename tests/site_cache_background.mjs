@@ -1,7 +1,8 @@
 // The Range fixture pauses after 64 KiB. Verify actual visibility, not merely tab focus.
 import fs from 'node:fs';
+import {pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
-const {chromium,webkit,devices}=await import(process.env.PLAYWRIGHT_MODULE);
+const {chromium,webkit,devices}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE));
 const name=process.env.SITE_ENGINE||'chromium',engine=name==='webkit'?webkit:chromium;
 const browser=await engine.launch(name==='chromium'?{
  headless:false,...(process.env.SITE_CHROMIUM_EXECUTABLE?{executablePath:process.env.SITE_CHROMIUM_EXECUTABLE}:{}),

@@ -1,7 +1,8 @@
 // Run against the fixture server; each case gets an independent browser page.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-const {chromium,webkit,devices}=await import(process.env.PLAYWRIGHT_MODULE);
+import {pathToFileURL} from 'node:url';
+const {chromium,webkit,devices}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE));
 const results=[];
 for(const [name,engine] of Object.entries({chromium,webkit})){
  const browser=await engine.launch();
@@ -93,6 +94,10 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
    await page.evaluate(()=>{Object.defineProperty(vA,'error',{configurable:true,value:{code:2}});vA.pause();vA.dispatchEvent(new Event('error'));});
    assert.deepEqual(await page.evaluate(()=>[vA.paused,vB.paused,$('cmpPlay').textContent.includes('⏸'),vA._want,vB._want]),[true,true,true,true,true]);
   },
+  async primeOnTap(page){
+   await page.evaluate(()=>go(DAY_KEYS[0],'video'));await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
+   const calls=await page.evaluate(()=>{stopDead(vA);window.primes=[0,0];for(const [i,x] of [vA,vB].entries()){Object.defineProperty(x,'readyState',{configurable:true,value:0});x.play=()=>{primes[i]++;return Promise.resolve();};}cmpStart();return primes;});assert.deepEqual(calls,[1,1],'a tap must prime streams blocked before metadata');
+  },
   async blockedPartner(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'video'));await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
    await page.evaluate(()=>{vB.play=()=>Promise.reject(new DOMException('blocked','NotAllowedError'));cmpStart();});
@@ -111,6 +116,19 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
    await page.evaluate(()=>go(DAY_KEYS[0],'video'));await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
    const count=await page.evaluate(()=>{stopDead(vA);Object.defineProperty(vB,'readyState',{configurable:true,value:2});let seeks=0;Object.defineProperty(vB,'currentTime',{configurable:true,get:()=>0,set:()=>seeks++});cmpTick();return seeks;});assert.equal(count,0);
   },
+  async cancelledReload(page){
+   await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
+   await page.evaluate(()=>{resetClip(v,'cancel.mp4');v._want=v._resume=true;Object.defineProperty(v,'currentSrc',{configurable:true,value:'http://example.test/cancel.mp4'});Object.defineProperty(v,'readyState',{configurable:true,value:0});Object.defineProperty(v,'error',{configurable:true,value:{code:2}});window.intents=[];Object.defineProperty(v,'src',{configurable:true,get:()=> 'http://example.test/cancel.mp4',set:()=>intents.push(v._want)});});
+   await page.clock.runFor(2600);await page.evaluate(()=>stopDead(v));await page.clock.runFor(20000);
+   assert.deepEqual(await page.evaluate(()=>intents.slice(0,2)),[true,false],'cancelling a pending reload cancels later automatic playback');
+  },
+  async foregroundTimerOrder(page){
+   await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));window.aborted=false;window.fetch=async(key,{signal})=>new Response(new ReadableStream({start(c){signal.addEventListener('abort',()=>{window.aborted=true;c.error(new Error('aborted'));});}}),{headers:{'Content-Type':'video/mp4'}});clipFetch('resume.mp4');});
+   await page.clock.setSystemTime(new Date(Date.now()+20000));
+   await page.evaluate(()=>Object.defineProperty(document,'hidden',{configurable:true,value:false}));
+   await page.clock.runFor(500);assert.equal(await page.evaluate(()=>aborted),false,'resumed timer may run before visibilitychange');
+   await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+  },
   async fetchPercent(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
    await page.evaluate(()=>{const real=fetch;window.fetch=async(...args)=>String(args[0]).includes('percent')?new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array(65536));}}),{headers:{'Content-Type':'video/mp4','Content-Length':'131072'}}):real(...args);ALL[3].src+='?percent';load(3,false);});
@@ -125,7 +143,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   if(process.env.SITE_CASES&&!process.env.SITE_CASES.split(',').includes(label))continue;
   const context=await browser.newContext(name==='webkit'?devices['iPhone 13']:{}),page=await context.newPage();
   await page.addInitScript(small=>{if(small)window.CLIP_CACHE_LIMIT=2*1024*1024;window.liveClips=new Map();window.revoked=0;window.revokedActive=0;const create=URL.createObjectURL,revoke=URL.revokeObjectURL;URL.createObjectURL=b=>{const u=create(b);liveClips.set(u,b.size);return u;};URL.revokeObjectURL=u=>{revoked++;if([...document.querySelectorAll('video')].some(v=>v.src===u))revokedActive++;liveClips.delete(u);revoke(u);};},label==='lru');
-  try{if(['hiddenStall','byteProgress','fetchProgress','retryBudget'].includes(label))await page.clock.install();await page.goto(process.env.SITE_E2E_URL);await test(page);results.push({engine:name,case:label,pass:true});}
+  try{if(['hiddenStall','byteProgress','fetchProgress','retryBudget','cancelledReload','foregroundTimerOrder'].includes(label))await page.clock.install();await page.goto(process.env.SITE_E2E_URL);await test(page);results.push({engine:name,case:label,pass:true});}
   catch(error){results.push({engine:name,case:label,pass:false,error:String(error.message)});}
   console.log(name,label,results.at(-1).pass,results.at(-1).error||'');await context.close();
  }

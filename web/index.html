@@ -770,7 +770,7 @@ const clipSrc=s=>s.src;
 const TAP="點畫面載入影片";
 const playSafe=(vid,badge)=>{ const token=vid._loadToken; return vid.play()?.catch(e=>{ if(token!==vid._loadToken||e.name!=="NotAllowedError") return; vid._blocked=true; if(!vid.readyState) badge.textContent=TAP; if(vid._want) stopDead(vid); }); };
 // Initial loads prime iOS with play(); an explicit pause must also cancel play() before metadata arrives.
-const hold=vid=>{ vid._want=false; vid._resume=false; vid.pause(); if(vid===v) $("play").textContent="▶ 播放"; else if(vid.id==="vA"||vid.id==="vB") $("cmpPlay").textContent="▶ 同步播放"; };
+const hold=vid=>{ vid._cancelResume?.(); vid._want=false; vid._resume=false; vid.pause(); if(vid===v) $("play").textContent="▶ 播放"; else if(vid.id==="vA"||vid.id==="vB") $("cmpPlay").textContent="▶ 同步播放"; };
 // a clip is fetched only once its stage is on screen (home and the overview tab fetch none); route() runs the waiting ones
 const LATER=new Map();
 // the comparison clips also wait until scrolled near (_near), so opening the video tab fetches only the main clip
@@ -795,9 +795,10 @@ function trimClips(extra=0){
 function clipFetch(key,background=false){
   let e=CLIPS.get(key);
   if(e){ CLIPS.delete(key); CLIPS.set(key,e); if(!background) e.foreground=true; return e.task; }
-  e={size:0,url:null,bytes:0,total:0,lastByte:Date.now(),controller:new AbortController(),foreground:!background}; CLIPS.set(key,e);
+  e={size:0,url:null,bytes:0,total:0,lastByte:Date.now(),hidden:document.hidden,controller:new AbortController(),foreground:!background}; CLIPS.set(key,e);
   e.task=(async()=>{
-    const timeout=setInterval(()=>{ if(document.hidden) e.lastByte=Date.now(); else if(Date.now()-e.lastByte>=10000) e.controller.abort(); },500);
+    // Timers may resume before visibilitychange; retain the last visibility event as well.
+    const timeout=setInterval(()=>{ if(document.hidden||e.hidden) e.lastByte=Date.now(); else if(Date.now()-e.lastByte>=10000) e.controller.abort(); },500);
     try{
       const response=await fetch(key,{signal:e.controller.signal,priority:background?"low":"high"});
       if(!response.ok) throw new Error("clip unavailable");
@@ -852,9 +853,9 @@ async function setClip(vid,s,start){
   if(vid===v&&src.startsWith("blob:")) preloadNeighbors(s);
 }
 // Playback stalls and download inactivity use separate clocks; background time consumes neither retry budget.
-function stopDead(vid){
+function stopDead(vid,preserve=false){
   const group=vid===v?[v]:[$("vA"),$("vB")];
-  for(const x of group){ x._want=x._resume=false; x._reloading=false; x.pause(); }
+  for(const x of group){ if(!preserve) x._cancelResume?.(); x._want=x._resume=false; x._reloading=false; x.pause(); }
   for(const x of group) if(x.readyState&&x._align) x._align();
   $(vid===v?"play":"cmpPlay").textContent=vid===v?"▶ 播放":"▶ 同步播放";
 }
@@ -862,11 +863,12 @@ function watchStall(vid){
   const m=document.createElement("button"); m.type="button"; m.className="vid-msg"; m.hidden=true; vid.parentElement.append(m);
   let sig="", since=0, wait=0, tries=0, errorSince=0, progress=0, autoRetries=0, retryAt=0, hiddenAt=0;
   let restore=null, keep=null;
+  vid._cancelResume=()=>{ if(keep) keep[1]=false; };
   vid._resetStall=()=>{ if(restore) vid.removeEventListener("loadedmetadata",restore); restore=keep=null; vid._want=vid._resume=vid._reloading=false; tries=wait=since=errorSince=autoRetries=retryAt=0; delete m.dataset.fail; m.hidden=true; };
   const reload=(tap=false,still=false)=>{
     if(tap) cancelAlign(vid); vid._loadToken={}; tries++; since=Date.now(); errorSince=0;
     const url=new URL(vid._badBlob?vid._clipKey:vid.currentSrc||vid.src,location.href).href; vid._badBlob=false;
-    const [t,play]=keep?keep:[vid.readyState?vid.currentTime:null,!!vid._want]; const want=!still&&(play||tap); keep=[t,want];
+    const t=keep?keep[0]:vid.readyState?vid.currentTime:null; const want=!still&&(vid._want||tap); keep=[t,want];
     if(restore) vid.removeEventListener("loadedmetadata",restore);
     vid._resume=vid._want=want;
     restore=()=>{ const go=vid._resume&&!!vid.offsetParent&&!document.hidden; restore=keep=null; vid._reloading=false; if(vid.currentSrc!==new URL(url,location.href).href) return; if(t!=null) vid.currentTime=t;
@@ -874,8 +876,8 @@ function watchStall(vid){
     vid.addEventListener("loadedmetadata",restore,{once:true});
     vid._reloading=url; vid.src=url; releaseClips(); vid.playbackRate=vid===v?rate:cmpRate; playSafe(vid,vid.parentElement.querySelector(".badge"));
   };
-  const retry=(tap=false,still=false)=>{ delete m.dataset.fail; tries=0; retryAt=0; m.textContent="影片下載中…"; reload(tap,still); };
-  const fail=()=>{ if(!keep) keep=[vid.readyState?vid.currentTime:null,!!vid._want]; stopDead(vid); m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; retryAt=autoRetries<3?Date.now()+15000*2**autoRetries:0; };
+  const retry=(tap=false,still=false)=>{ if(m.dataset.fail&&keep?.[1]) vid._want=vid._resume=true; delete m.dataset.fail; tries=0; retryAt=0; m.textContent="影片下載中…"; reload(tap,still); };
+  const fail=()=>{ keep=[keep?keep[0]:vid.readyState?vid.currentTime:null,!!vid._want]; stopDead(vid,true); m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; retryAt=autoRetries<3?Date.now()+15000*2**autoRetries:0; };
   m.onclick=()=>{ retry(!m._still,!!m._still); m._still=false; };
   document.addEventListener("visibilitychange",()=>{
     since=wait=errorSince=0;
@@ -897,7 +899,7 @@ function watchStall(vid){
   vid.addEventListener("loadedmetadata",()=>{ if(!m.dataset.fail) return; tries=0; delete m.dataset.fail; m.hidden=true; });
   setInterval(()=>{
     const now=Date.now();
-    if(document.hidden){ since=wait=errorSince=0; return; }
+    if(document.hidden||hiddenAt){ since=wait=errorSince=0; return; }
     if(!vid.offsetParent) return;
     if(m.dataset.fail){ if(retryAt&&now>=retryAt){ autoRetries++; retry(); } return; }
     if(vid._fetching){ if(now-vid._fetchSince>=1000){ const e=CLIPS.get(vid._clipKey); m.hidden=false; m.textContent="影片下載中…"+(e?.total?" "+Math.min(100,Math.floor(e.bytes/e.total*100))+"%":""); } return; }
@@ -914,7 +916,7 @@ function watchStall(vid){
   },500);
 }
 [v,$("vA"),$("vB")].forEach(watchStall);
-document.addEventListener("visibilitychange",()=>{ for(const e of CLIPS.values()) e.lastByte=Date.now(); });
+document.addEventListener("visibilitychange",()=>{ for(const e of CLIPS.values()){ e.hidden=document.hidden; e.lastByte=Date.now(); } });
 for(const vid of [v,$("vA"),$("vB")]){
   vid.addEventListener("pause",()=>{ if(vid.paused&&!vid.error&&!vid._reloading){ if(vid!==v&&vid._want) stopDead(vid); else vid._want=vid._resume=false; } });
   vid.addEventListener("loadstart",()=>{ if(vid._reloading&&vid.currentSrc!==vid._reloading) vid._reloading=false; });
@@ -1051,7 +1053,10 @@ function cmpStart(){
   vA._want=vB._want=vA._resume=vB._resume=true;
   $("cmpPlay").textContent=vA._fetching||vB._fetching?"取消播放":"⏸ 暫停";
   if(vA._fetching||vB._fetching) return;
-  if(!vA.readyState||!vB.readyState) return;
+  if(!vA.readyState||!vB.readyState){
+    for(const vid of [vA,vB]) if(!vid.readyState){ vid._reloading=vid.src; playSafe(vid,vid.parentElement.querySelector(".badge")); }
+    return;
+  }
   for(const vid of [vA,vB]){ cancelAlign(vid); vid._reloading=false; }
   if(vB.readyState>=3) vB.currentTime=cmpBt();
   vA.playbackRate=vB.playbackRate=cmpRate;
