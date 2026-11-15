@@ -74,15 +74,19 @@ def _prep(P, J, c, u):
     """(seconds from backswing end to contact, truncated) or None. Backswing end = the frame where the hitting wrist is furthest back
     relative to the hip centre along the swing direction u (+1/-1 on image x, or a _swing_vec on world coordinates; 5-frame median against jitter).
     truncated = the backswing end reaches back to the clip start (or PREP_MAX), so the time is a lower bound."""
-    rel = P[:, J['rw']] - (P[:, J['lh']] + P[:, J['rh']]) / 2
-    back = _rmed(rel[:, 0] * u if np.isscalar(u) else rel @ u, 2)
+    o = max(0, c - PREP_MAX - 2)  # smooth only the frames used (+2 margin for the median): P can be a whole video, and _rmed is a per-frame python loop
+    rel = P[o:c, J['rw']] - (P[o:c, J['lh']] + P[o:c, J['rh']]) / 2
+    back = np.full(len(P), np.nan); back[o:c] = _rmed(rel[:, 0] * u if np.isscalar(u) else rel @ u, 2)
     a = max(0, c - PREP_WIN); sm = back[a:c - 3]
     if not np.isfinite(sm).any(): return None
     i = a + int(np.nanargmin(sm))
     # minimum on the window's first frame: the wrist was back earlier. Follow it back while the wrist stays as far back (2% of the range);
     # a previous stroke first swings forward, which stops the walk, so it is never caught
     tol = 0.02 * (np.nanmax(sm) - np.nanmin(sm)); lo = max(0, c - PREP_MAX)
-    while i == a and a > lo and back[a - 1] <= back[a] + tol: a -= 1; i = a
+    if i == a:  # walk back while the wrist stays within tol of the furthest-back point so far (not the current frame: slow drift must not chain)
+        m = back[a]
+        while a > lo and back[a - 1] <= m + tol: a -= 1; m = min(m, back[a])
+        i = a + int(np.nanargmin(back[a:i + 1]))
     return round((c - i) / FPS, 3), bool(i == a and (a == lo or not np.isfinite(back[a - 1])))
 
 

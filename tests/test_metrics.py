@@ -37,6 +37,20 @@ assert P(xy, J, c, 1) <= PREP_WIN / 60
 # no wrist data -> None, not a crash
 assert P(clip(np.full(150, np.nan)), J, c, 1) is None and np.isnan(_swing_dir(clip(np.full(150, np.nan)), J, c))
 
+# prep-window-direction: a backswing end on the window's first frame is followed back; the walk stops where the wrist moves forward (previous stroke)
+f2 = np.arange(200); c2 = 120
+long = np.where(f2 < c2 - 80, -(f2 - (c2 - 100)) / 20, -1 + (f2 - (c2 - 80)) / 80.0); long[f2 < c2 - 100] = 0  # back at c-80, 1.33 s before contact
+assert _prep(clip(long), J, c2, 1) == (round(80 / 60, 3), False)  # c-80: past the 1.0 s window, before PREP_MAX
+assert _prep(clip(np.zeros(200)), J, c2, 1) == (1.5, True)  # still back at the walk limit (c-90): lower bound
+assert _prep(clip(np.zeros(200)), J, 50, 1)[1] is True  # clip starts inside the window
+# 3D axis: swing along depth (z), image x carries nothing
+Jw = dict(rw=0, lh=1, rh=2)
+W = np.zeros((200, 3, 3)); W[:, 0, 2] = np.where(f2 < c2 - 20, -(f2 - (c2 - 60)) / 40, -1 + (f2 - (c2 - 20)) / 10); W[f2 < c2 - 60, 0, 2] = 0
+u = _swing_vec(W, Jw, c2); assert u is not None and abs(u[2] - 1) < 1e-9 and u[1] == 0
+r = _prep(W, Jw, c2, u); assert r is not None and abs(r[0] - 20 / 60) <= 2.5 / 60 and r[1] is False
+assert _swing_vec(np.full((200, 3, 3), np.nan), Jw, c2) is None and _swing_vec(W, Jw, 10) is None
+print("prep-window tests ok")
+
 # --- knee view gate (testset/results/knee-view-gate_pred.md) ---
 from metrics import cam_az, measure_clip, arm_checks, KNEE_VIEW_MIN
 from common import KEEP
