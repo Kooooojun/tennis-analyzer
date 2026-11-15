@@ -1,3 +1,4 @@
+# Python 3.11-3.12 (numpy, pillow and torch pins need >= 3.11). Install with setup.py, which also gets CUDA torch on Windows with an NVIDIA GPU.
 mediapipe==1.1.1
 numpy==2.4.6
 opencv-python-headless==5.0.0.93

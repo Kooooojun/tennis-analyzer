@@ -1,6 +1,6 @@
 # annotate.py <session> [video] — whole practice video re-encoded with skeleton, stroke numbers, player names and a small live-stats panel
 # -> web/sessions/<s>/annotated_<video>.mp4 (1280x720, 60 fps, original audio), ready to send to a friend. No video argument = every video in the session.
-# Needs work/<s>/<video>/pose.npy (tools/prep.sh). Stroke numbers and figures come from web/sessions/<s>/strokes.json (final numbers shown on the page);
+# Needs work/<s>/<video>/pose.npy (python tools/run.py prep.py). Stroke numbers and figures come from web/sessions/<s>/strokes.json (final numbers shown on the page);
 # without it you still get the skeleton + live knee angle. Frames are streamed ffmpeg -> draw -> ffmpeg, so memory does not grow with video length.
 # Drawing constants (fonts, colours, knee colouring) mirror tools/highlights.py, which is a script and cannot be imported.
 import json, subprocess, sys, time, numpy as np, cv2
@@ -79,7 +79,7 @@ def active(S, n):
 
 def annotate(s, name, src):
     Wd = work(s) / name
-    if not (Wd / "pose.npy").exists(): sys.exit(f"missing work/{s}/{name}/pose.npy; run tools/prep.sh {s}")
+    if not (Wd / "pose.npy").exists(): sys.exit(f"missing work/{s}/{name}/pose.npy; run python tools/run.py prep.py {s}")
     ks = tracks(Wd)  # every tracked person is drawn; a stroke's tag sits on the body of the track that swung (strokes.json "track")
     poses = {k: np.load(track_file(Wd, "pose", k)) for k in ks}; pose = poses[0]
     worlds = {k: np.load(w) if (w := track_file(Wd, "pose_world", k)).exists() else None for k in ks}

@@ -7,19 +7,22 @@ description: Analyze a tennis practice session from phone videos in videos/<date
 
 The pipeline is half scripts, half your eyes. Scripts find hit sounds, track up to N bodies with MediaPipe, and measure angles. You decide who each tracked person is, which candidates are real strokes and by whom, whether each was self-fed or in a rally, where contact really is, and what the session means. Do every judgment step by looking at the images. Never label from the numbers alone.
 
-Run everything from the repo root with `.venv/bin/python tools/<script>`. If `.venv` is missing, run `./setup.sh`. A session is a folder name under `videos/`, conventionally the date (`2026-11-05`).
+Run everything from the repo root with `python tools/run.py <script> ...` (it runs the script with the venv's Python: `.venv/bin/python` on Mac/Linux, `.venv\Scripts\python.exe` on Windows; works on all three; use `python3` if there is no `python`, as on a stock Mac). If `.venv` is missing, run `python setup.py` (on Windows `py -3.12 setup.py`; add `--cuda` with an NVIDIA GPU).
+
+Write files (labels.txt, profiles.json, findings, players.txt) with the Write tool, never with shell redirection (`>`, `Set-Content`): on Windows those write UTF-16 or ANSI and the scripts stop with an encoding error.
+Keep every command on one line: no `$(...)`, no `VAR=1` prefixes, forward slashes in paths, so the same command works in zsh and PowerShell. A session is a folder name under `videos/`, conventionally the date (`2026-11-05`).
 
 Reply to the user in the language they write in. The page and reel text are Traditional Chinese; write findings and reel text in the user's language if it differs.
 
 ## 1. Prepare
 
 ```
-tools/prep.sh <s> [people]
+python tools/run.py prep.py <s> [people]
 ```
 
-`people` is how many people to track (default 2; use 1 for a solo session, up to 4 for doubles). This makes the proxy, audio, pose (one file per tracked person), hit sounds, ball track (`ball.npy`, RacketVision) and hit events (`events.npy` = hit sounds confirmed by a fast wrist on any tracked person, timed with the ball track) per video in `work/<s>/<video>/`, plus `videos.json`, which fixes the order (video 1, 2, 3 by filename). Pose runs about real time for one person and about half speed with `people` > 1 (a second single-person model pass keeps the main skeleton sharp), and the ball tracker adds about 2.4 s per second of video on an Apple GPU (portrait is 4x that), so 40 minutes of video takes about 2.5 hours. Run it in the background and tell the user how long it will take. It resumes where it stopped.
+`people` is how many people to track (default 2; use 1 for a solo session, up to 4 for doubles). This makes the proxy, audio, pose (one file per tracked person), hit sounds, ball track (`ball.npy`, RacketVision) and hit events (`events.npy` = hit sounds confirmed by a fast wrist on any tracked person, timed with the ball track) per video in `work/<s>/<video>/`, plus `videos.json`, which fixes the order (video 1, 2, 3 by filename). Pose runs about real time for one person and about half speed with `people` > 1 (a second single-person model pass keeps the main skeleton sharp), and the ball tracker adds about 2.4 s per second of video on an Apple GPU (portrait is 4x that), so 40 minutes of video takes about 2.5 hours on a Mac. Elsewhere read the `device` line and ms/frame that `ball.py` writes to `work/<s>/<video>/ball.log` (prep also prints an estimate when there is no GPU) before telling the user: CUDA is expected around 1–2 s per second of video and CPU around 60–70 s per second of video (CPU measured on CI runners only, CUDA not measured). Run it in the background and tell the user how long it will take. It resumes where it stopped.
 
-Portrait and landscape 16:9 video both work (proxy is 540x960 or 960x540; each stroke stores its `size`). Ask for 60 fps video: a source under 50 fps makes `prep.sh` print a warning (the proxy duplicates frames to 60 fps, so speed numbers such as wrist speed and prep time are unvalidated) and the page shows 「來源 30 fps」. Each tracked person gets a track per video (`pose.npy` is track 0, the person seen most; `pose_t1.npy` track 1, and so on). The tracker keeps identities by position and shirt colour. It works well for 2 people near the camera (wall practice). Far-away doubles players are often not detected at all, and people in the same colour can swap tracks.
+Portrait and landscape 16:9 video both work (proxy is 540x960 or 960x540; each stroke stores its `size`). Ask for 60 fps video: a source under 50 fps makes prep print a warning (the proxy duplicates frames to 60 fps, so speed numbers such as wrist speed and prep time are unvalidated) and the page shows 「來源 30 fps」. Each tracked person gets a track per video (`pose.npy` is track 0, the person seen most; `pose_t1.npy` track 1, and so on). The tracker keeps identities by position and shirt colour. It works well for 2 people near the camera (wall practice). Far-away doubles players are often not detected at all, and people in the same colour can swap tracks.
 
 ## 1b. Who is who (judgment, only when more than one person was tracked)
 
@@ -32,7 +35,7 @@ If one row shows two different people, the tracker swapped them partway. Name th
 ## 2. Candidates and labels (judgment)
 
 ```
-.venv/bin/python tools/candidates.py <s>
+python tools/run.py candidates.py <s>
 ```
 
 This writes one sheet per candidate, `work/<s>/sheet<idx>.jpg` (1500×1000): 12 wide crops of the hitter around the hit sound (−12, −9, −6, −3, −2, −1, 0, +1, +2, +3, +6, +9 frames at 60 fps, brightened, cut from the original video in `videos/<s>/`), and under them the whole frame at −45, −20 and 0. Sessions without the original video get crops from `proxy.mp4` and say "proxy resolution only" (the ball is about half as big). `--legacy` (`tools/candidates.py <s> --legacy`) writes the old small sheets (24 candidates each, 5 square crops) instead. Read every sheet, in batches of about 10: read 10 sheets, write those 10 lines into labels.txt, then the next 10 (one sheet per candidate, so 100 candidates are 100 images; a batch keeps what you saw next to what you write). Fill `work/<s>/labels.txt`, one line per idx, in the form `idx kind drill [comment]`:
@@ -56,7 +59,7 @@ Every hitting-arm metric (elbow, contact height and position, prep time, FH/BH g
 Then build the stroke list:
 
 ```
-.venv/bin/python tools/assemble.py <s>
+python tools/run.py assemble.py <s>
 ```
 
 It validates labels.txt and lists the candidates where its automatic kind (`auto_kind`: FH/BH/SV/OH, or `?` = it would not guess) disagrees with yours. Re-check those on the sheet. `candidates.py` pre-fills the kind column of labels.txt with that guess when `kind_conf` >= `PREFILL_MIN` (currently 0.58; a guess about the stroke kind, not about contact: confirm it on the sheet, and fill in the drill). `assemble.py` also lists the FH/BH strokes with `kind_conf` below `PREFILL_MIN` (weak swing evidence: look again for contact). SV and OH are left out: their `kind_conf` is fixed below that line by design, so it says nothing about contact. It is reliable for forehands, much weaker for backhands, and only a hint for OH vs SV; see docs/research/stroke-classify.md.
@@ -64,8 +67,8 @@ It validates labels.txt and lists the candidates where its automatic kind (`auto
 ## 3. Clips and contact frames (judgment)
 
 ```
-.venv/bin/python tools/export_session.py <s>
-.venv/bin/python tools/strip.py <s> raw 1,2,3,...      # -> work/<s>/strip.jpg, frames -8..+4 around contact
+python tools/run.py export_session.py <s>
+python tools/run.py strip.py <s> raw 1,2,3,...      # -> work/<s>/strip.jpg, frames -8..+4 around contact
 ```
 
 The hit sound arrives 1–3 frames after the ball meets the strings. Look at the strips in batches of 10–15 strokes and find the frame where the ball touches the strings. Write `work/<s>/refine.json`:
@@ -77,7 +80,7 @@ The hit sound arrives 1–3 frames after the ball meets the strings. Look at the
 Numbers are raw stroke numbers (the numbers export printed). Use `drop` for false strokes you only notice now. Use `set` for relabels.
 
 ```
-.venv/bin/python tools/refine.py <s>
+python tools/run.py refine.py <s>
 ```
 
 It always starts from `strokes_raw.json`, so you can edit refine.json and re-run safely. After refine, strokes are renumbered #01…, and every later file uses the final numbers.
@@ -126,14 +129,14 @@ Write `web/sessions/<s>/notes.json`:
 Then score the session and update the long-term trend:
 
 ```
-.venv/bin/python tools/score.py <s>    # -> scores.json, one 1–10 per player and kind (FH/BH)
-.venv/bin/python tools/trend.py        # -> web/sessions/trend.json, flags 缺點改善 / 優點退步 vs earlier same-camera sessions
+python tools/run.py score.py <s>    # -> scores.json, one 1–10 per player and kind (FH/BH)
+python tools/run.py trend.py        # -> web/sessions/trend.json, flags 缺點改善 / 優點退步 vs earlier same-camera sessions
 ```
 
 After writing or editing `notes.json` and running score.py, always run the check. If it fails, fix the finding (the number or the cite), never loosen the check:
 
 ```
-.venv/bin/python tools/check_findings.py <s>    # exit 1 + the failing findings
+python tools/run.py check_findings.py <s>    # exit 1 + the failing findings
 ```
 
 Anchors, sources, coverage gate and which metrics each camera excludes are in `docs/scoring.md`. Add trend flags to the findings (re-save `notes.json` after running these) only when they compare sessions with the same `camera` text.
@@ -141,11 +144,11 @@ Anchors, sources, coverage gate and which metrics each camera excludes are in `d
 Highlight reel (optional, when asked or when the session has clear examples). Write `work/<s>/reel.json`. The format is in the header of `tools/highlights.py`: cards plus one- or two-up clips by final stroke number. Then:
 
 ```
-.venv/bin/python tools/highlights.py <s>
-.venv/bin/python tools/build_site.py
+python tools/run.py highlights.py <s>
+python tools/run.py build_site.py
 ```
 
-Open `web/index.html` (`open web/index.html`) and look at it before you report. Check that the findings, jump buttons, compare presets and reel all work.
+Open `web/index.html` (`python tools/run.py open web/index.html`) and look at it before you report. Check that the findings, jump buttons, compare presets and reel all work.
 
 ## Answering questions later
 

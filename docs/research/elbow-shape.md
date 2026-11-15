@@ -1,5 +1,7 @@
 # elbow-shape 驗證結果（對照 `elbow-shape_pred.md`）
 
+> 本文的指令為 macOS/zsh；Windows 改用 `python tools/run.py <script>`。
+
 日期 2026-11-15。重現（`elbow_eval.py` 跑 −3..+3 偏移；多數決只是試做，程式沒進 repo）：`.venv/bin/python -I docs/research/elbow_cands.py <id> serve|swing`（出候選與縮圖板）→ 用眼睛標 → `.venv/bin/python -I docs/research/elbow_eval.py`。
 
 ## 標準答案怎麼來（誠實限制）

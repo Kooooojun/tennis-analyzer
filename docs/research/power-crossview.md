@@ -1,5 +1,7 @@
 # 力量分項的跨視角量測（同一個人、同一拍、兩台機）
 
+> 本文的指令為 macOS/zsh；Windows 改用 `python tools/run.py <script>`。
+
 日期 2026-11-15。程式：`tools/metrics.py` 用 main `118b63c`（`SCORE_VERSION` 8，含 #30 的 `_prep` 起點）。事前預測：`testset/results/power-crossview-eval_pred.md`（不在 git）。
 
 ## 問題

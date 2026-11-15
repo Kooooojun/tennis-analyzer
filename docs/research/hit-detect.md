@@ -1,5 +1,7 @@
 # 擊球偵測：多人／遠景、低手撈球、休息時誤報
 
+> 本文的指令為 macOS/zsh；Windows 改用 `python tools/run.py <script>`。
+
 日期 2026-11-15。改了 `tools/match.py`、`tools/events.py`，測試 `tests/test_hits.py` T8–T11。
 評測一律 ±3 幀（`tools/eval_hits.py`），影片是使用者的私人素材，這裡只寫彙總數字。
 
