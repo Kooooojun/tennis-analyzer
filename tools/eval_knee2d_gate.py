@@ -41,11 +41,11 @@ def align(P, rs, T0c):
 
 
 def measure():
-    out = []; al = {}
+    ROWS = rows(); out = []; al = {}
     for cam in (1, 2, 3, 4):
         P = np.load(f"{WK}/ct-{cam}/pose.npy").astype(float)
         assert P.ndim == 3 and P.shape[1:] == (33, 3), P.shape
-        rs = [r for r in rows() if r["cam"] == cam]; T0c, md, n = align(P, rs, T0[cam]); al[cam] = (T0c, md, n, len(rs), float(np.isfinite(P[:, 0, 0]).mean()))
+        rs = [r for r in ROWS if r["cam"] == cam]; T0c, md, n = align(P, rs, T0[cam]); al[cam] = (T0c, md, n, len(rs), float(np.isfinite(P[:, 0, 0]).mean()))
         xy = P[:, :, :2] * _scale(SIZE)
         for r in rs:
             g = int(round((r["t"] - T0c) * 60))
@@ -57,9 +57,9 @@ def measure():
 
 
 def gate(o, limb):
-    metrics.LIMB_FULL = limb
+    old, metrics.LIMB_FULL = metrics.LIMB_FULL, limb
     try: return kinematics(o["xy"], FULL, o["g"], o["hand"])["knee2d_ok"]
-    finally: metrics.LIMB_FULL = 0.8
+    finally: metrics.LIMB_FULL = old
 
 
 def strokes(O):
@@ -97,7 +97,7 @@ def table(O, limb, sel=None):
 if __name__ == "__main__":
     O, al = measure()
     print("## 對齊（proxy 起點 T0，與舊 2D 膝角的中位差）\n\n| cam | T0 (s) | 中位差 | 用到 | res 拍數 | 有骨架的格 |\n|---|---|---|---|---|---|")
-    for c, (T0, md, n, nr, det) in al.items(): print(f"| {c} | {T0:.3f} | {md:.1f}° | {n} | {nr} | {det:.0%} |")
+    for c, (t0, md, n, nr, det) in al.items(): print(f"| {c} | {t0:.3f} | {md:.1f}° | {n} | {nr} | {det:.0%} |")
     fin = sum(np.isfinite(o["err"]) for o in O); print(f"\n拍·機 {len(O)}，有 2D 膝角（窗內有骨架）{fin}\n")
     fmt = lambda s, n: (f"| {n} | {s['nT']} | {s['nF']} ({s['nF'] / max(n, 1):.0%}) | {s['medT']:.1f}° / {s['p90T']:.1f}° | {s['medF']:.1f}° / {s['p90F']:.1f}° | "
                         f"{s['ratio']:.2f}（{s['lo']:.2f}–{s['hi']:.2f}） |")
@@ -109,6 +109,7 @@ if __name__ == "__main__":
             if s: print(fmt(s, n).replace(f"| {n} |", f"| {limb} | {n} |", 1))
         print()
     s, n = table(O, 0.8)
+    if s is None: sys.exit("沒有任何拍同時有閘門旗標與 2D 膝角誤差：檢查姿態檔與對齊表")
     if s["nF"] < MIN_FALSE: verdict = "資料不夠（false 組 < 30）：不改"
     elif s["ratio"] >= 2.0 and s["lo"] >= 1.5: verdict = "閘門有效：metrics.py 不動"
     else:

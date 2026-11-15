@@ -109,7 +109,7 @@ if len(LEFTY) == 2 and all((d / "strokes_all.json").exists() for d in LEFTY):
         got[len(got)] = (len(S), c)
     (na, a), (nb, b) = got[0], got[1]
     assert a["L"]["ok"] > a["R"]["ok"] and b["L"]["ok"] > b["R"]["ok"], got  # 左手設 L 的 FH/BH 對率要比當右手好
-    assert (a["L"]["ok"], a["L"]["fb"]) >= (24, 42) and b["L"]["ok"] >= 13, got  # 量到 A 24/42（FH 8/17、BH 16/25）、B 13/17
+    assert a["L"]["fb"] == 42 and a["L"]["ok"] >= 24 and b["L"]["ok"] >= 13, got  # 量到 A 24/42（FH 8/17、BH 16/25）、B 13/17
     assert a["L"]["elbow"] == na and b["L"]["elbow"] == nb and a["L"]["fwd"] >= 0.85 * na and b["L"]["fwd"] >= 0.85 * nb, got
     assert b["L"]["sv"] >= 15 and b["L"]["sv_has"] / b["L"]["sv"] >= 0.4, got  # 發球手臂有結論：量到 11/17；當右手只有 4/17
     print("真實左手 OK", {i: (n, c["L"]["ok"], c["R"]["ok"]) for i, (n, c) in got.items()})
