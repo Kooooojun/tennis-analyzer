@@ -1,8 +1,12 @@
 # check_findings.py <session> — every finding in web/sessions/<s>/notes.json must cite numbers that match strokes.json / scores.json.
 # Cite formats and rules: docs/scoring.md §8. Exit 1 and list the failing findings when any check fails.
 import math
+import sys
 import re
 import numpy as np
+from platform_util import utf8_stdout
+
+utf8_stdout()
 
 STATS = dict(median=np.median, mean=np.mean, min=np.min, max=np.max, n=len)
 SCORE_STATS = ("median", "spread", "n", "score", "cons")

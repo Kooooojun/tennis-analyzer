@@ -6,17 +6,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from assemble import cands_fp, read_labels, player_of, bulk_warning, BULK_N
 
 d = Path(tempfile.mkdtemp()); C = [dict(v="a", t=1.0, player="black"), dict(v="a", t=2.0, player="black")]
-(d / "cands.json").write_text(json.dumps(C))
+(d / "cands.json").write_text(json.dumps(C), encoding="utf-8", newline="\n")
 fp = cands_fp(d / "cands.json")
-(d / "labels.txt").write_text(f"# header\n# cands {fp}\n0 FH rally\n1 x\n")
+(d / "labels.txt").write_text(f"# header\n# cands {fp}\n0 FH rally\n1 x\n", encoding="utf-8", newline="\n")
 rows = read_labels(d, C); assert [r[1] for r in rows] == ["FH", "x"], rows
 
 C2 = [dict(v="a", t=1.5, player="black"), dict(v="a", t=2.0, player="black")]  # 重跑 candidates：數量一樣、內容不同
-(d / "cands.json").write_text(json.dumps(C2))
+(d / "cands.json").write_text(json.dumps(C2), encoding="utf-8", newline="\n")
 try: read_labels(d, C2); raise AssertionError("mismatch not caught")
 except SystemExit as e: assert "candidates" in str(e) and "labels.txt" in str(e), e
 
-(d / "labels.txt").write_text("0 FH rally\n1 x\n")  # 舊 labels.txt 沒有指紋：只警告，照跑
+(d / "labels.txt").write_text("0 FH rally\n1 x\n", encoding="utf-8", newline="\n")  # 舊 labels.txt 沒有指紋：只警告，照跑
 assert len(read_labels(d, C2)) == 2
 
 who = {0: "white", 1: None}  # 0 用 '@white' 改名

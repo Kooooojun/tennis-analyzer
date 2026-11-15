@@ -3,6 +3,7 @@ import collections, hashlib, json, sys, numpy as np
 from common import session, work, load, save, size, track_file, players, load_profiles, profile_for
 from metrics import measure_full, hand_gate
 from kind import PREFILL_MIN
+from platform_util import read_text
 
 KINDS = {"FH", "BH", "SV", "OH"}; DRILLS = {"feed", "rally", "high", "unsure", "-"}
 cands_fp = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()[:16]  # candidates.py writes it into labels.txt as '# cands <fp>'
@@ -11,7 +12,7 @@ cands_fp = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()[:16]  # candidat
 def read_labels(Wd, C):
     """labels.txt rows, checked against cands.json: one line per candidate, and written for THIS cands.json (a re-run of
     candidates.py with the same count would otherwise shift every label onto another hit without a word)."""
-    lines = (Wd / "labels.txt").read_text().splitlines()
+    lines = read_text(Wd / "labels.txt").splitlines()
     fp = next((l.split()[2] for l in lines if l.startswith("# cands ") and len(l.split()) > 2), None)
     if fp is None: print("warning: labels.txt has no '# cands' line (made before fingerprints), cannot check it still matches cands.json")
     elif fp != cands_fp(Wd / "cands.json"):

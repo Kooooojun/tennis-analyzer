@@ -2,7 +2,7 @@
 import json, sys, collections
 import os; R = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "work", "thetis")
 mode = sys.argv[1]; which = sys.argv[2] if len(sys.argv) > 2 else "first"
-rows = json.load(open(f"{R}/res_{mode}_{which}.json"))["rows"]
+rows = json.load(open(f"{R}/res_{mode}_{which}.json", encoding="utf-8"))["rows"]
 PRED = ["FH", "BH", "SV", "OH", "?"]; GRP = ["FH", "BH", "SV", "OH", "FHV", "BHV"]
 OK = dict(FH="FH", BH="BH", SV="SV", OH="OH", FHV="FH", BHV="BH")  # 兩種 volley 只看它們被分到哪裡；「對」當作同側的拍
 

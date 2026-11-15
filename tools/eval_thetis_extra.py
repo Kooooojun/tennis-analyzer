@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from eval_thetis import EYE, W, SIZE, load, peak
 from metrics import _scale
 
-res = {m: json.load(open(f"{W}/res_{m}_first.json")) for m in ("native18", "interp60", "dup60")}
+res = {m: json.load(open(f"{W}/res_{m}_first.json", encoding="utf-8")) for m in ("native18", "interp60", "dup60")}
 print("## guess_hand（逐受試者，括號 = 快手腕/慢手腕 98 百分位比）\n")
 print("| 模式 | 判 R | 判 L | 判不出 | 與 interp60 一致 | 眼睛確認者命中 |\n|---|---|---|---|---|---|")
 base = {int(p): v[0] for p, v in res["interp60"]["hands"].items()}

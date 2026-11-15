@@ -26,7 +26,7 @@ print("hand_gate OK")
 
 # candidates.py：沒 profile 時就算手猜得出來，cands 的 hand 也要是 None，預填拍種留 '?'（猜錯手時 FH/BH 整個鏡像）
 import ast
-src = (Path(__file__).resolve().parent.parent / "tools/candidates.py").read_text()
+src = (Path(__file__).resolve().parent.parent / "tools/candidates.py").read_text(encoding="utf-8")
 fn = {n.name: n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef)}
 g = {}; exec(ast.get_source_segment(src, fn["guess"]), g)
 assert g["guess"](dict(v="a", t=1.0, track=0, hand=None)) == "?"

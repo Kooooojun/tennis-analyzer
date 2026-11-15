@@ -13,6 +13,7 @@ from crop import square, wide, cut, brighten
 from match import match, WRIST
 from assemble import cands_fp
 from metrics import hand_gate
+from platform_util import imwrite, read_text, unlink, write_text
 
 OFF = [-45, -25, -8, 0, 12]  # --legacy sheets: 24 candidates per sheet, 5 small square crops each
 PER_SHEET = 24
@@ -105,8 +106,8 @@ if names or any(len(t) > 1 for t in T.values()):
             fs = seen[np.linspace(0, len(seen) - 1, 10).astype(int)] if len(seen) else []
             row = [tile(cap, [P], int(f), f"v{vn} t{k} {int(f / 60 // 60)}:{f / 60 % 60:04.1f}") for f in fs]
             rows.append(np.hstack(row + [np.zeros((200, 200, 3), np.uint8)] * (10 - len(row))))
-        cv2.imwrite(str(Wd / "players.jpg"), np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 80])
-        with open(Wd / "players.txt", "a") as fh:
+        if not imwrite(Wd / "players.jpg", np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 80]): sys.exit(f"could not write {Wd / 'players.jpg'}")
+        with open(Wd / "players.txt", "a", encoding="utf-8", newline="\n") as fh:
             if not names: fh.write("# <video no> <track> <name>: who each tracked person is (see players.jpg). Same name across videos; x = not a player\n")
             fh.writelines(f"{vn} {k} ?\n" for vn, k in missing)
         sys.exit(f"{len(missing)} tracked people need a name: look at {Wd / 'players.jpg'} and replace the ? in {Wd / 'players.txt'}, then re-run")
@@ -153,8 +154,10 @@ for vi, v in enumerate(V):
             C.append(dict(v=v, vn=vi + 1, t=float(t), arc=float(arc), sp=float(sp), track=k, player=names[(vi + 1, k)], hand=prof[k]))  # profile hand only: a guessed hand must not pre-fill FH/BH (a wrong guess mirrors them)
 save(Wd / "cands.json", C)
 
-for old in Wd.glob("sheet*.jpg"): old.unlink()
-caps, poses = {}, {}
+for old in Wd.glob("sheet*.jpg"):
+    try: unlink(old)
+    except PermissionError: print(f"warning: cannot delete {old} (open in another program?), left it")
+caps, poses, failed = {}, {}, []  # failed: sheets that could not be written; the run still ends non-zero
 for c in C:
     for k2 in T[c["v"]]:
         if names[(c["vn"], k2)] != "x" and (c["v"], k2) not in poses: poses[(c["v"], k2)] = np.load(track_file(Wd / c["v"], "pose", k2))
@@ -170,7 +173,7 @@ if LEGACY:
             rows.append(row)
         if len(rows) % 2: rows.append(np.zeros_like(rows[0]))
         sheet_im = np.vstack([np.hstack(rows[i:i + 2]) for i in range(0, len(rows), 2)])
-        cv2.imwrite(str(Wd / f"sheet{k // PER_SHEET}.jpg"), sheet_im, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if not imwrite(Wd / f"sheet{k // PER_SHEET}.jpg", sheet_im, [cv2.IMWRITE_JPEG_QUALITY, 80]): failed.append(f"sheet{k // PER_SHEET}.jpg")
 else:
     srcs, low = {}, set()
     for v in dict.fromkeys(c["v"] for c in C):  # original video = the file whose stem is v (a glob "v.*" would also match "v.x.mov"); not openable (codec) -> proxy
@@ -180,7 +183,7 @@ else:
     for i, c in enumerate(C):  # each candidate decodes only ~0.9 s of its video
         v = c["v"]; ks = [k2 for k2 in T[v] if names[(c["vn"], k2)] != "x"]; src = srcs[v]
         im = sheet(c, i, [poses[(v, k2)] for k2 in ks], ks.index(c["track"]), src, v in low)
-        cv2.imwrite(str(Wd / f"sheet{i}.jpg"), im, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if not imwrite(Wd / f"sheet{i}.jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 85]): failed.append(f"sheet{i}.jpg")
     if low: print("no original video for", sorted(low), "- sheets from proxy.mp4 only (about half the resolution, the ball is small)")
 
 def guess(c):
@@ -197,14 +200,15 @@ def guess(c):
 worlds, sizes = {}, {}
 lab = Wd / "labels.txt"
 if lab.exists():
-    old = next((l.split()[2] for l in lab.read_text().splitlines() if l.startswith("# cands ") and len(l.split()) > 2), None)
+    old = next((l.split()[2] for l in read_text(lab).splitlines() if l.startswith("# cands ") and len(l.split()) > 2), None)
     print("labels.txt exists, left untouched" + ("" if old in (None, cands_fp(Wd / "cands.json")) else
           ". WARNING: it was written for other candidates, its lines now point at other hits; assemble.py will refuse it. Move it aside and re-run to get a fresh one"))
 else:
     G = [guess(c) for c in C]
-    lab.write_text("# idx kind drill [@player]   kind: FH BH SV OH, or x = not a player / not a hit (keep a line only if the sheet shows the ball on the strings or leaving them; else x + why: dropped in-hand shadow follow-through pickup no-swing). A kind already filled in is a guess about the swing, NOT proof of contact; fill each ? from its sheet, never in bulk."
+    write_text(lab, "# idx kind drill [@player]   kind: FH BH SV OH, or x = not a player / not a hit (keep a line only if the sheet shows the ball on the strings or leaving them; else x + why: dropped in-hand shadow follow-through pickup no-swing). A kind already filled in is a guess about the swing, NOT proof of contact; fill each ? from its sheet, never in bulk."
                    "  drill: feed rally high unsure (SV takes none). @player: who hit it (prefilled from players.txt, change it if the crop shows someone else). Anything after is a comment\n"
                    + f"# cands {cands_fp(Wd / 'cands.json')}   (which candidates these lines belong to; leave it)\n"
                    + "".join(f"{i} {g} ?{' @' + c['player'] if multi else ''}\n" for i, (g, c) in enumerate(zip(G, C))))
     print("auto kind pre-filled for", sum(g != "?" for g in G), "of", len(G))
 print(len(C), "candidates,", (len(C) + PER_SHEET - 1) // PER_SHEET if LEGACY else len(C), "sheets in", Wd)
+if failed: sys.exit(f"could not write {len(failed)} sheet(s) in {Wd}: {failed[:5]}")

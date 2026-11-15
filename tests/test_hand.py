@@ -1,5 +1,6 @@
 # 慣用手測試（純邏輯）：把右手的真實資料左右鏡像，hand="L" 的結果必須與原資料 hand="R" 相同。
 # 用法（repo 根目錄）：.venv/bin/python tests/test_hand.py   需要 work/wall-1/*/pose.npy 與 testset/archive/prep-contact 的結果。
+# CI 排除：需要私人資料（testset/、work/），.github/workflows/ci.yml 不跑這支。
 import json, sys, numpy as np
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
@@ -26,7 +27,7 @@ def close(a, b, tol, tag):
         assert abs(x - y) <= tol.get(k, 0.011), (tag, k, x, y)
 
 # 1. clip 版：35 拍 wall-1（含 3D world）
-S = json.load(open(ROOT / "testset/archive/prep-contact/web/sessions/wall-1/strokes.json")); off = 0
+S = json.load(open(ROOT / "testset/archive/prep-contact/web/sessions/wall-1/strokes.json", encoding="utf-8")); off = 0
 for s in S:
     fr = s["frames"]; wd = s.get("world")
     a = measure_clip(fr, s["contact"], s.get("size"), wd)  # 預設右手
@@ -57,7 +58,7 @@ print("full 鏡像 OK", n, "拍；左手資料當右手時 auto_kind 錯", bad)
 # 3. 猜慣用手：只看揮拍段；鏡像資料猜出相反邊；太短不猜
 import csv
 P = np.load(ROOT / "work/wall-1/IMG_8460/pose_t1.npy").astype(float)  # 白衣，右手（逐拍看圖確認過，見 testset/results/player-profile.md）
-ts = [[float(r["t_sec"]) for r in csv.DictReader(open(ROOT / "testset/labels/hits_IMG_8460.csv")) if r["player"] == "white"]]
+ts = [[float(r["t_sec"]) for r in csv.DictReader(open(ROOT / "testset/labels/hits_IMG_8460.csv", encoding="utf-8", newline="")) if r["player"] == "white"]]
 h, ratio = guess_hand([P], (960, 540), ts); hm, _ = guess_hand([mir(P, SW33)], (960, 540), ts)
 assert (h, hm) == ("R", "L") and ratio > 1.15, (h, hm, ratio)
 assert guess_hand([P[:30]], (960, 540))[0] is None
@@ -71,7 +72,7 @@ for v in ("pose.npy", "pose_t1.npy"):
     Q = np.load(ROOT / "work/wall-1/IMG_8460" / v).astype(float); a = match(Q, E, A, "R"); b = match(mir(Q, SW33), E, A, "L")
     assert len(a) and np.array_equal(a, b, equal_nan=True), v
     assert not np.array_equal(a, match(mir(Q, SW33), E, A, "R"), equal_nan=True), "對照組：左手資料當右手應該不同"
-src = (ROOT / "tools/candidates.py").read_text(); fn = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "swing")
+src = (ROOT / "tools/candidates.py").read_text(encoding="utf-8"); fn = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "swing")
 exec(ast.get_source_segment(src, fn))
 f0 = [int(round(t * 60)) for t in E[:, 0] if 30 < t * 60 < len(Q) - 30]
 assert all(abs(swing(Q, f, A) - swing(mir(Q, SW33), f, A, WRIST["L"])) < 1e-9 for f in f0)
