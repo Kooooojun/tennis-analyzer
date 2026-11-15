@@ -35,7 +35,7 @@ h1{font-size:22px;margin:0 0 2px;text-wrap:balance}
 header p{margin:0;color:var(--muted);font-size:13px}
 main{max-width:1200px;margin:0 auto;padding-block:8px 40px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:20px;align-items:start}
 .player{position:sticky;top:calc(12px + env(safe-area-inset-top, 0px));width:calc((100vh - 290px) * 9 / 16);max-width:420px;min-width:260px}
-.player:not(.wide) .stage{max-height:calc(100vh - 460px)}  /* portrait: the clip letterboxes rather than push the controls below a short window */
+.player:not(.wide) .stage{max-height:max(200px, 100vh - 460px)}  /* portrait: the clip letterboxes rather than push the controls below a short window */
 main.wideplayer{grid-template-columns:minmax(0,1fr)}  /* landscape clip: player on top, cards (compare too) full width below */
 .player.wide{position:static;width:min(100%, (100vh - 400px) * 16 / 9, 900px);max-width:none;min-width:0}
 .stage{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:9/16;width:100%;max-width:100%}
@@ -746,7 +746,7 @@ function drawList(){
     const dn=drillName(s);
     b.innerHTML=`<span class="row"><span class="tag ${esc(s.kind)}">${esc(NAMES[s.kind]||s.kind)}</span><span class="clock">${esc(s.clock)}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":kSrcOf(s)+" "+Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
     b.title=strokeLabel(s);
-    b.onclick=()=>load(s.id,false); box.append(b);
+    b.onclick=()=>load(s.id,document.querySelector("main").classList.contains("wideplayer")); box.append(b);  // the landscape player is not sticky, so bring it back into view
   }
   markList();
 }
