@@ -401,7 +401,8 @@ const feedFH = () => byKind("FH").filter(s=>s.drill==="feed");
 const rallyFH = () => byKind("FH").filter(s=>s.drill==="rally");
 const kneeColor = a => a==null ? "#fff" : a<=130 ? "#4ade80" : a<=150 ? "#fbbf24" : "#f87171";  // one scale for 2D and 3D (user's call)
 const KERR = {"3D":"3D 誤差約 ±8°（p90 約 23°）", "2D":"2D 誤差：側面拍約 ±2°，正前、正後方約 ±20–34°"};  // CalTennis multi-view check, docs/research/multiview-angles.md
-const kSrcOf = s => s.knee3d!=null ? "3D" : "2D";  // s.knee is the 3D angle exactly when knee3d exists (DAYS loader)
+const kSrcOf = s => s.knee3d!=null ? "3D" : "2D";
+const kTxt = (o,none="–") => o.knee==null ? none : `${o.kSrc} ${Math.round(o.knee)}°`;  // group median with its source; no source on a missing value  // s.knee is the 3D angle exactly when knee3d exists (DAYS loader)
 const hPct = s => s.contact_h==null ? null : s.contact_h*100;  // null*100 would be 0
 const kneeSrc = g => { const ok=g.filter(s=>!s.knee_warn); return ok.filter(s=>s.knee3d!=null&&isFinite(s.knee3d)).length>ok.length/2?"knee3d":"knee"; };  // same source pick as score.py score_group
 const kneeOk = (s,src="knee") => !(s.knee_warn||(src==="knee"&&s.knee2d_ok===false));  // score.py _value gate
@@ -603,7 +604,7 @@ function flagList(flags){
   return flags.length?`<ul class="flags">`+flags.map(f=>`<li class="${f.diff>0?"up":"down"}">${f.flag}：${ITEM[f.item]||f.item} ${f.base} → ${f.now}</li>`).join("")+`</ul>`:"";
 }
 function drawTrend(){
-  const keys=Object.keys(DAYS), st=Object.fromEntries(keys.map(k=>[k,dayStats(DAYS[k].data)])), r=x=>x==null?"–":Math.round(x), dg=x=>x==null?"–":Math.round(x)+"°", dk=o=>o.knee==null?"–":`${o.kSrc} ${dg(o.knee)}`;
+  const keys=Object.keys(DAYS), st=Object.fromEntries(keys.map(k=>[k,dayStats(DAYS[k].data)])), r=x=>x==null?"–":Math.round(x), dg=x=>x==null?"–":Math.round(x)+"°", dk=kTxt;
   $("trendTitle").textContent=keys.length>1?`${keys.length} 場比較`:"這場數字";
   const rows=[
     ["鏡頭",k=>DAYS[k].camera||"–"],
@@ -638,7 +639,7 @@ function strip(id,title,hint,get,lo,hi,unit,ticks,fmt=Math.round){  // one metri
     const lv=low(s), col=lv?"var(--muted)":`var(--${s.kind.toLowerCase()})`, hollow=lv||s.kind==="FH"&&s.drill==="feed";
     const c=mk("circle",{cx:x(s.id),cy:y(val),r:4.2,fill:hollow?"var(--panel)":col,"fill-opacity":hollow?1:0.8,stroke:hollow?col:"var(--panel)","stroke-width":hollow?1.6:1});
     c.dataset.id=s.id; c.dataset.hollow=hollow?1:0; if(lv) c.dataset.lowvis=1;
-    const tt=document.createElementNS(NS,"title"); tt.textContent=`${strokeLabel(s)}${drillName(s)?"（"+drillName(s)+"）":""}：${fmt(val)}${unit}`; c.append(tt);
+    const tt=document.createElementNS(NS,"title"); tt.textContent=`${strokeLabel(s)}${drillName(s)?"（"+drillName(s)+"）":""}：${id==="stripKnee"?MED[s.kind].kSrc+" ":""}${fmt(val)}${unit}`; c.append(tt);
     c.addEventListener("click",()=>load(s.id,true));
   }
   el.append(svg);
@@ -677,19 +678,19 @@ function drawChecks(){
   const n=(x,u="")=>x==null?"—":r(x)+u, na=t=>`<span class="you na">${t}</span>`, F=MED.FH, fd=MED.feed, ry=MED.rally;
   const fh=[
     ["準備","看到球就轉肩側身、拍子往後拉。", DAYS[DAY].showOpen?you(`你：正拍轉肩中位數 ${n(F.open,"%")}`,[F.open],F.open<=35):na("這個鏡頭角度看不準轉肩，這場不給數字。")],
-    ["蓄力",`膝蓋彎下去，重心壓在後腳。${ry.knee==null?"":`目標就是你對打時的角度，約 ${ry.kSrc} ${r(ry.knee)}°。`}`, fd.knee==null?you(`你：對打 ${ry.kSrc} ${n(ry.knee,"°")}`,[ry.knee],ry.knee<=140):you(`你：自己拋球時 ${fd.kSrc} ${r(fd.knee)}°${fd.knee>150?"，太直":""}`,[fd.knee],fd.knee<=140)],
+    ["蓄力",`膝蓋彎下去，重心壓在後腳。${ry.knee==null?"":`目標就是你對打時的角度，約 ${ry.kSrc} ${r(ry.knee)}°。`}`, fd.knee==null?you(`你：對打 ${kTxt(ry,"—")}`,[ry.knee],ry.knee<=140):you(`你：自己拋球時 ${fd.kSrc} ${r(fd.knee)}°${fd.knee>150?"，太直":""}`,[fd.knee],fd.knee<=140)],
     ["擊球","在身體前方、腰到胸口的高度擊球（畫面上的綠色區）。低球用膝蓋降下去，不要用手撈。", you(`你：${[fd.h!=null&&`自己拋球時擊球高度 ${r(fd.h)}`,ry.h!=null&&`對打 ${r(ry.h)}`].filter(Boolean).join("，")}`,[fd.h??ry.h],(fd.h??ry.h)>=30)],
     ["收拍","從下往上揮，拍子收到非持拍手那側的肩膀上方。",""],
   ];
   const B=MED.BH, bs=byKind("BH"), hd=one(bs,"hand"), off=hd==="L"?"右":hd==="R"?"左":"非持拍", side=hd?off:"非持拍手那側", front=hd==="L"?"前腳（左腳）":hd==="R"?"前腳（右腳）":"前腳",  /* unknown hand: no left/right */ type=one(bs,"backhand");
   const bh=type==="one"?[
     ["準備",`${off}手扶拍喉，一起把拍子帶到${side}後方，背對來球方向。`, you(`你：反拍轉肩中位數 ${n(B.open,"%")}`,[B.open],DAYS[DAY].showOpen&&B.open<=35)],
-    ["蓄力",`${front}踩出去，膝蓋彎。`, you(`你：反拍膝蓋中位數 ${B.kSrc} ${n(B.knee,"°")}`,[B.knee],B.knee<=140)],
+    ["蓄力",`${front}踩出去，膝蓋彎。`, you(`你：反拍膝蓋中位數 ${kTxt(B,"—")}`,[B.knee],B.knee<=140)],
     ["擊球",`擊球點在前腳前方，手臂接近伸直。${off}手往後展開，讓肩膀在擊球時維持側身。`, you(`你：擊球時肩膀打開中位數 ${n(B.openC,"%")}`,[B.openC],DAYS[DAY].showOpen&&B.openC<=35)],
     ["收拍","持拍手往前上方延伸，胸口最後才轉向球網。",""],
   ]:[  // two-handed, or unknown: only what both backhands share
     ["準備",`${type==="two"?"兩手握拍，":""}看到球就轉肩，把拍子帶到${side}後方。`, you(`你：反拍轉肩中位數 ${n(B.open,"%")}`,[B.open],DAYS[DAY].showOpen&&B.open<=35)],
-    ["蓄力",`${front}踩出去，膝蓋彎。`, you(`你：反拍膝蓋中位數 ${B.kSrc} ${n(B.knee,"°")}`,[B.knee],B.knee<=140)],
+    ["蓄力",`${front}踩出去，膝蓋彎。`, you(`你：反拍膝蓋中位數 ${kTxt(B,"—")}`,[B.knee],B.knee<=140)],
     ["擊球","擊球點在身體前方。", ""],
     ["收拍",`${type==="two"?"兩手一起":"拍子"}往前上方送，收到持拍手那側的肩膀上方。`,""],
   ];
@@ -751,7 +752,7 @@ function load(id, scroll){
   m=S.kind==="FH"?(S.drill==="feed"?M.feed:S.drill==="rally"?M.rally:M.FH):M[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
   const fmt=(x,u)=>x==null?"–":`${Math.round(x)}<small>${u}</small>`;
   const ks=kSrcOf(S); $("mKnee").innerHTML=fmt(S.knee,"°")+(S.knee==null?"":`<small> ${ks}</small>`); $("mKnee").title=$("cKnee").title=KERR[ks]+"；"+KERR[ks==="3D"?"2D":"3D"]+"。兩種來源不要直接互比"; $("legKnee").textContent=`較彎的膝蓋（${ks}）`;
-  $("cKnee").textContent=`${KERR[ks]} · ${grp}中位數 ${m.knee==null?"–":m.kSrc+" "+Math.round(m.knee)+"°"}`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");
+  $("cKnee").textContent=`${S.knee==null||S.knee_warn_why==="view"?"":KERR[ks]+" · "}${grp}中位數 ${m.knee==null?"–":m.kSrc+" "+Math.round(m.knee)+"°"}`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");
   // body-kinematics (docs/scoring.md §11): trunk share, turn and leg load read the same from any horizontal camera angle
   $("bodyCard").hidden=S.trunk_share==null&&S.turn==null&&S.leg_load==null;  // sessions before body-kinematics have none
   const pc=x=>x==null?"–":Math.round(x*100)+"%";
