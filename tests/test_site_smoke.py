@@ -10,7 +10,7 @@ s = "練習-1"; D = T / "web" / "sessions" / s; D.mkdir(parents=True); (T / "wor
 fr = [[[0.5, 0.5, 0.9]] * 17] * 3
 strokes = [dict(id=i, video="v1", src="clips/s.mp4", frames=fr, world=fr, kind="FH", player="小明") for i in (1, 2)]
 (D / "strokes.json").write_text(json.dumps(strokes, ensure_ascii=False), encoding="utf-8")
-(D / "notes.json").write_text(json.dumps(dict(label="中文標題", caveat="備註：只有合成資料", findings=[dict(title="重心", text="膝蓋再彎一點")]),
+(D / "notes.json").write_text(json.dumps(dict(label="中文標題", date="2026-11-12", caveat="備註：只有合成資料", findings=[dict(title="重心", text="膝蓋再彎一點")]),
                                          ensure_ascii=False), encoding="utf-8")
 
 for env in ({}, {"PYTHONIOENCODING": "cp1252"}):
@@ -20,6 +20,7 @@ for env in ({}, {"PYTHONIOENCODING": "cp1252"}):
     b = (D / "data.js").read_bytes()
     assert b"\r" not in b
     js = b.decode("utf-8"); assert "中文標題" in js and "膝蓋再彎一點" in js and "小明" in js
+    assert json.loads(js[js.index("push(") + 5:-2])["date"] == "2026-11-12"  # the page titles and spaces sessions by this date
     h = hashlib.sha1(b)
     for x in strokes: h.update((D / "pose" / f"{x['id']}.js").read_bytes())
     man = (T / "web" / "sessions" / "manifest.js").read_text(encoding="utf-8")
