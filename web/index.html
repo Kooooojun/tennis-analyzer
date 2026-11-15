@@ -755,17 +755,18 @@ for(const vid of [$("vA"),$("vB")]){ vid._near=false; NEAR.observe(vid); }
 function watchStall(vid){
   const m=document.createElement("button"); m.type="button"; m.className="vid-msg"; m.hidden=true; vid.parentElement.append(m);
   let sig="", since=0, wait=0, tries=0, src="";
-  let restore=null;  // the pending time restore of the last reload; dropped when the clip changes or reloads again
-  const reload=(tap=false)=>{ const t=vid.readyState?vid.currentTime:null, play=!vid.paused, url=vid.currentSrc; tries++; since=Date.now();  // never loaded: load()'s own loadedmetadata handler seeks
+  let restore=null, keep=null;  // the pending time restore of the last reload and its [time, playing]; dropped when the clip changes
+  const reload=(tap=false)=>{ tries++; since=Date.now(); const url=vid.currentSrc;
+    const [t,play]=keep&&!vid.readyState?keep:[vid.readyState?vid.currentTime:null,!vid.paused]; keep=[t,play];  // a reload that never got metadata keeps the first target; never loaded: load()'s own handler seeks
     if(restore) vid.removeEventListener("loadedmetadata",restore);
-    restore=()=>{ restore=null; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t; if(!play) vid.pause(); };
+    restore=()=>{ restore=keep=null; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t; if(!play) vid.pause(); };
     vid.addEventListener("loadedmetadata",restore,{once:true});
     vid.src=url; if(play||tap) playSafe(vid,vid.parentElement.querySelector(".badge")); else vid.load(); };
   const fail=()=>{ m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; };
   m.onclick=()=>{ delete m.dataset.fail; tries=0; m.textContent="影片下載中…"; reload(true); };
   setInterval(()=>{
     if(!vid.currentSrc||!vid.offsetParent) return;
-    if(vid.currentSrc!==src){ src=vid.currentSrc; if(restore){ vid.removeEventListener("loadedmetadata",restore); restore=null; } tries=0; wait=0; delete m.dataset.fail; m.hidden=true; }
+    if(vid.currentSrc!==src){ src=vid.currentSrc; if(restore){ vid.removeEventListener("loadedmetadata",restore); restore=null; } keep=null; tries=0; wait=0; delete m.dataset.fail; m.hidden=true; }
     const now=Date.now();
     if(vid.error){ if(m.dataset.fail) return; if(tries<1&&now-since>=2000) reload(); else if(tries>=1) fail(); return; }
     const need=!(vid._blocked&&!vid.readyState)&&(vid.readyState<1||vid.seeking||!vid.paused&&vid.readyState<3);  // metadata only and idle is fine: preload=metadata, and a compare clip waits for its partner to scroll into view
