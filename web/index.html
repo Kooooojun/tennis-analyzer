@@ -54,7 +54,8 @@ select{max-width:100%;min-width:0}
 button:hover{border-color:var(--muted)}
 button:focus-visible,select:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button,select,a{touch-action:manipulation}
-@media (pointer:coarse){button,select{min-height:44px;min-width:44px} .home-link{display:inline-block;padding:9px 0}}  /* finger-sized targets on phones */
+@media (pointer:coarse){button,select{min-height:44px;min-width:44px} input[type=range]{height:44px;margin-block:0}
+  select{-webkit-appearance:none;appearance:none;padding-right:26px;background:linear-gradient(45deg,transparent 50%,var(--muted) 50%) right 15px center/5px 6px no-repeat,linear-gradient(-45deg,transparent 50%,var(--muted) 50%) right 10px center/5px 6px no-repeat,var(--panel)}  /* iOS ignores height on native selects, so draw the arrow */
 .sess .slug{font-weight:400;font-size:12px;color:var(--muted);margin-left:6px}
 button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .sep{width:1px;height:22px;background:var(--line);margin:0 4px}
@@ -386,7 +387,8 @@ document.body.classList.add("ready");  // data.js scripts above have run; before
 const FPS = 60, NAMES = {FH:"正拍", BH:"反拍", SV:"發球"};
 // one entry per practice session (built by tools/build_site.py); strokes carry their day so compare can mix sessions
 const isoDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d.date||"") ? d.date : null;  // build_site falls back to the slug when notes.json has no date
-const mdOf = iso => iso.slice(5).split("-").map(Number).join("/");  // string slicing, never Date: no timezone shift
+const YEARS = new Set((window.SESSIONS||[]).map(isoDate).filter(Boolean).map(x=>x.slice(0,4))), THIS_YEAR = String(new Date().getFullYear());
+const mdOf = iso => (YEARS.size>1||!YEARS.has(THIS_YEAR) ? [iso.slice(0,4)] : []).concat(iso.slice(5).split("-")).map(Number).join("/");  // string slicing, never Date: no timezone shift; the year only when sessions span years or are not this year
 const sameDay = d => (window.SESSIONS||[]).filter(x=>isoDate(x)===isoDate(d)).length>1;  // two sessions on one day: M/D alone can't tell them apart
 const dateLabel = d => !(d.label===d.id&&isoDate(d)) ? d.label : isoDate(d)===d.id||!sameDay(d) ? mdOf(isoDate(d)) : `${mdOf(isoDate(d))} ${d.id}`;
 const DAYS = Object.fromEntries((window.SESSIONS||[]).map(d=>[d.id,{...d,players:d.players||["me"],data:d.strokes,
@@ -778,7 +780,7 @@ function watchStall(vid){
     if(restore) vid.removeEventListener("loadedmetadata",restore);
     restore=()=>{ restore=keep=null; vid._reloading=false; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t; if(!play) vid.pause(); else if(vid===vA){ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); } };  // vA's play handler skips a play fired before metadata
     vid.addEventListener("loadedmetadata",restore,{once:true});
-    vid._reloading=true; vid.src=url; vid.playbackRate=rate; if(play||tap) playSafe(vid,vid.parentElement.querySelector(".badge")); };
+    vid._reloading=url; vid.src=url; vid.playbackRate=rate; if(play||tap) playSafe(vid,vid.parentElement.querySelector(".badge")); };
   const fail=()=>{ m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; };
   m.onclick=()=>{ delete m.dataset.fail; tries=0; m.textContent="影片下載中…"; reload(true); };
   setInterval(()=>{
@@ -797,6 +799,10 @@ function watchStall(vid){
   },500);
 }
 [v,$("vA"),$("vB")].forEach(watchStall);
+for(const vid of [v,$("vA"),$("vB")]){  // a reload that fails or is replaced must not leave pause events ignored (abort/emptied fire for the reload itself, so not those)
+  vid.addEventListener("error",()=>{ vid._reloading=false; });
+  vid.addEventListener("loadstart",()=>{ if(vid._reloading&&vid.currentSrc!==vid._reloading) vid._reloading=false; });
+}
 function load(id, scroll){
   S=ALL[id]; S._poseErr=false; N=S.n??S.frames.length; seek.max=N-1;  // n: frame count in data.js; older builds only have frames
   S.phases=[{f:S.contact-48,name:"準備"},...(S.prep!=null?[{f:S.contact-Math.round(S.prep*FPS),name:"引拍完成"}]:[]),{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}].sort((a,b)=>a.f-b.f);  // 引拍完成 can fall before 準備 or after 向前揮拍
@@ -918,7 +924,7 @@ function cmpTick(){
 vA.loop=vB.loop=true;
 for(const x of [v,vA,vB]) x.addEventListener("loadedmetadata",()=>{ x._blocked=false; });  // a tap lifted Low Power Mode's block; later loads show times again
 vA.addEventListener("play",()=>{ if(!vA.readyState) return; $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
-vA.addEventListener("pause",()=>{ if(vA._reloading) return; $("cmpPlay").textContent="▶ 同步播放"; hold(vB); });
+vA.addEventListener("pause",()=>{ if(vA._reloading&&!vA.readyState) return; $("cmpPlay").textContent="▶ 同步播放"; hold(vB); });  // ignored only for the reload's own pause, before its metadata
 for(const vid of [vA,vB]) vid.addEventListener("seeked",()=>{ if(vA.paused) cmpRender(Math.floor(vA.currentTime*FPS+1e-3)); });
 $("cmpPlay").onclick=()=>{ if(vA.paused||!vA.readyState){ vB.currentTime=cmpBt(); vA.playbackRate=vB.playbackRate=cmpRate; playSafe(vA,$("badgeA")); playSafe(vB,$("badgeB")); } else vA.pause(); };
 $("cmpPrev").onclick=()=>cmpGoto(cmpCur-1); $("cmpNext").onclick=()=>cmpGoto(cmpCur+1); $("cmpContact").onclick=()=>cmpGoto(A.contact);
