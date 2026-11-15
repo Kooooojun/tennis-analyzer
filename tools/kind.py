@@ -1,8 +1,9 @@
 """Stroke kind (FH / BH / SV / OH / ?) from the pose around contact. classify() gives '?' (low conf) when the evidence is thin.
 Design and numbers: docs/research/stroke-classify.md."""
+import warnings
 import numpy as np
 
-HIGH = 0.25      # racket wrist above the nose by this many torso lengths (best of contact-3 .. contact+5) = SV / OH
+HIGH = 0.25      # racket wrist above the nose by this many torso lengths (lowest of contact-3 .. contact+1: still up through contact) = SV / OH
 FH_MIN = 0.9     # backswing side (racket wrist along the hip line, hip widths, + = racket side) at or above this = FH
 BH_MAX = 0.3     # at or below this = BH; between = '?'  (the 0.2-0.4 s before contact: at contact the turning body flips the sign)
 VIS_MIN = 0.5
@@ -64,6 +65,8 @@ def _high(P, f, rw, L):
     a = f - 100
     if a < 0: return None
     b = f - 60
-    with np.errstate(all="ignore"): sh = np.nanmean(P[a:b, [11, 12], 1], axis=1); y = P[a:b, rw, 1]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning); sh = np.nanmean(P[a:b, [11, 12], 1], axis=1)  # all-NaN rows warn
+    y = P[a:b, rw, 1]
     if not (np.isfinite(sh - y)).any(): return None
     return "SV" if np.nanmedian((sh - y) / L) < HANG else "OH"
