@@ -9,9 +9,9 @@ on:
       - "!**/*.md"
       - "!docs/**"
   # Draft/closed PRs are skipped by the gate job (live API read, not the event payload, which can be a stale snapshot);
-  # converted_to_draft cancels in-progress runs via concurrency.
+  # converted_to_draft and closed cancel in-progress runs via concurrency (their own run is skipped by the gate).
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
     paths:
       - "**"
       - "!**/*.md"
@@ -46,7 +46,8 @@ jobs:
           fi
           read -r pr_state is_draft <<< "${line//$'\r'/}"
           echo "PR #$PR_NUMBER state=$pr_state isDraft=$is_draft"
-          if [ "$pr_state" = OPEN ] && [ "$is_draft" = false ]; then echo run=true >> "$GITHUB_OUTPUT"; else echo run=false >> "$GITHUB_OUTPUT"; fi
+          # Skip only on a clear answer; empty/unexpected output runs CI anyway (a skipped job satisfies required checks).
+          if [ "$pr_state" = CLOSED ] || [ "$pr_state" = MERGED ] || [ "$is_draft" = true ]; then echo run=false >> "$GITHUB_OUTPUT"; else echo run=true >> "$GITHUB_OUTPUT"; fi
   test:
     needs: gate
     if: ${{ needs.gate.outputs.run == 'true' }}
