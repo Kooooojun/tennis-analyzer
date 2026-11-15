@@ -55,7 +55,7 @@ def panel(s,im,i,size,bx):
         kr,kl=(ang3(w,8,10,12),ang3(w,7,9,11)) if w else (ang(f,8,10,12,(sw,sh)),ang(f,7,9,11,(sw,sh)))
         if kr and kl:
             a,j=(kr,10) if kr<=kl else (kl,9); x,y=P(j)
-            d.text((x+14,y-18),f"{a:.0f}°",font=F(34),fill=kc(a),stroke_width=4,stroke_fill=(0,0,0))
+            d.text((x+14,y-18),f"{a:.0f}°{'3D' if w else '2D'}",font=F(34),fill=kc(a),stroke_width=4,stroke_fill=(0,0,0))
     if i==s['contact']:
         d.text((16,size[1]-70),"擊球",font=F(46),fill=(255,214,10),stroke_width=4,stroke_fill=(0,0,0))
     return pil
@@ -66,7 +66,7 @@ def header(title,sub,lines=()):
 def label(d,x,y,s,tag,col):
     d.text((x,y),tag,font=F(34),fill=INK,stroke_width=3,stroke_fill=(0,0,0))
     k=s['knee3d'] if s.get('knee3d') is not None else s['knee']
-    if k is not None: d.text((x,y+44),f"準備時膝蓋 {k:.0f}°",font=F(30),fill=col,stroke_width=3,stroke_fill=(0,0,0))
+    if k is not None: d.text((x,y+44),f"準備時膝蓋 {'3D' if s.get('knee3d') is not None else '2D'} {k:.0f}°",font=F(30),fill=col,stroke_width=3,stroke_fill=(0,0,0))
     if s.get('knee_warn'): d.text((x,y+84),"這拍角度不準",font=F(30),fill=BAD,stroke_width=3,stroke_fill=(0,0,0))
 
 class Out:

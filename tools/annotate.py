@@ -57,7 +57,7 @@ def draw_text(img, x, y, s, size, col, anchor="la"):
 def stroke_info(x):
     k = x["knee3d"] if x.get("knee3d") is not None else x["knee"]
     head = f"#{x['no']:02d} {KIND.get(x['kind'], x['kind'])}" + (f"·{DRILL[x['drill']]}" if x.get("drill") in DRILL else "")
-    lines = [(f"準備時膝蓋 {k:.0f}°", kc(k))] if k is not None else []
+    lines = [(f"準備時膝蓋 {'3D' if x.get('knee3d') is not None else '2D'} {k:.0f}°", kc(k))] if k is not None else []
     if x.get("prep") is not None: lines.append((f"準備時間 {x['prep']:.2f}s", INK))
     if x.get("contact_h") is not None: lines.append((f"擊球高度 {x['contact_h']:.2f}", INK))
     if x.get("knee_warn"): lines.append(("這拍角度不準", BAD))
@@ -105,8 +105,8 @@ def annotate(s, name, src):
                 if ok(a) and ok(c): cv2.line(img, P(a), P(c), (255, 140, 70) if a % 2 == 0 and c % 2 == 0 else (90, 180, 255), 3, cv2.LINE_AA)  # BGR: right side (even landmark ids) orange, left blue, like highlights.py
             for j in JOINTS:
                 if ok(j): cv2.circle(img, P(j), 4, (255, 255, 255), -1, cv2.LINE_AA)
-            wk = worlds[k]; a, j = live_knee(p, wk[n] if wk is not None and n < len(wk) and not np.isnan(wk[n][0, 0]) else None, (W, H))
-            if a is not None and ok(j): x, y = P(j); draw_text(img, x + 14, y - 18, f"{a:.0f}°", 26, kc(a))
+            wk = worlds[k]; wn = wk[n] if wk is not None and n < len(wk) and not np.isnan(wk[n][0, 0]) else None; a, j = live_knee(p, wn, (W, H))
+            if a is not None and ok(j): x, y = P(j); draw_text(img, x + 14, y - 18, f"{a:.0f}°{'3D' if wn is not None else '2D'}", 26, kc(a))
             if st is not None and st.get("track", 0) == k:
                 nx, ny = P(0); who = (f" {st['player']}" if st.get("player") else "")
                 draw_text(img, nx, max(ny - 44, 30), f"#{st['no']:02d}{who}", 30, INK, "ma")
