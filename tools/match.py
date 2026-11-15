@@ -29,7 +29,7 @@ def match(P, O, A, hand="R"):
             # only the frames the features use must be seen: far players are tracked in fragments (often 20-40% of a
             # second), and the hitter's fragment usually covers the hit itself
             if np.isnan(win).mean() > NAN_MAX or valid[f - 15:f + 16].mean() < SEEN: continue
-            seg = w[f - 15:f + 16]; arc = np.nansum(np.linalg.norm(np.diff(seg, axis=0), axis=1) / L[f])
+            seg = w[f - 15:f + 16]; arc = np.nansum(np.linalg.norm(np.diff(seg, axis=0), axis=1)) / np.nanmedian(L[f - 15:f + 16])  # a fragment may miss frame f
             out.append((t, pk, on, np.nanmax(win), arc))
     return np.array(out, dtype=np.float64).reshape(-1, 5)  # (0,5) when no hit events
 

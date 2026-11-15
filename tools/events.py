@@ -52,8 +52,8 @@ def hand_speed(pose, aspect):
         r = np.nanmedian(np.stack([prev, r, nxt]), 0)   # drops one-frame jumps
         v = np.linalg.norm(np.diff(r, axis=0), axis=2) * FPS / torso[1:, None]
         if not N: return v[:, 0]
-        jump = np.nan_to_num(np.linalg.norm(np.diff(hip, axis=0), axis=1) * FPS / torso[1:]) > HIP   # unseen hip is not a jump
-        v[np.convolve(jump, np.ones(2 * JUMP_R + 1), "same") > 0] = np.nan
+        hip[~ok] = np.nan; jump = np.nan_to_num(np.linalg.norm(np.diff(hip, axis=0), axis=1) * FPS / torso[1:]) > HIP   # unseen hip is not a jump
+        v[np.convolve(jump, np.ones(2 * JUMP_R + 1))[JUMP_R:JUMP_R + len(jump)] > 0] = np.nan   # "full" sliced: "same" is longer than a clip under 22 frames
         return np.r_[np.nan, np.nanmax(v, 1)]
 
 
@@ -115,7 +115,7 @@ def pick(rows, hand, lag=LAG, slack=0):
     ts = np.array([r[0] for r in hits])
     for r in sorted(cand, key=lambda r: -r[2]):
         if HAND_LO <= r[4] < HAND and r[3] >= BB_LO and len(ts) and RALLY[0] <= np.abs(ts - r[0]).min() <= RALLY[1] \
-                and all(abs(r[0] - q[0]) > SAME for q in hits): hits.append(r)
+                and all(abs(r[0] - q[0]) > PAIR for q in hits): hits.append(r)
     return [(t - lag / FPS, pk, on) for t, pk, on, _, _ in sorted(hits)]
 
 

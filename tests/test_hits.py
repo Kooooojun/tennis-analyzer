@@ -92,4 +92,7 @@ assert [r[0] for r in pick(weak, hand, lag=0)] == [1.0]
 # T11: a hit and the ball's bounce or wall echo 0.6-0.9 s apart: keep one (more low band + faster hand), not both
 hand = np.zeros(300); hand[[60, 105]] = [10, 8]
 assert [r[0] for r in pick(np.array([[1.0, -20, 10, 12], [1.75, -20, 14, 5]]), hand, lag=0)] == [1.0]
+
+# T12: a clip shorter than the hip-jump window (21 frames) still gives one value per frame
+assert hand_speed(body(10), 1.0).shape == (10,)
 print("ok")
