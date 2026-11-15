@@ -32,13 +32,12 @@ near = lambda a, b, tol: a is not None and abs(a - b) <= tol
 hy = np.full(N, 0.5); hy[c - 40:c - 20] = np.linspace(0.5, 0.55, 20); hy[c - 20:c + 3] = np.linspace(0.55, 0.52, 23); hy[c + 3:] = 0.52
 r = kinematics(body(hy), J, c)
 assert near(r["leg_load"], 0.10, 0.01) and near(r["leg_drive"], 0.06, 0.01), r
-assert near(r["knee_eq"], 2 * np.degrees(np.arcsin(0.9)), 2), r  # ~128 deg
 # 3: one ankle lifted (foot off the ground) -> the lower ankle is the ground, same answer
 r2 = kinematics(body(hy, ankle_y=(0.8, 1.0)), J, c); assert near(r2["leg_load"], 0.10, 0.01), r2
 # standing still -> no load, no drive
 r = kinematics(body(), J, c); assert near(r["leg_load"], 0, 0.005) and near(r["leg_drive"], 0, 0.005), r
 # 3: ankles lost -> None, no crash
-b = body(hy); b[:, 11:13] = np.nan; r = kinematics(b, J, c); assert r["leg_load"] is None and r["leg_drive"] is None and r["knee_eq"] is None, r
+b = body(hy); b[:, 11:13] = np.nan; r = kinematics(b, J, c); assert r["leg_load"] is None and r["leg_drive"] is None, r
 
 # --- speeds -------------------------------------------------------------
 # arm-only swing: wrist circles the right shoulder, shoulders and hips still -> trunk_share ~ 0
@@ -54,6 +53,8 @@ assert r["wrist_speed"] > 4 and r["trunk_share"] < 0.05, r  # 0.5*pi / 0.4 s / 0
 r2 = kinematics(swing(body(), 0.3), J, c); assert r2["trunk_share"] > 0.15, r2
 # 8: one-frame wrist glitch does not set the peak
 b = swing(body()); b[c - 10, 6] += [2.0, 0]; r3 = kinematics(b, J, c); assert near(r3["wrist_speed"], r["wrist_speed"], 1.0), (r3, r)
+# 8: a 4-frame wrist glitch during the backswing (wall-1 #33) does not set the peak: the peak is searched in the forward swing only
+b = swing(body()); b[c - 24:c - 20, 6] += [[1.5, -0.5], [0.2, 0.6], [1.2, -0.3], [-0.4, 0.5]]; r3 = kinematics(b, J, c); assert near(r3["wrist_speed"], r["wrist_speed"], 1.0), (r3, r)
 # walking: everything translates together -> hip-relative speeds unchanged
 b = swing(body(), 0.3); b[:, :, 0] += 0.01 * f[:, None]; r4 = kinematics(b, J, c); assert near(r4["trunk_share"], r2["trunk_share"], 0.03), (r4, r2)
 # hand="L" uses the left wrist / shoulder

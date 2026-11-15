@@ -80,19 +80,20 @@ def kinematics(xy, J, c, hand="R", start=None):
     X = _smooth(xy[a:b]); c0 = c - a
     hip = (X[:, J['lh']] + X[:, J['rh']]) / 2
     L = np.nanmedian(np.linalg.norm((X[:, J['ls']] + X[:, J['rs']]) / 2 - hip, axis=1))
-    out = dict(leg_load=None, leg_drive=None, knee_eq=None, wrist_speed=None, trunk_share=None, turn=None, knee2d_ok=None)
+    out = dict(leg_load=None, leg_drive=None, wrist_speed=None, trunk_share=None, turn=None, knee2d_ok=None)
     if not np.isfinite(L) or L <= 0: return out
     # legs: hip height above the lower (grounded) ankle, as a share of the standing height in the clip
     with np.errstate(all="ignore"):
         h = np.nanmax(X[:, [J['la'], J['ra']], 1], axis=1) - hip[:, 1]
     if np.isfinite(h[c0 - 48:c0 + 1]).any() and np.isfinite(h[c0 - 2:c0 + 3]).any():
         stand = np.nanmax(h); low = np.nanmin(h[c0 - 48:c0 + 1])
-        load = (stand - low) / stand
-        out.update(leg_load=round(float(load), 3), leg_drive=round(float((np.nanmedian(h[c0 - 2:c0 + 3]) - low) / stand), 3),
-                   knee_eq=round(float(2 * np.degrees(np.arcsin(np.clip(1 - load, 0, 1)))), 1))
-    # speeds of the racket wrist and shoulder relative to the hip centre, torso lengths / s, peak over 0.4 s before contact
-    R = xy[a:b]; rhip = (R[:, J['lh']] + R[:, J['rh']]) / 2  # raw frames, then a median on the speed: a one-frame glitch makes two spikes, both dropped
-    sp = lambda j: _smooth(np.linalg.norm(np.diff(R[c0 - 27:c0 + 5, j] - rhip[c0 - 27:c0 + 5], axis=0), axis=1))[2:-2] * FPS / L
+        # no "equivalent knee angle": on wall-1 the drop did not follow knee3d (wide stances lower the hip too), docs/research/body-kinematics.md
+        out.update(leg_load=round(float((stand - low) / stand), 3), leg_drive=round(float((np.nanmedian(h[c0 - 2:c0 + 3]) - low) / stand), 3))
+    # speeds of the racket wrist and shoulder relative to the hip centre, torso lengths / s, peak in the forward swing (0.25 s before contact
+    # to contact). Raw frames, then a median on the speed (a one-frame glitch makes two spikes, both dropped); the 0.4 s window first
+    # tried caught 3-4 frame wrist glitches in the backswing on wall-1 (62-98 torso/s)
+    R = xy[a:b]; rhip = (R[:, J['lh']] + R[:, J['rh']]) / 2; p0 = max(0, c0 - 25)
+    sp = lambda j: _smooth(np.linalg.norm(np.diff(R[p0:c0 + 8, j] - rhip[p0:c0 + 8], axis=0), axis=1))[c0 - 15 - p0:c0 + 3 - p0] * FPS / L
     vw, vs = sp(w), sp(s)
     if np.isfinite(vw).any():
         pw = float(np.nanmax(vw)); out["wrist_speed"] = round(pw, 2)
