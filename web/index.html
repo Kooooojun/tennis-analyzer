@@ -793,7 +793,7 @@ function watchStall(vid){
     vid._reloading=url; vid.src=url; vid.playbackRate=rate; if(want) playSafe(vid,vid.parentElement.querySelector(".badge")); };
   const fail=()=>{ stopDead(vid); m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; };
   m.onclick=()=>{ delete m.dataset.fail; tries=0; m.textContent="影片下載中…"; reload(!m._still,!!m._still); m._still=false; };
-  vid.addEventListener("loadedmetadata",()=>{ tries=0; delete m.dataset.fail; m.hidden=true; });  // metadata means the clip is alive again, even with the same src
+  vid.addEventListener("loadedmetadata",()=>{ if(!m.dataset.fail) return; tries=0; delete m.dataset.fail; m.hidden=true; });  // a clip that gave up came back (same src picked again); an automatic reload keeps its retry budget
   setInterval(()=>{
     if(!vid.currentSrc||!vid.offsetParent) return;
     if(vid.currentSrc!==src){ src=vid.currentSrc; if(restore){ vid.removeEventListener("loadedmetadata",restore); restore=null; } keep=null; vid._reloading=false; tries=0; wait=0; delete m.dataset.fail; m.hidden=true; }
