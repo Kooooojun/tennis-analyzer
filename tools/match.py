@@ -21,7 +21,7 @@ def match(P, O, A, hand="R"):
         out = []
         for t, pk, on in O:
             f = int(round(t * 60))
-            if f < 30 or f > N - 30: continue
+            if f < 45 or f > N - 30: continue  # window starts at f-45; a negative start would wrap to the end
             win = v[f - 12:f + 13]
             if np.isnan(win).mean() > 0.5 or valid[f - 45:f + 15].mean() < 0.6: continue
             seg = w[f - 15:f + 16]; arc = np.nansum(np.linalg.norm(np.diff(seg, axis=0), axis=1) / L[f])

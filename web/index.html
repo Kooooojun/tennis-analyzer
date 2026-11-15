@@ -554,10 +554,10 @@ function drawOverview(){
         return `<span>${ITEM[m]||m}</span><span class="bar"><i style="width:${(s??0)*10}%"></i></span><span class="num" title="中位數 ${x.median??"–"}，${x.n} 拍">${val}</span>`;
       }).join("");
       const flags=(window.TREND||[]).filter(t=>t.player===g.player&&t.kind===g.kind&&t.history.at(-1)?.session===d.id).flatMap(t=>t.flags);
-      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?PN(g.player)+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
+      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?esc(PN(g.player))+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
     }).join("")+`</div>`;
     const ck=(sc.checks||[]).filter(c=>c.status==="ok");
-    if(ck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+ck.map(c=>`<li>${multi?PN(c.player)+" · ":""}${esc(c.name)}：通過 ${c.passed}、不通過 ${c.failed}、看不出來 ${c.unclear}</li>`).join("")+`</ul>`;
+    if(ck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+ck.map(c=>`<li>${multi?esc(PN(c.player))+" · ":""}${esc(c.name)}：通過 ${c.passed}、不通過 ${c.failed}、看不出來 ${c.unclear}</li>`).join("")+`</ul>`;
     h+=`<p class="caveat">1–10 分，怎麼算見 docs/scoring.md。灰色「資料不足」= 能用的拍不到一半，不打分。</p>`;
   }
   const fs=[...(d.findings||[])].sort((a,b)=>(!!a.info-!!b.info)).slice(0,3);
@@ -672,7 +672,7 @@ function drawList(){
     const b=document.createElement("button"); b.dataset.id=s.id;
     const bad = s.kind==="FH" && s.knee>150;
     const dn=drillName(s);
-    b.innerHTML=`<span class="row"><span class="tag ${s.kind}">${NAMES[s.kind]}</span><span class="clock">${s.clock}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
+    b.innerHTML=`<span class="row"><span class="tag ${s.kind}">${NAMES[s.kind]}</span><span class="clock">${esc(s.clock)}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
     b.title=strokeLabel(s);
     b.onclick=()=>load(s.id,false); box.append(b);
   }
@@ -787,12 +787,14 @@ function cmpLoad(a,b){
 }
 function cmpRender(f){
   if(!A||!B) return; cmpCur=f; cmpSeek.value=f;
-  const zo={...OPT,zoom:true}; paint(cvA,vA,A,f,zo); paint(cvB,vB,B,f,zo);
+  const zo={...OPT,zoom:true}; paint(cvA,vA,A,f,zo); paint(cvB,vB,B,f+cmpOff(),zo);
   const dt=(f-A.contact)/FPS, t=dt===0?"擊球":(dt>0?"+":"")+dt.toFixed(2)+"s"; $("badgeA").textContent=t; $("badgeB").textContent=t;
 }
-function cmpGoto(f){ f=Math.max(0,Math.min(149,f)); vA.pause(); vB.pause(); vA.currentTime=vB.currentTime=(f+0.5)/FPS; cmpRender(f); }
+const cmpOff=()=>B.contact-A.contact;  // clips cut at a video edge have their contact before/after frame 90, so B is shifted to keep both on contact
+const cmpBt=()=>Math.max(0,vA.currentTime+cmpOff()/FPS);
+function cmpGoto(f){ f=Math.max(0,Math.min(149,f)); vA.pause(); vB.pause(); vA.currentTime=(f+0.5)/FPS; vB.currentTime=Math.max(0,(f+cmpOff()+0.5)/FPS); cmpRender(f); }
 function cmpTick(){
-  if(Math.abs(vB.currentTime-vA.currentTime)>1.5/FPS) vB.currentTime=vA.currentTime;
+  if(Math.abs(vB.currentTime-cmpBt())>1.5/FPS) vB.currentTime=cmpBt();
   cmpRender(Math.max(0,Math.min(149,Math.floor(vA.currentTime*FPS+1e-3))));
   if(!vA.paused) (vA.requestVideoFrameCallback?vA.requestVideoFrameCallback(cmpTick):requestAnimationFrame(cmpTick));
 }
@@ -800,7 +802,7 @@ vA.loop=vB.loop=true;
 vA.addEventListener("play",()=>{ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
 vA.addEventListener("pause",()=>{ $("cmpPlay").textContent="▶ 同步播放"; vB.pause(); });
 for(const vid of [vA,vB]) vid.addEventListener("seeked",()=>{ if(vA.paused) cmpRender(Math.floor(vA.currentTime*FPS+1e-3)); });
-$("cmpPlay").onclick=()=>{ if(vA.paused){ vB.currentTime=vA.currentTime; vA.playbackRate=vB.playbackRate=cmpRate; vA.play(); vB.play(); } else vA.pause(); };
+$("cmpPlay").onclick=()=>{ if(vA.paused){ vB.currentTime=cmpBt(); vA.playbackRate=vB.playbackRate=cmpRate; vA.play(); vB.play(); } else vA.pause(); };
 $("cmpPrev").onclick=()=>cmpGoto(cmpCur-1); $("cmpNext").onclick=()=>cmpGoto(cmpCur+1); $("cmpContact").onclick=()=>cmpGoto(A.contact);
 cmpSeek.oninput=()=>cmpGoto(+cmpSeek.value);
 speedButtons($("cmpSpeeds"),()=>cmpRate,s=>{cmpRate=s;vA.playbackRate=vB.playbackRate=s;});
