@@ -176,7 +176,7 @@ else:
 
 def guess(c):
     """Pre-fill for labels.txt: the automatic stroke kind when confident, else '?' (you still confirm it and add the drill)."""
-    if not c["hand"]: return prefill("?", None)  # FH/BH flip with the hand: no profile, no guess
+    if not c["hand"]: return "?"  # FH/BH flip with the hand: no profile, no guess
     v, key = c["v"], (c["v"], c["track"]); wp = track_file(Wd / v, "pose_world", c["track"])
     if key not in poses: poses[key] = np.load(track_file(Wd / v, "pose", c["track"]))
     if key not in worlds: worlds[key] = np.load(wp) if wp.exists() else None
