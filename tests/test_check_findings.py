@@ -72,4 +72,33 @@ assert e3(f([dict(kind="FH", field="prep", stat="median", value=0.5)]))
 assert e3(f([dict(stroke=3, field="prep", value=1.5)]))
 S4 = [st(prep=0.3), st(prep=0.5), st(prep=1.0, prep_trunc=None)]  # null = old stroke via export_session  # old session: no prep_trunc field, 1.0 = the old window edge
 assert check(dict(findings=[f([dict(stroke=3, field="prep", value=1.0)])]), S4, dict(groups=score_session(S4, False)))
+# numbers in text other than degrees (docs/scoring.md §8): %, 秒 and bare decimals need a cite; ranges, 拍 counts and #NN do not
+c1 = [dict(stroke=1, field="knee", value=120)]
+assert errs(f(c1, "準備 0.53 秒"))
+assert errs(f(c1, "只有 13%"))
+assert errs(f(c1, "高度 0.30"))
+S5 = [st(prep=0.43, contact_h=0.53)]
+e5 = lambda *fs: check(dict(findings=list(fs)), S5, dict(groups=score_session(S5, False)))
+assert e5(f([dict(stroke=1, field="prep", value=0.43)], "準備 0.43 秒")) == []
+assert e5(f([dict(stroke=1, field="contact_h", value=0.53)], "擊球高度 53%")) == []
+assert e5(f([dict(stroke=1, field="contact_h", value=0.53)], "高度 0.53（目標 0.3–0.8、1-10），共 62 拍、看 #01")) == []
+assert errs(f(c1, "膝蓋 120.0°")) == []  # ° keeps its 0.5 tolerance
+assert errs(f(c1, "膝蓋落在 154–156°"))  # a degree range is still checked
+S6 = [st(contact_fwd=-0.2)]
+assert check(dict(findings=[f([dict(stroke=1, field="contact_fwd", value=-0.2)], "擊球位置 -0.20")]), S6, dict(groups=score_session(S6, False))) == []  # sign kept
+# hyphen between two numbers is a range, not a minus sign; ° ranges check both ends; times and thousands are not decimals
+c2 = [dict(stroke=1, field="knee", value=120), dict(stroke=3, field="knee", value=140)]
+assert errs(f(c2, "膝蓋 120°-140°")) == []
+assert errs(f(c2, "膝蓋 120-140°")) == []
+assert errs(f(c1, "膝蓋 120°-130°"))  # 130 has no cite
+assert errs(f(c1, "膝蓋 110–120°"))   # lower end checked too
+assert errs(f(c1, "目標 75%-85%")) == []
+assert errs(f(c1, "在 1:04.8 那拍，共 1,234.5 次")) == []
+# ASCII '-' with a space before it is a minus sign, not a range; ',' is a thousands separator only before 3 digits
+S7 = [st(contact_fwd=-0.2, contact_h=0.5)]
+e7 = lambda *fs: check(dict(findings=list(fs)), S7, dict(groups=score_session(S7, False)))
+c7 = [dict(stroke=1, field="contact_h", value=0.5), dict(stroke=1, field="contact_fwd", value=-0.2)]
+assert e7(f(c7, "高度 0.5 -0.20")) == []
+assert e7(f(c7[:1], "高度 0.5 -0.20"))  # -0.20 needs its cite
+assert errs(f(c1, "手速 7.6,9.0"))  # 9.0 is checked
 print("ok")
