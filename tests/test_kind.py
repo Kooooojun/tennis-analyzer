@@ -84,4 +84,13 @@ assert prefill("?", 0.9) == "?" and prefill("FH", None) == "?"  # no kind / no c
 assert prefill("FH", 0.5, 0.5) == "FH"  # explicit line = the old behaviour
 import kind as K  # line=None reads PREFILL_MIN at call time (a changed constant applies)
 K.PREFILL_MIN, old = 0.9, K.PREFILL_MIN; assert prefill("FH", 0.8) == "?"; K.PREFILL_MIN = old
+# 19 (#29 P3a): pose_world shorter than pose (cut / mismatched files) -> no IndexError; falls back to the 2D path
+P, W = body(0.0, (0.45, 0.1, 0.3), (-0.2, 0.1, 0.2)); assert classify(P, F, "R", W[:F - 20])["kind"] == classify(P, F, "R", None)["kind"]
+# 20 (#29 P3c): exactly 3 of f-3..f+1 finite and above the head is enough for SV / OH (2 is not: case 16)
+P, W = body(0.0, (0.45, 0.1, 0.3), (-0.2, 0.1, 0.2)); P[F - 3:F + 2, 16, :2] = np.nan; P[F - 1:F + 2, 16, :2] = (0.6, 0.5 - 0.5 * 0.95)
+assert classify(P, F, "R", W)["kind"] in ("SV", "OH"), classify(P, F, "R", W)
+# 21 (#29 P3c): hand="L" with a frame size gives the mirrored right-hander's answer
+for rw in ((0.45, 0.1, 0.3), (-0.4, 0.1, 0.3)):
+    a = go(rw, (-0.25, 0.1, 0.2), np.pi, "R", size=(960, 540)); b = go(rw, (-0.25, 0.1, 0.2), np.pi, "L", size=(960, 540))
+    assert a["kind"] == b["kind"] != "?", (a, b)
 print("kind tests ok")
