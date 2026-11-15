@@ -19,15 +19,19 @@ def _match(actual, cited):
     return abs(actual - cited) <= min(0.5 * 10 ** -d, 0.05 * max(abs(actual), 1)) + 1e-9  # rounding only; a small-scale field (0.4) cannot match "0"
 
 
-def _usable(s, field):
-    """The stroke's value for `field`, or None when a quality gate drops it (same gates as score.py, docs/scoring.md §3)."""
+def _usable(s, field, show_open=False):
+    """The stroke's value for `field`, or None when a quality gate drops it (same gates as score.py, docs/scoring.md §3).
+    elbow is never citable: single-camera elbow error p90 is 37-48 deg (testset/results/eval-caltennis.md)."""
+    if field == "elbow": return None
     if field in ("knee", "knee3d") and s.get("knee_warn"): return None
+    if field == "knee" and s.get("knee2d_ok") is False: return None
+    if field == "open_min" and not show_open: return None
     if field in ("contact_h", "contact_fwd") and not (_num(s.get("vis")) and s["vis"] >= 0.5): return None
     v = s.get(field)
     return v if _num(v) else None
 
 
-def _cite(c, strokes, groups):
+def _cite(c, strokes, groups, show_open=False):
     """None if the cite checks out, else the reason."""
     who = lambda s: s.get("player") or "me"
     if not isinstance(c, dict): return "cite 的每一項要是物件"
@@ -36,7 +40,7 @@ def _cite(c, strokes, groups):
         if not isinstance(n, int) or not 1 <= n <= len(strokes): return f"拍 #{n} 不存在"
         s = strokes[n - 1]; f = c.get("field")
         if not isinstance(f, str) or f not in s or isinstance(s[f], (list, dict, str)): return f"#{n} 沒有數值欄位 {f}"
-        v = _usable(s, f)
+        v = _usable(s, f, show_open)
         if v is None: return f"#{n} 的 {f} 被品質閘門排除或是空值，不能引用"
         return None if _match(v, c.get("value")) else f"#{n} {f} 實際 {v}，引用 {c.get('value')}"
     if "metric" in c:  # a number from scores.json
@@ -51,7 +55,7 @@ def _cite(c, strokes, groups):
         st, f = c["stat"], c.get("field")
         if st not in STATS: return f"不認得 stat {st}"
         sel = [s for s in strokes if s["kind"] == c.get("kind") and who(s) == (c.get("player") or "me") and c.get("drill", s.get("drill")) == s.get("drill")]
-        vals = [v for v in (_usable(s, f) for s in sel) if v is not None]
+        vals = [v for v in (_usable(s, f, show_open) for s in sel) if v is not None]
         if not vals: return f"{c.get('kind')} {c.get('drill', '')} {f} 沒有可用的拍"
         v = float(STATS[st](vals)) if st != "n" else len(vals)
         return None if _match(v, c.get("value")) else f"{c['kind']} {c.get('drill', '')} {f} {st} 實際 {round(v, 2)}，引用 {c.get('value')}"
@@ -65,7 +69,7 @@ def check(notes, strokes, scores):
         cites = f.get("cite") or []; errs = []
         if not isinstance(cites, list): cites = []
         if not cites: errs.append("沒有引用（cite）")
-        errs += [r for r in (_cite(c, strokes, scores.get("groups", [])) for c in cites) if r]
+        errs += [r for r in (_cite(c, strokes, scores.get("groups", []), scores.get("show_open") is True) for c in cites) if r]
         vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
         text = f.get("text", "")
         for m in re.finditer(r"(\d+(?:\.\d+)?)\s*°", text):

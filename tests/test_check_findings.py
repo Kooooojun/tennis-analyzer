@@ -52,4 +52,16 @@ e = errs(f([dict(stroke=1, field="knee", value=120)]), f([]))
 assert len(e) == 1 and e[0].startswith("#2")
 assert errs(f([dict(stroke=1, field="contact_h", value=0)]))  # integer cite cannot swallow a 0.5-scale value
 assert errs(f(["not a dict"]))  # malformed cite is reported, not a crash
+# three more gates (problem-inventory A5): elbow is never citable, knee with knee2d_ok False, open_min without showOpen
+S2 = [st(knee=120, open_min=20), st(knee=130, knee2d_ok=False), st(knee=140, open_min=30)]
+G2 = score_session(S2, False)
+e2 = lambda show, *fs: check(dict(findings=list(fs)), S2, dict(groups=G2, show_open=show))
+assert e2(False, f([dict(stroke=1, field="elbow", value=150)]))
+assert e2(False, f([dict(stroke=2, field="knee", value=130)]))
+assert e2(False, f([dict(stroke=2, field="knee3d", value=130)]))  # knee3d is None here anyway
+assert e2(False, f([dict(stroke=1, field="knee", value=120)])) == []
+assert e2(False, f([dict(kind="FH", field="open_min", stat="median", value=20)]))
+assert e2(True, f([dict(kind="FH", field="open_min", stat="median", value=20)])) == []
+assert e2(False, f([dict(stroke=1, field="open_min", value=20)]))
+assert e2(True, f([dict(stroke=1, field="open_min", value=20)])) == []
 print("ok")

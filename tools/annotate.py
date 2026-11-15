@@ -64,6 +64,16 @@ def stroke_info(x):
     return head, lines
 
 
+def starts(S):
+    """S sorted by contact frame "c": add each stroke's tag start "a", never earlier than 4 frames after the previous contact."""
+    for i, x in enumerate(S): x["a"] = max(x["c"] - PRE, S[i - 1]["c"] + 4) if i else x["c"] - PRE
+    return S
+
+
+def active(S, n):
+    return next((x for x in reversed(S) if x["a"] <= n <= x["c"] + POST), None)  # latest stroke whose window covers this frame
+
+
 def annotate(s, name, src):
     Wd = work(s) / name
     if not (Wd / "pose.npy").exists(): sys.exit(f"missing work/{s}/{name}/pose.npy; run tools/prep.sh {s}")
@@ -72,7 +82,7 @@ def annotate(s, name, src):
     worlds = {k: np.load(w) if (w := track_file(Wd, "pose_world", k)).exists() else None for k in ks}
     vn = videos(s).index(name) + 1
     sp = web(s) / "strokes.json"; allS = load(sp) if sp.exists() else []
-    S = sorted(({**x, "no": i + 1, "c": round(x["t"] * FPS)} for i, x in enumerate(allS) if x["video"] == vn), key=lambda x: x["c"])
+    S = starts(sorted(({**x, "no": i + 1, "c": round(x["t"] * FPS)} for i, x in enumerate(allS) if x["video"] == vn), key=lambda x: x["c"]))
     w, h = probe(src); sc = LONG / max(w, h); W, H = int(round(w * sc / 2)) * 2, int(round(h * sc / 2)) * 2
     out = web(s) / f"annotated_{name}.mp4"; out.parent.mkdir(parents=True, exist_ok=True)
     vcodec = ["-c:v", "h264_videotoolbox", "-b:v", "6000k"] if sys.platform == "darwin" else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22"]
@@ -84,7 +94,7 @@ def annotate(s, name, src):
         b = dec.stdout.read(W * H * 3)
         if len(b) < W * H * 3: break
         img = np.frombuffer(b, np.uint8).reshape(H, W, 3).copy()
-        st = next((x for x in reversed(S) if x["c"] - PRE <= n <= x["c"] + POST), None)  # latest stroke whose window covers this frame
+        st = active(S, n)
         for k in ks:
             pk = poses[k]; p = pk[n] if n < len(pk) and not np.isnan(pk[n][0, 0]) else None
             if p is None: continue
