@@ -48,7 +48,7 @@ Then build the stroke list:
 .venv/bin/python tools/assemble.py <s>
 ```
 
-It validates labels.txt and lists the candidates where its automatic FH/BH guess disagrees with yours. Re-check those on the sheet.
+It validates labels.txt and lists the candidates where its automatic kind (`auto_kind`: FH/BH/SV/OH, or `?` = it would not guess) disagrees with yours. Re-check those on the sheet. `candidates.py` pre-fills the kind column of labels.txt with that guess when `kind_conf` >= 0.5 (still a guess: confirm it on the sheet, and fill in the drill). It is reliable for forehands, much weaker for backhands, and only a hint for OH vs SV; see docs/research/stroke-classify.md.
 
 ## 3. Clips and contact frames (judgment)
 

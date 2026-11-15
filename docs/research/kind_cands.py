@@ -8,7 +8,7 @@ def sm(a, k=5): return np.convolve(np.nan_to_num(a), np.ones(k) / k, mode="same"
 sp = np.zeros(n)
 for j in (15, 16): sp = np.maximum(sp, sm(np.r_[0, np.linalg.norm(np.diff(xy[:, j], axis=0), axis=1)]))
 sp = np.where(ok, sp, 0)
-cand = [i for i in range(14, n - 10) if sp[i] > 12 and sp[i] == sp[i - 40:i + 41].max()]
+cand = [i for i in range(14, n - 10) if sp[i] > 12 and sp[i] == sp[max(0, i - 40):i + 41].max()]
 json.dump(cand, open(D / "cands.json", "w")); print(len(cand), "candidates")
 cap = cv2.VideoCapture(str(D / "proxy.mp4")); OFF = [-12, -8, -4, 0, 4]; rows = []
 for k, c in enumerate(cand):
