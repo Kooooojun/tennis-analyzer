@@ -40,14 +40,93 @@ def _swing_dir(xy, J, c):
     return float(np.sign(d)) if np.isfinite(d) and d != 0 else np.nan
 
 
+def _rmed(a, h):
+    """Rolling median over +-h samples (edges shrink); NaN where the whole window is NaN."""
+    return np.array([np.nanmedian(a[max(0, i - h):i + h + 1]) if np.isfinite(a[max(0, i - h):i + h + 1]).any() else np.nan for i in range(len(a))])
+
+
 def _prep(xy, J, c, d):
     """Seconds from backswing end to contact. Backswing end = the frame, within PREP_WIN before contact, where the hitting
     wrist is furthest back relative to the hip centre along the swing direction (5-frame median against pose jitter)."""
     a = max(0, c - PREP_WIN)
     back = d * (xy[a:c - 3, J['rw'], 0] - (xy[a:c - 3, J['lh'], 0] + xy[a:c - 3, J['rh'], 0]) / 2)
-    sm = np.array([np.nanmedian(back[max(0, i - 2):i + 3]) if np.isfinite(back[max(0, i - 2):i + 3]).any() else np.nan for i in range(len(back))])
+    sm = _rmed(back, 2)
     if not np.isfinite(sm).any(): return None
     return round((c - a - int(np.nanargmin(sm))) / FPS, 3)
+
+
+# --- view-robust body kinematics (docs/scoring.md §11). Idea from Logan-Huang/Tennis-AI-Coach (no licence: rewritten, nothing copied).
+TURN_REV = 0.15     # shoulder-width reversal (fraction of full width) needed to count a change of turning direction
+FULL_SW_MIN = 0.55  # full shoulder width is at least this many torso lengths
+LIMB_FULL = 0.8     # 2D knee only where thigh and shin both show >= 80% of their longest length in the clip
+
+
+def _smooth(a, k=2):
+    """Centred 5-frame nan-median along axis 0, against single-frame pose glitches."""
+    return np.array([np.nanmedian(a[max(0, i - k):i + k + 1], axis=0) for i in range(len(a))])
+
+
+def _zigzag(w, thr):
+    """Turning points of w that reverse by more than thr, plus the first value and the last extreme."""
+    piv = [w[0]]; hi = lo = w[0]; d = 0
+    for v in w[1:]:
+        if d >= 0 and v > hi: hi = v
+        if d <= 0 and v < lo: lo = v
+        if d >= 0 and hi - v > thr and hi > piv[-1]: piv.append(hi); d = -1; lo = v
+        elif d <= 0 and v - lo > thr and lo < piv[-1]: piv.append(lo); d = 1; hi = v
+    piv.append(hi if d > 0 else lo if d < 0 else (hi if hi - w[0] > w[0] - lo else lo))
+    return piv
+
+
+def kinematics(xy, J, c, hand="R", start=None):
+    """Leg load/drive, wrist speed, trunk share, shoulder turn and the 2D-knee foreshortening gate for the stroke at frame c.
+    xy: (frames, n, 2) in 540-px units, y down. hand: racket hand "R"/"L" (J is remapped by _hand; pass "R" for an already remapped J). start: backswing-end frame for the turn (default c-30)."""
+    a, b = max(0, c - 90), min(len(xy), c + 61)  # the 150-frame web clip
+    J = _hand(J, hand); s, w = J['rs'], J['rw']
+    X = _smooth(xy[a:b]); c0 = c - a
+    hip = (X[:, J['lh']] + X[:, J['rh']]) / 2
+    L = np.nanmedian(np.linalg.norm((X[:, J['ls']] + X[:, J['rs']]) / 2 - hip, axis=1))
+    out = dict(leg_load=None, leg_drive=None, wrist_speed=None, trunk_share=None, turn=None, knee2d_ok=None)
+    if not np.isfinite(L) or L <= 0 or c0 < 48: return out  # c0 < 48: stroke in the first 0.8 s, the windows would wrap to the clip end
+    # legs: hip height above the lower (grounded) ankle, as a share of the standing height in the clip
+    with np.errstate(all="ignore"):
+        h = np.nanmax(X[:, [J['la'], J['ra']], 1], axis=1) - hip[:, 1]
+    if np.isfinite(h[c0 - 48:c0 + 1]).any() and np.isfinite(h[c0 - 2:c0 + 3]).any():
+        stand = np.nanmax(h); low = np.nanmin(h[c0 - 48:c0 + 1])
+        # no "equivalent knee angle": on wall-1 the drop did not follow knee3d (wide stances lower the hip too), docs/research/body-kinematics.md
+        out.update(leg_load=round(float((stand - low) / stand), 3), leg_drive=round(float((np.nanmedian(h[c0 - 2:c0 + 3]) - low) / stand), 3))
+    # speeds of the racket wrist and shoulder relative to the hip centre, torso lengths / s, peak in the forward swing (0.25 s before contact
+    # to contact). Raw frames, then a median on the speed (a one-frame glitch makes two spikes, both dropped); the 0.4 s window first
+    # tried caught 3-4 frame wrist glitches in the backswing on wall-1 (62-98 torso/s)
+    R = xy[a:b]; rhip = (R[:, J['lh']] + R[:, J['rh']]) / 2; p0 = max(0, c0 - 25)
+    sp = lambda j: _smooth(np.linalg.norm(np.diff(R[p0:c0 + 8, j] - rhip[p0:c0 + 8], axis=0), axis=1))[c0 - 15 - p0:c0 + 3 - p0] * FPS / L
+    vw, vs = sp(w), sp(s)
+    if np.isfinite(vw).any():
+        pw = float(np.nanmax(vw)); out["wrist_speed"] = round(pw, 2)
+        if pw >= 1 and np.isfinite(vs).any(): out["trunk_share"] = round(float(np.nanmax(vs)) / pw, 3)
+    # shoulder turn: angle of the shoulder line to the image plane = arccos(width / full width), path from backswing end to +0.3 s
+    sw = np.linalg.norm(X[:, J['rs']] - X[:, J['ls']], axis=1) / L
+    if np.isfinite(sw).any():
+        full = max(float(np.nanmax(sw)), FULL_SW_MIN)
+        st = (c - 30 if start is None else start) - a
+        seg = sw[max(0, st):c0 + 19]; seg = seg[np.isfinite(seg)] / full
+        if len(seg) >= 5:
+            pv = np.clip(_zigzag(seg, TURN_REV), 0, 1); th = np.degrees(np.arccos(pv))
+            big = np.abs(np.diff(pv)) > TURN_REV  # a leg smaller than the reversal threshold is jitter, even at the ends (arccos amplifies it near square)
+            out["turn"] = round(float(np.abs(np.diff(th))[big].sum()), 1)
+    # 2D knee gate: on the leg that gives the smaller angle, thigh and shin both near full length (leg side-on to the camera)
+    seglen = lambda p, q: np.linalg.norm(X[:, p] - X[:, q], axis=1)
+    legs = [(J['rh'], J['rk'], J['ra']), (J['lh'], J['lk'], J['la'])]
+    thigh, shin = [seglen(g[0], g[1]) for g in legs], [seglen(g[1], g[2]) for g in legs]
+    full = [(np.nanmax(t) if np.isfinite(t).any() else np.nan, np.nanmax(u) if np.isfinite(u).any() else np.nan) for t, u in zip(thigh, shin)]
+    ok = []
+    for i in range(max(0, c0 - 48), c0 - 5):  # max(): a negative start would wrap to the end of the clip
+        ang = [_angle(X, i, *g) for g in legs]
+        if not np.isfinite(ang).any(): continue
+        k = int(np.nanargmin(ang))
+        ok.append(thigh[k][i] >= LIMB_FULL * full[k][0] and shin[k][i] >= LIMB_FULL * full[k][1])
+    if ok: out["knee2d_ok"] = bool(np.mean(ok) >= 0.5)
+    return out
 
 
 def _hand(J, hand):
@@ -70,14 +149,16 @@ def _core(xy, vis, c, J, world=None, hand="R"):
     ok3 = bool(np.isfinite(k3))
     d = _swing_dir(xy, J, c); hx = (xy[c - 2:c + 3, J['lh'], 0] + xy[c - 2:c + 3, J['rh'], 0]) / 2
     fwd = _med(d * (xy[c - 2:c + 3, J['rw'], 0] - hx) / L[c - 2:c + 3])
+    prep = _prep(xy, J, c, d) if np.isfinite(d) else None
     return dict(knee=round(k2, 1), knee3d=round(k3, 1) if ok3 else None,
                 knee_warn=bool(abs(k3 - k2) > KNEE_GAP_MAX) if ok3 else None,
                 open_min=round(float(np.nanpercentile(openp[c - 48:c - 5], 10)), 1),
                 open_contact=round(_med(openp[c - 2:c + 3]), 1),
                 contact_h=round(_med((hip - xy[c - 2:c + 3, J['rw'], 1]) / L[c - 2:c + 3]), 2),
-                contact_fwd=None if fwd is None else round(fwd, 2), prep=_prep(xy, J, c, d) if np.isfinite(d) else None,
+                contact_fwd=None if fwd is None else round(fwd, 2), prep=prep,
                 elbow=round(_med([_angle(xy, i, J['rs'], J['re'], J['rw']) for i in range(c - 2, c + 3)]), 1),
-                vis=round(float(np.nanmean(vis[c - 2:c + 3, J['rw']])), 2))
+                vis=round(float(np.nanmean(vis[c - 2:c + 3, J['rw']])), 2),
+                **kinematics(xy, J, c, "R", None if prep is None else c - round(prep * FPS)))  # J is already remapped for the racket hand
 
 
 FULL = dict(nose=0, ls=11, rs=12, le=13, re=14, lw=15, rw=16, lh=23, rh=24, lk=25, rk=26, la=27, ra=28)
@@ -181,3 +262,55 @@ def _front(frames, world, c, s, w, hand, ok):
         ds.append(float(np.dot(W[w, [0, 2]] - W[s, [0, 2]], u / n)))
     m = _med(ds)
     return None if m is None else bool(m >= FRONT_MIN)
+
+
+# --- form checks (docs/scoring.md §10): finish / reach / shoulder tilt / torso lean / stance, from the CLIP layout like arm_checks ---
+FINISH_WIN = FPS // 2  # frames after contact searched for the follow-through peak (0.5 s)
+FORM_VIS_MIN = 0.5
+LEAN_MAX = 90.0
+STANCE_MAX = 3.0       # ankle gap / hip gap above this = hip width collapsed by the view (or a bad pose), drop it
+_WR = dict(R=6, L=5)   # CLIP index of the racket wrist per hand
+
+
+def _form_dir(xy, c, wr):
+    """+1 / -1 image-x direction of the FH/BH stroke (lean sign), same definition as contact_fwd. The serve has no usable direction (see form_checks)."""
+    return _swing_dir(xy, dict(rw=wr), c)
+
+
+def form_checks(frames, c, size=None, world=None, kind=None, hand="R"):
+    """Fields finish (FH/BH), reach and tilt (SV), lean and stance (any kind); None = cannot tell / gate failed. kind None computes all.
+    L = shoulder-centre -> hip-centre length at contact; heights are in L, + = above the shoulder centre. Landmarks under FORM_VIS_MIN are ignored."""
+    out = dict(finish=None, reach=None, tilt=None, lean=None, stance=None)
+    n = len(frames)
+    if c < 8 or c >= n: return out
+    nan = [[np.nan] * 3] * 17
+    P = np.array([nan if fr is None else fr for fr in frames], float)
+    xy = P[:, :, :2] * _scale(size); xy[P[:, :, 2] < FORM_VIS_MIN] = np.nan
+    W = np.array([nan if w is None else w for w in world], float) if world is not None else None
+    if W is not None: W[P[:, :, 2] < FORM_VIS_MIN] = np.nan
+    sc = (xy[:, 1] + xy[:, 2]) / 2; hc = (xy[:, 7] + xy[:, 8]) / 2
+    L = _med(np.linalg.norm(sc[c - 2:c + 3] - hc[c - 2:c + 3], axis=1))
+    wr = _WR.get(hand, 6); hi = np.nanmin(xy[:, 5:7, 1], axis=1)  # higher of the two wrists, per frame
+    up = (sc[:, 1] - hi) / L if L else np.full(n, np.nan)
+    if kind in (None, "FH", "BH") and c + FINISH_WIN < n:
+        seg = up[c:c + FINISH_WIN + 1]
+        if np.isfinite(seg).sum() >= FINISH_WIN // 3:
+            sm = _rmed(seg, 1)
+            out["finish"] = round(float(np.nanmax(sm)), 2)
+    if kind in (None, "SV"):
+        r = _med(up[c - 2:c + 3]); out["reach"] = None if r is None else round(r, 2)
+        rs, os_ = (2, 1) if hand != "L" else (1, 2)
+        if W is not None and c >= 30:  # 3D only: 2D shoulder tilt swings 45-70 deg on one player's serves (docs/scoring.md §10)
+            seg = slice(c - 30, c - 4); dy = W[seg, rs, 1] - W[seg, os_, 1]; ln = np.linalg.norm(W[seg, rs] - W[seg, os_], axis=1)
+            ang = np.degrees(np.arcsin(np.clip(dy / ln, -1, 1)))  # peak of the 5-frame median = the moment the racket shoulder is lowest (trophy), not the contact-time lift
+            sm = _rmed(ang, 2)
+            out["tilt"] = round(float(np.nanmax(sm)), 1) if np.isfinite(sm).any() else None
+    v = (sc - hc)[c - 2:c + 3]
+    if kind == "SV": ln = _med(np.degrees(np.arctan2(np.abs(v[:, 0]), -v[:, 1])))  # serve direction cannot be read from the wrist x (from behind it flips), so size only
+    else:
+        d = _form_dir(xy, c, wr); ln = _med(np.degrees(np.arctan2(v[:, 0] * d, -v[:, 1]))) if np.isfinite(d) else None
+    out["lean"] = None if ln is None or abs(ln) > LEAN_MAX else round(ln, 1)  # > 90 deg = head below hips: a mis-tracked frame, not a lean
+    A = W if W is not None else xy
+    st = _med(np.linalg.norm(A[c - 2:c + 3, 11] - A[c - 2:c + 3, 12], axis=1) / np.linalg.norm(A[c - 2:c + 3, 7] - A[c - 2:c + 3, 8], axis=1))
+    out["stance"] = None if st is None or st > STANCE_MAX else round(st, 2)
+    return out

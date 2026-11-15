@@ -51,9 +51,14 @@ g = grp(score_session([st(knee=160, knee3d=120)] * 6, False))
 assert g["metrics"]["knee"]["median"] == 120 and g["knee_src"] == "knee3d"
 g = grp(score_session([st(knee=130, knee3d=None)] * 6, False))
 assert g["metrics"]["knee"]["median"] == 130 and g["knee_src"] == "knee"
-# 9: players kept apart, default "me"; SV/OH not scored
-G = score_session([st(knee=120)] * 5 + [st(player="A", knee=160)] * 5 + [st(kind="SV")] * 5, False)
+# 9: players kept apart, default "me"; OH not scored; SV group exists only with SV strokes and carries only the serve metrics
+G = score_session([st(knee=120)] * 5 + [st(player="A", knee=160)] * 5 + [st(kind="OH")] * 5, False)
 assert {(g["player"], g["kind"]) for g in G} == {("me", "FH"), ("A", "FH")}
+G = score_session([st(knee=120)] * 5 + [st(kind="SV", reach=1.2, tilt=15, lean=8, stance=1.5)] * 5, False)
+assert {(g["player"], g["kind"]) for g in G} == {("me", "FH"), ("me", "SV")}
+assert set(grp(G, kind="SV")["metrics"]) == {"reach", "tilt", "lean", "stance"} and "finish" in grp(G)["metrics"] and "reach" not in grp(G)["metrics"]
+assert grp(G, kind="SV")["metrics"]["reach"]["status"] == "ok" and grp(G, kind="SV")["metrics"]["reach"]["score"] is None  # consistency only, no target
+G = score_session([st(knee=120)] * 5 + [st(player="A", knee=160)] * 5, False)
 assert grp(G)["metrics"]["knee"]["score"] == 10 and grp(G, player="A")["metrics"]["knee"]["score"] == 1
 
 # one knee source per group: a 3D majority uses only 3D strokes, never a 2D/3D mix
@@ -114,7 +119,7 @@ assert (c["n"], c["passed"], c["failed"], c["unclear"]) == (7, 4, 1, 2) and c["s
 assert check_session([sv(None)] * 6)[0]["status"] == "資料不足"  # nothing decided
 assert check_session([sv(True)] * 2)[0]["status"] == "資料不足"  # < 3 decided
 assert check_session([st("FH"), st("BH")]) == []  # old strokes without the new fields, FH, two-handed BH: no checks at all
-assert score_session([sv(True), st()], False) == score_session([st()], False)  # SV rows do not change FH/BH scores
+assert [g for g in score_session([sv(True), st()], False) if g["kind"] != "SV"] == score_session([st()], False)  # SV rows do not change FH/BH scores
 print("ok")
 
 # prep-contact（testset/results/prep-contact_pred.md）：準備時間越長越好；擊球前後位置只評一致性、不評好壞
@@ -126,5 +131,24 @@ assert cf["score"] is None and cf["cons"] == 10 and cf["status"] == "ok" and cf[
 assert g["metrics"]["prep"]["score"] == 10 and g["form"] == 10  # a consistency-only metric does not drag the form score
 g = grp(score_session([st(contact_fwd=0.5, vis=0.2)] * 6, False))
 assert g["metrics"]["contact_fwd"]["n"] == 0 and g["metrics"]["contact_fwd"]["status"] == "資料不足"
-assert SCORE_VERSION == 3
 print("prep-contact score tests ok")
+
+# body-kinematics（testset/results/body-kinematics_pred.md）：力量上限、2D 膝縮短閘門
+assert SCORE_VERSION == 5
+W, T, LL = (METRICS[m]["lin"] for m in ("wrist_speed", "turn", "leg_load"))
+strong = dict(wrist_speed=W[0], turn=T[0], leg_load=LL[0])  # power 10
+weak = dict(wrist_speed=W[1], turn=T[1], leg_load=LL[1])     # power 1: arm-only, upright
+g = grp(score_session([st(knee=120, **strong)] * 6, False))
+assert g["power"] == 10 and g["total"] == 10 and g["form"] == 10 and not g["capped"]  # power metrics do not enter form
+g = grp(score_session([st(knee=120, **weak)] * 6, False))
+assert g["power"] == 1 and g["form"] == 10 and g["uncapped"] == 10 and close(g["total"], 1 + 1.2) and g["capped"]
+assert g["metrics"]["turn"]["cons"] is None and g["consistency"] == 10  # no consistency score for power metrics
+# no power data (old sessions) -> no cap, power null
+g = grp(score_session([st(knee=120)] * 6, False)); assert g["power"] is None and g["total"] == 10 and not g["capped"]
+# coverage gate applies to power metrics too: 2 of 6 strokes with turn -> 資料不足, not used for the cap
+g = grp(score_session([st(knee=120, turn=T[1])] * 2 + [st(knee=120)] * 4, False))
+assert g["metrics"]["turn"]["status"] == "資料不足" and g["power"] is None
+# 2D knee gate: only when the group uses 2D; a foreshortened leg drops the stroke's 2D knee
+g = grp(score_session([st(knee=120, knee2d_ok=False)] * 6, False)); assert g["metrics"]["knee"]["score"] is None
+g = grp(score_session([st(knee=150, knee3d=120, knee2d_ok=False)] * 6, False)); assert g["metrics"]["knee"]["median"] == 120
+print("body-kinematics score tests ok")
