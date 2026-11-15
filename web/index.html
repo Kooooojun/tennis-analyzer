@@ -1011,7 +1011,7 @@ function drawHome(){
 function drawSpark(svg,t){  // total + consistency per session, oldest left
   const NS="http://www.w3.org/2000/svg", W=Math.max(260,svg.clientWidth||400), H=150, pl=26, pr=12, pt=10, pb=34, h=t.history, n=h.length;
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
-  const ts=h.map(r=>/^\d{4}-\d{2}-\d{2}$/.test(r.date||"")?Date.parse(r.date):NaN), byDate=ts.every(isFinite)&&ts.at(-1)>ts[0];  // spaced by date when every session has one
+  const ts=h.map(r=>isoDate(r)?Date.parse(r.date):NaN), byDate=ts.every(isFinite)&&ts.at(-1)>ts[0];  // spaced by date when every session has one
   const x=i=>pl+(n<2?0.5:byDate?(ts[i]-ts[0])/(ts.at(-1)-ts[0]):i/(n-1))*(W-pl-pr), y=v=>pt+(1-(v-1)/9)*(H-pt-pb);
   const mk=(tag,a)=>{ const e=document.createElementNS(NS,tag); for(const k in a) e.setAttribute(k,a[k]); svg.append(e); return e; };
   for(const v of [1,4,7,10]){ mk("line",{x1:pl,x2:W-pr,y1:y(v),y2:y(v),stroke:"var(--line)"}); mk("text",{x:pl-5,y:y(v)+3,"text-anchor":"end","font-size":10,fill:"var(--muted)"}).textContent=v; }
@@ -1020,7 +1020,8 @@ function drawSpark(svg,t){  // total + consistency per session, oldest left
     for(let a=0,b=1;a<pts.length;a=b++){ while(b<pts.length&&seg(h[pts[b][0]])===seg(h[pts[b-1][0]])) b++; if(b-a>1) mk("polyline",{points:pts.slice(a,b).map(([i,v])=>`${x(i)},${y(v)}`).join(" "),fill:"none",stroke:col,"stroke-width":w}); }  // different camera / knee source / version: not comparable, so not joined
     for(const [i,v] of pts){ const c=mk("circle",{cx:x(i),cy:y(v),r:key==="total"?4.5:3,fill:col}); const tt=document.createElementNS(NS,"title"); tt.textContent=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v} · 鏡頭：${h[i].camera||"沒寫"}`; c.append(tt); }
   }
-  h.forEach((r,i)=>{ const l=isoDate(r)?mdOf(r.date):DAYS[r.session]?.label||r.session; mk("text",{x:x(i),y:H-18,"text-anchor":n<2?"middle":i===0?"start":i===n-1?"end":"middle","font-size":10,fill:"var(--muted)"}).textContent=l.length>10?l.slice(0,10)+"…":l; });
+  let lx=-1e9;  // dates are spaced by time, so close sessions would print over each other: skip a label unless it clears the last one and the final label
+  h.forEach((r,i)=>{ if(byDate&&i<n-1&&(x(i)-lx<40||x(n-1)-x(i)<40)) return; lx=x(i); const l=isoDate(r)?mdOf(r.date):DAYS[r.session]?.label||r.session; mk("text",{x:x(i),y:H-18,"text-anchor":n<2?"middle":i===0?"start":i===n-1?"end":"middle","font-size":10,fill:"var(--muted)"}).textContent=l.length>10?l.slice(0,10)+"…":l; });
   mk("text",{x:pl,y:H-3,"font-size":10,fill:"var(--accent)"}).textContent="● 總分";
   mk("text",{x:pl+52,y:H-3,"font-size":10,fill:"var(--muted)"}).textContent="● 一致性";
 }
