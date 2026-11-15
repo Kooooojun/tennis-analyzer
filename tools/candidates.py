@@ -119,7 +119,7 @@ def guess(c):
     v, key = c["v"], (c["v"], c["track"]); wp = track_file(Wd / v, "pose_world", c["track"])
     if key not in poses: poses[key] = np.load(track_file(Wd / v, "pose", c["track"]))
     if key not in worlds: worlds[key] = np.load(wp) if wp.exists() else None
-    k = classify(poses[key], int(round(c["t"] * FPS)), c["hand"], worlds[key])  # a left-hander's backswing side mirrors
+    k = classify(poses[key], int(round(c["t"] * FPS)), c["hand"], worlds[key], size(Wd / v / "proxy.mp4"))  # a left-hander's backswing side mirrors
     return k["kind"] if k["conf"] >= CONF_MIN else "?"
 
 

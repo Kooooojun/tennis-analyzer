@@ -86,7 +86,7 @@ def main():
         f = apex(P, h, fps) if os.environ.get("APEX") and GROUP[act] in ("SV", "OH") else peak(P, h, fps)
         row = dict(name=n, person=int(p), action=act, seq=int(s), group=GROUP[act], hand=h, n=len(P), f=f)
         if f is not None:
-            k = classify(P, f, h, Wd); row.update(kind=k["kind"], conf=k["conf"], side=k["side"])
+            k = classify(P, f, h, Wd, SIZE); row.update(kind=k["kind"], conf=k["conf"], side=k["side"])
             # 手臂檢查：用真實動作類別決定檢查哪一種（發球／單手反拍），與預測拍種無關
             kk = {"SV": "SV", "BH": "BH"}.get(GROUP[act]) if act in ("backhand", "serflat", "serkick", "serslice") else None
             if kk:
