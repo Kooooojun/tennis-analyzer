@@ -765,7 +765,7 @@ function watchStall(vid){
     if(vid.currentSrc!==src){ src=vid.currentSrc; tries=0; wait=0; delete m.dataset.fail; m.hidden=true; }
     const now=Date.now();
     if(vid.error){ if(m.dataset.fail) return; if(tries<1&&now-since>=2000) reload(); else if(tries>=1) fail(); return; }
-    const need=!(vid._blocked&&!vid.readyState)&&(vid.readyState<2||!vid.paused&&vid.readyState<3);  // paused on a shown frame (2) is fine
+    const need=!(vid._blocked&&!vid.readyState)&&(vid.readyState<1||vid.seeking||!vid.paused&&vid.readyState<3);  // metadata only and idle is fine: preload=metadata, and a compare clip waits for its partner to scroll into view
     if(!need){ wait=0; tries=0; delete m.dataset.fail; m.hidden=true; return; }
     const b=vid.buffered, k=vid.currentTime+"|"+(b.length?b.end(b.length-1):0)+"|"+vid.readyState;
     if(!wait){ wait=since=now; sig=k; }

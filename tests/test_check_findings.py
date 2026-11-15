@@ -82,5 +82,6 @@ e5 = lambda *fs: check(dict(findings=list(fs)), S5, dict(groups=score_session(S5
 assert e5(f([dict(stroke=1, field="prep", value=0.43)], "準備 0.43 秒")) == []
 assert e5(f([dict(stroke=1, field="contact_h", value=0.53)], "擊球高度 53%")) == []
 assert e5(f([dict(stroke=1, field="contact_h", value=0.53)], "高度 0.53（目標 0.3–0.8、1-10），共 62 拍、看 #01")) == []
-assert errs(f(c1, "膝蓋 120.0°")) == []  # ° keeps its 0.5 tolerance
+assert errs(f(c1, "膝蓋 120.0°")) == []
+assert errs(f(c1, "膝蓋落在 154–156°"))  # a degree range is still checked  # ° keeps its 0.5 tolerance
 print("ok")

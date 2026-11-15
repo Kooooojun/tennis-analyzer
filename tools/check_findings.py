@@ -75,7 +75,7 @@ def check(notes, strokes, scores):
         errs += [r for r in (_cite(c, strokes, scores.get("groups", []), scores.get("show_open") is True) for c in cites) if r]
         vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
         text = f.get("text", "")
-        bare = re.sub(r"#\d+|\d+(?:\.\d+)?\s*[–~～-]\s*\d+(?:\.\d+)?", " ", text)  # stroke numbers and target ranges (0.3–0.8) are not citations
+        bare = re.sub(r"#\d+|\d+(?:\.\d+)?\s*[–~～-]\s*\d+(?:\.\d+)?(?!\d|\.\d|\s*°)", " ", text)  # stroke numbers and target ranges (0.3–0.8) are not citations
         for m in re.finditer(r"(?<![\d.])(\d+(?:\.\d+)?)(\s*(?:°|%|％|秒))?", bare):
             x, u = m.group(1), (m.group(2) or "").strip()
             if not u and "." not in x: continue  # plain integers (62 拍, 3 次) are counts
