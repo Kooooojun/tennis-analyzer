@@ -547,14 +547,14 @@ function drawOverview(){
         return `<span>${ITEM[m]||m}</span><span class="bar"><i style="width:${(s??0)*10}%"></i></span><span class="num" title="中位數 ${x.median??"–"}，${x.n} 拍">${val}</span>`;
       }).join("");
       const flags=(window.TREND||[]).filter(t=>t.player===g.player&&t.kind===g.kind&&t.history.at(-1)?.session===d.id).flatMap(t=>t.flags);
-      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?PN(g.player)+" · ":""}${NAMES[g.kind]} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
+      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?PN(g.player)+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
     }).join("")+`</div>`;
     const ck=(sc.checks||[]).filter(c=>c.status==="ok");
     if(ck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+ck.map(c=>`<li>${multi?PN(c.player)+" · ":""}${esc(c.name)}：通過 ${c.passed}、不通過 ${c.failed}、看不出來 ${c.unclear}</li>`).join("")+`</ul>`;
     h+=`<p class="caveat">1–10 分，怎麼算見 docs/scoring.md。灰色「資料不足」= 能用的拍不到一半，不打分。</p>`;
   }
   const fs=[...(d.findings||[])].sort((a,b)=>(!!a.info-!!b.info)).slice(0,3);
-  if(fs.length) h+=`<h3>本場重點</h3><ul class="highlights">`+fs.map((f,i)=>`<li><button class="${f.good?"good":f.info?"info":""}" data-go="advice">${f.good?"✓":"△"} ${esc(f.title)}</button></li>`).join("")+`</ul>`;
+  if(fs.length) h+=`<h3>本場重點</h3><ul class="highlights">`+fs.map(f=>`<li><button class="${f.good?"good":f.info?"info":""}" data-go="advice">${f.good?"✓":"△"} ${esc(f.title)}</button></li>`).join("")+`</ul>`;
   $("overview").innerHTML=h;
   $("overview").querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(DAY,b.dataset.go));
 }
@@ -790,7 +790,7 @@ fillSelect($("selA")); fillSelect($("selB"));
 $("selA").onchange=()=>cmpLoad(fromKey($("selA").value),B); $("selB").onchange=()=>cmpLoad(A,fromKey($("selB").value));
 for(const c of [cvA,cvB]) c.addEventListener("click",()=>$("cmpPlay").click());
 
-addEventListener("resize",()=>{ if(S) render(cur); cmpRender(cmpCur); if(TAB==="charts") drawCharts(); });
+addEventListener("resize",()=>{ if(S) render(cur); cmpRender(cmpCur); if(TAB==="charts"&&$("home").hidden) drawCharts(); });
 addEventListener("keydown",e=>{
   if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT"||!PLAYER_TABS.includes(TAB)||!$("home").hidden) return;
   const st=e.shiftKey?10:1;
@@ -835,21 +835,23 @@ let TAB="overview";
 for(const [k,label] of TABS){ const b=document.createElement("button"); b.dataset.tab=k; b.textContent=label; b.onclick=()=>go(DAY,k); $("tabbar").append(b); }
 function go(day,tab){ location.hash=`#d${day}/${tab}`; }
 function route(){
-  const m=decodeURIComponent(location.hash).match(/^#d(.+?)(?:\/(overview|video|charts|stroke|advice))?$/);
-  const home=!m||!(m[1] in DAYS);
+  let h=location.hash; try{ h=decodeURIComponent(h); }catch{}  // a hand-typed bad %-escape falls back to home
+  const m=h.match(/^#d(.+?)(?:\/(overview|video|charts|stroke|advice))?$/);
+  const home=!m||!Object.hasOwn(DAYS,m[1]), wasHome=!$("home").hidden;
   document.querySelector("main").hidden=$("days").hidden=$("tabbar").hidden=home; $("home").hidden=!home;
   $("homeLink").textContent=home?"網球練習":"‹ 網球練習"; $("homeLink").title=home?"":"回到所有場次";
-  if(home){ $("h1Sub").textContent=""; $("sub").textContent=`${DAY_KEYS.length} 場練習`; drawHome(); v.pause(); vA.pause(); return; }
+  if(home){ $("h1Sub").textContent=""; $("sub").textContent=`${DAY_KEYS.length} 場練習`; drawHome(); document.querySelectorAll("video").forEach(x=>x.pause()); return; }
   if(m[1]!==DAY||!S) setDay(m[1]);
+  else if(wasHome){ drawSummary(); drawTabs(); drawList(); }  // home overwrote #sub and may have set pfilter
   $("days").querySelector(".on")?.scrollIntoView({block:"nearest",inline:"nearest"});
   TAB=m[2]||"overview";
   $("h1Sub").textContent=" · "+DAYS[DAY].label;
   [...$("tabbar").children].forEach(b=>{ const on=b.dataset.tab===TAB; b.classList.toggle("on",on); b.setAttribute("aria-current",on?"page":"false"); });
   document.querySelectorAll("main [data-tab]").forEach(e=>{ e.hidden=!e.dataset.tab.split(" ").includes(TAB) || (e.id==="reelCard"&&!DAYS[DAY].reel); });
   document.querySelector("main").classList.toggle("noplayer",!PLAYER_TABS.includes(TAB));
-  if(!PLAYER_TABS.includes(TAB)){ v.pause(); vA.pause(); }
+  document.querySelectorAll("main [hidden] video").forEach(x=>x.pause());  // player, compare and reel stop when their tab is left
   if(TAB==="charts") drawCharts();
-  if(S) render(cur); cmpRender(cmpCur);  // canvases were 0x0 while hidden
+  if(S){ render(cur); cmpRender(cmpCur); }  // canvases were 0x0 while hidden
 }
 addEventListener("hashchange",route);
 
@@ -861,7 +863,7 @@ function drawHome(){
     const tr=T.filter(t=>t.player===p);
     const rows=days.map(d=>{
       const g=(d.scores?.groups||[]).filter(g=>g.player===p), n=d.data.filter(s=>who(s)===p).length;
-      const sc=g.length?g.map(g=>`${NAMES[g.kind]} <b>${g.total==null?"–":g.total.toFixed(1)}</b>`).join(" "):"未評分";
+      const sc=g.length?g.map(g=>`${NAMES[g.kind]||g.kind} <b>${g.total==null?"–":g.total.toFixed(1)}</b>`).join(" "):"未評分";
       return `<li><a href="#d${encodeURIComponent(d.id)}/overview" data-p="${esc(p)}"><b>${esc(d.label)}</b><span class="sc">${sc}</span><span class="meta">${n} 拍 · ${esc(d.camera||"沒寫鏡頭")}</span></a></li>`;
     }).join("");
     const trend=tr.map(t=>`<h3>${NAMES[t.kind]||t.kind}・分數走勢</h3>`+(t.history.length<2?`<p class="hint">只有 ${t.history.length} 場有評分，還不能看走勢。</p>`:`<svg class="spark" data-player="${esc(p)}" data-kind="${t.kind}"></svg>`)+flagList(t.flags)).join("");
