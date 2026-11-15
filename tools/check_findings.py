@@ -12,10 +12,12 @@ GROUP_KEYS = ("total", "form", "consistency", "power", "uncapped")
 def _num(v): return isinstance(v, (int, float)) and not isinstance(v, bool) and not math.isnan(v)
 
 
-def _match(actual, cited):
-    """Cited value is the actual one rounded to the cite's own decimals (155 accepts 154.5–155.5)."""
+def _match(actual, cited, txt=None):
+    """Cited value is the actual one rounded to the cite's own decimals (155 accepts 154.5–155.5).
+    txt: the number as written in a finding's text, so "0.30" keeps its 2 decimals."""
     if not _num(actual) or not _num(cited): return False
-    d = len(str(cited).split(".")[1]) if "." in str(cited) else 0
+    txt = txt or str(cited)
+    d = len(txt.split(".")[1]) if "." in txt else 0
     return abs(actual - cited) <= min(0.5 * 10 ** -d, 0.05 * max(abs(actual), 1)) + 1e-9  # rounding only; a small-scale field (0.4) cannot match "0"
 
 
@@ -73,8 +75,18 @@ def check(notes, strokes, scores):
         errs += [r for r in (_cite(c, strokes, scores.get("groups", []), scores.get("show_open") is True) for c in cites) if r]
         vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
         text = f.get("text", "")
-        for m in re.finditer(r"(\d+(?:\.\d+)?)\s*°", text):
-            if not any(abs(float(m.group(1)) - v) <= 0.5 + 1e-9 for v in vals): errs.append(f"文字裡的 {m.group(0)} 沒有對應的引用")
+        U = r"(?:°|%|％|秒)"
+        # target ranges (0.3–0.8, 75%-85%) are not citations, but a degree range (120–130°) cites both ends
+        rng = lambda m: f" {m.group(1)}° {m.group(3)}° " if "°" in (m.group(2) or "") + (m.group(4) or "") else " "
+        # an ASCII '-' joins a range only with no space around it: "0.5 -0.20" is a number and a negative one
+        bare = re.sub(rf"#\d+|\d{{1,3}}(?:,\d{{3}})+(?:\.\d+)?|(\d+(?:\.\d+)?)(?:\s*({U}))?(?:\s*[–~～]\s*|-)(\d+(?:\.\d+)?)\s*({U})?",
+                      lambda m: rng(m) if m.group(1) else " ", text)  # #NN and 1,234.5 (thousands) are not citations
+        for m in re.finditer(rf"(?<![\d.:°%％])([-−]?\d+(?:\.\d+)?)(\s*{U})?", bare):  # 1:04.8 is a time, not a decimal
+            x, u = m.group(1).replace("−", "-"), (m.group(2) or "").strip()
+            if not u and "." not in x: continue  # plain integers (62 拍, 3 次) are counts
+            ok = (lambda v: abs(float(x) - v) <= 0.5 + 1e-9) if u == "°" else \
+                 (lambda v: _match(v, float(x), x) or u in ("%", "％") and _match(v * 100, float(x), x))  # contact_h 0.53 is written as 53%
+            if not any(ok(v) for v in vals): errs.append(f"文字裡的 {m.group(0).strip()} 沒有對應的引用")
         refs = {int(x) for x in re.findall(r"#(\d+)", text)} | {j[0] for j in (f.get("jump") or []) if isinstance(j, (list, tuple)) and j and isinstance(j[0], int)}
         errs += [f"拍 #{n} 不存在" for n in sorted(refs) if not 1 <= n <= len(strokes)]
         errs = list(dict.fromkeys(errs))

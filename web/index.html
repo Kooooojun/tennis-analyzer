@@ -36,6 +36,8 @@ main{max-width:1200px;margin:0 auto;padding-block:8px 40px;display:grid;grid-tem
 .stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%}
 .stage video{object-fit:contain}
 .pose-msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.6);color:#fff;font:600 13px/1.2 -apple-system,'PingFang TC',sans-serif;padding:6px 10px;border-radius:6px;pointer-events:none;white-space:nowrap}
+.vid-msg{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);background:rgba(0,0,0,.7);color:#fff;border:0;font:600 13px/1.2 -apple-system,'PingFang TC',sans-serif;padding:8px 12px;border-radius:6px;pointer-events:none;white-space:nowrap}
+.vid-msg[data-fail]{pointer-events:auto;cursor:pointer;text-decoration:underline}
 .badge{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.6);color:#fff;font:600 12px/1 ui-monospace,Menlo,monospace;padding:6px 8px;border-radius:6px}
 .phase-badge{position:absolute;right:10px;top:10px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:13px;padding:5px 10px;border-radius:999px;display:none}
 .now{display:flex;align-items:center;gap:8px;margin-top:10px}
@@ -204,7 +206,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
 <main>
   <section class="player" data-tab="video stroke">
     <div class="stage" id="stage">
-      <video id="v" playsinline muted preload="auto"></video>
+      <video id="v" playsinline muted preload="metadata"></video>
       <canvas id="cv"></canvas>
       <div class="badge" id="badge">–</div><div class="pose-msg" hidden></div>
       <div class="phase-badge" id="phaseBadge"></div>
@@ -272,12 +274,12 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
       <div class="duo">
         <div class="side">
           <select id="selA" aria-label="左邊的擊球"></select>
-          <div class="stage"><video id="vA" playsinline muted preload="auto"></video><canvas id="cvA"></canvas><div class="badge" id="badgeA">–</div><div class="pose-msg" hidden></div></div>
+          <div class="stage"><video id="vA" playsinline muted preload="metadata"></video><canvas id="cvA"></canvas><div class="badge" id="badgeA">–</div><div class="pose-msg" hidden></div></div>
           <div class="cap" id="capA"></div>
         </div>
         <div class="side">
           <select id="selB" aria-label="右邊的擊球"></select>
-          <div class="stage"><video id="vB" playsinline muted preload="auto"></video><canvas id="cvB"></canvas><div class="badge" id="badgeB">–</div><div class="pose-msg" hidden></div></div>
+          <div class="stage"><video id="vB" playsinline muted preload="metadata"></video><canvas id="cvB"></canvas><div class="badge" id="badgeB">–</div><div class="pose-msg" hidden></div></div>
           <div class="cap" id="capB"></div>
         </div>
       </div>
@@ -401,8 +403,8 @@ const feedFH = () => byKind("FH").filter(s=>s.drill==="feed");
 const rallyFH = () => byKind("FH").filter(s=>s.drill==="rally");
 const kneeColor = a => a==null ? "#fff" : a<=130 ? "#4ade80" : a<=150 ? "#fbbf24" : "#f87171";  // one scale for 2D and 3D (user's call)
 const KERR = {"3D":"3D 誤差約 ±8°（p90 約 23°）", "2D":"2D 誤差：側面拍約 ±2°，正前、正後方約 ±20–34°"};  // CalTennis multi-view check, docs/research/multiview-angles.md
-const kSrcOf = s => s.knee3d!=null ? "3D" : "2D";
-const kTxt = (o,none="–") => o.knee==null ? none : `${o.kSrc} ${Math.round(o.knee)}°`;  // group median with its source; no source on a missing value  // s.knee is the 3D angle exactly when knee3d exists (DAYS loader)
+const kSrcOf = s => s.knee3d!=null ? "3D" : "2D";  // s.knee is the 3D angle exactly when knee3d exists (DAYS loader)
+const kTxt = (o,none="–") => o.knee==null ? none : `${o.kSrc} ${Math.round(o.knee)}°`;  // group median with its source; no source on a missing value
 const hPct = s => s.contact_h==null ? null : s.contact_h*100;  // null*100 would be 0
 const kneeSrc = g => { const ok=g.filter(s=>!s.knee_warn); return ok.filter(s=>s.knee3d!=null&&isFinite(s.knee3d)).length>ok.length/2?"knee3d":"knee"; };  // same source pick as score.py score_group
 const kneeOk = (s,src="knee") => !(s.knee_warn||(src==="knee"&&s.knee2d_ok===false));  // score.py _value gate
@@ -537,17 +539,18 @@ function paint(cv, vid, s, f, opt){
 }
 
 // ---------- session summary ----------
-function typicalFH(){ const fh=feedFH().length?feedFH():byKind("FH").length?byKind("FH"):mine(), m=feedFH().length?MED.feed:MED.FH, t=(a,b,w)=>a==null||b==null?0:Math.abs(a-b)/w, d=s=>t(s.knee,m.knee,20)+t(hPct(s),m.h,30)+t(s.open_min,m.open,15); return [...fh].sort((a,b)=>d(a)-d(b))[0]; }
+function typicalFH(){  // knee compared in the group median's own source (MED kSrc); a stroke without that source counts as 20° off
+  const fh=feedFH().length?feedFH():byKind("FH").length?byKind("FH"):mine(), m=feedFH().length?MED.feed:MED.FH, src=m.kSrc==="3D"?"knee3d":"knee", t=(a,b,w)=>a==null||b==null?0:Math.abs(a-b)/w, d=s=>(m.knee==null?0:kneeOk(s,src)&&kneeOf(s,src)!=null?t(kneeOf(s,src),m.knee,20):1)+t(hPct(s),m.h,30)+t(s.open_min,m.open,15); return [...fh].sort((a,b)=>d(a)-d(b))[0]; }
 function drawSummary(){
   const cnt=k=>ALL.filter(s=>s.kind===k).length, fh=cnt("FH"), bh=cnt("BH"), sv=cnt("SV");  // the whole session, not the picked player
-  $("sub").textContent = `${DAYS[DAY].label} · ${DAYS[DAY].sub} · 找出 ${ALL.length} 拍（正拍 ${fh}、反拍 ${bh}${sv?`、發球 ${sv}`:""}）`;
+  $("sub").textContent = `${DAYS[DAY].label} · ${DAYS[DAY].sub}${fpsLow(DAYS[DAY])?` · 來源 ${DAYS[DAY].srcFps} fps`:""} · 找出 ${ALL.length} 拍（正拍 ${fh}、反拍 ${bh}${sv?`、發球 ${sv}`:""}）`;
   const r=Math.round;
   const items = (DAYS[DAY].findings||[]).map(f=>({cls:f.good?"good":f.info?"info":"", t:f.title, p:f.text, j:(f.jump||[]).map(([n,l])=>[byNo(n),l]), c:f.cite||[]}));
   if(!items.length) items.push({cls:"info", t:"這場還沒有寫重點", p:"請 Claude 看完數字後寫進 notes.json 的 findings，再跑 tools/build_site.py。", j:[], c:[]});
   $("findings").innerHTML="";
   for(const it of items){
     const d=document.createElement("div"); d.className="find "+it.cls;
-    d.innerHTML=`<b>${it.cls==="good"?"✓ ":"△ "}${it.t}</b><p>${it.p}</p>`+(it.c.length?`<div class="cite" title="這條建議引用的數據（已用 check_findings.py 核對）">${it.c.map(c=>`<span>${esc(citeText(c))}</span>`).join("")}</div>`:"");
+    d.innerHTML=`<b>${it.cls==="good"?"✓ ":"△ "}${esc(it.t)}</b><p>${esc(it.p)}</p>`+(it.c.length?`<div class="cite" title="${{true:"這條建議引用的數據（已用 check_findings.py 核對）",false:"這條建議引用的數據（未核對：這場沒有 scores.json）"}[DAYS[DAY].checked]??"這條建議引用的數據"}">${DAYS[DAY].checked===false?"<span>未核對</span>":""}${it.c.map(c=>`<span>${esc(citeText(c))}</span>`).join("")}</div>`:"");
     for(const [s,label] of it.j.filter(([s])=>s)){ const b=document.createElement("button"); b.className="jump"; b.textContent=label; b.onclick=()=>load(s.id,true); d.append(b); }
     $("findings").append(d);
   }
@@ -575,10 +578,12 @@ function citeText(c){  // one cite from notes.json (docs/scoring.md §8) in plai
 }
 
 // ---------- 總覽: scores.json per player and kind, top findings, trend flags ----------
+const fpsLow = d => d.srcFps!=null && d.srcFps<50;  // build_site.py srcFps: lowest source fps from prep.sh; missing = old session, not shown
 function drawOverview(){
   const d=DAYS[DAY], sc=d.scores, r1=x=>x==null?"–":x.toFixed(1), multi=d.players.length>1;
-  const counts=["FH","BH","SV","OH"].map(k=>[k,ALL.filter(s=>s.kind===k).length]).filter(([,n])=>n).map(([k,n])=>`${NAMES[k]||k} ${n}`).join("、");
+  const counts=["FH","BH","SV","OH"].map(k=>[k,ALL.filter(s=>s.kind===k).length]).filter(([,n])=>n).map(([k,n])=>`${esc(NAMES[k]||k)} ${n}`).join("、");
   let h=`<h2>${esc(d.label)} 總覽</h2><p class="hint" style="margin:0 0 10px">${esc(d.camera||"沒寫鏡頭位置")} · 共 ${ALL.length} 拍（${counts}）${multi?` · ${d.players.length} 位玩家`:""}</p>`;
+  if(fpsLow(d)) h+=`<p class="caveat" style="margin:0 0 10px">來源 ${d.srcFps} fps：proxy 補成 60 fps（重複影格），速度類數字（手速、準備時間）沒驗證過。下次用 60 fps 拍。</p>`;
   const hn=handNote(ALL); if(hn) h+=`<p class="caveat" style="margin:0 0 10px">${esc(hn)}</p>`;
   if(!sc) h+=`<p class="caveat" style="margin:0 0 10px">這場還沒評分。在電腦上跑 <code>tools/score.py ${esc(d.id)}</code>，再跑 <code>tools/build_site.py</code>。</p>`;
   else{
@@ -589,10 +594,10 @@ function drawOverview(){
         return `<span>${ITEM[m]||m}</span><span class="bar"><i style="width:${(s??0)*10}%"></i></span><span class="num" title="中位數 ${x.median??"–"}，${x.n} 拍${m.startsWith("knee")?`，膝角來源 ${g.knee_src==="knee3d"?"3D":"2D"}`:""}">${val}</span>`;
       }).join("");
       const flags=(window.TREND||[]).filter(t=>t.player===g.player&&t.kind===g.kind&&t.history.at(-1)?.session===d.id).flatMap(t=>t.flags);
-      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?esc(PN(g.player))+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}${g.n<5?`<br><b class="few">拍數少，參考就好</b>`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
+      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?esc(PN(g.player))+" · ":""}${esc(NAMES[g.kind]||g.kind)} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}${g.n<5?`<br><b class="few">拍數少，參考就好</b>`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
     }).join("")+`</div>`;
-    const ck=(sc.checks||[]).filter(c=>c.passed+c.failed+c.unclear>0);  // reference only: low-coverage checks are the ones that need the "mostly unclear" warning
-    if(ck.length) h+=`<h3>姿勢檢查・參考（未驗證）</h3><ul class="flags armref">`+ck.map(c=>`<li>${multi?esc(PN(c.player))+" · ":""}${esc(c.name)}：${c.field==="bh_front_ok"?"判在身前":"判伸直"} ${c.passed}、${c.field==="bh_front_ok"?"判不在身前":"判彎"} ${c.failed}、看不出來 ${c.unclear}${c.unclear>(c.passed+c.failed+c.unclear)/2?"，一半以上看不出來":""}</li>`).join("")+`</ul><p class="caveat">這幾項沒有足夠驗證（彎手臂在測試資料裡一拍都沒抓到），看不出來的拍可能有問題，不要當成沒問題。</p>`;
+    const ck=(sc.checks||[]).filter(c=>(c.passed||0)+(c.failed||0)+(c.unclear||0)>0);  // reference only: low-coverage checks are the ones that need the "mostly unclear" warning
+    if(ck.length) h+=`<h3>姿勢檢查・參考（未驗證）</h3><ul class="flags armref">`+ck.map(c=>`<li>${multi?esc(PN(c.player))+" · ":""}${esc(c.name)}：${(w=>`${w[0]} ${c.passed||0}、${w[1]} ${c.failed||0}`)((c.field?c.field==="bh_front_ok":/身前/.test(c.name))?["判在身前","判不在身前"]:c.field||/伸直|彎/.test(c.name)?["判伸直","判彎"]:["判通過","判沒通過"])}、看不出來 ${c.unclear||0}${(c.unclear||0)>((c.passed||0)+(c.failed||0)+(c.unclear||0))/2?"，一半以上看不出來":""}</li>`).join("")+`</ul><p class="caveat">這幾項沒有足夠驗證（彎手臂在測試資料裡一拍都沒抓到），看不出來的拍可能有問題，不要當成沒問題。</p>`;
     h+=`<p class="caveat">1–10 分，怎麼算見 docs/scoring.md。灰色「資料不足」= 能用的拍不到一半，不打分。</p>`;
   }
   const fs=[...(d.findings||[])].sort((a,b)=>(!!a.info-!!b.info)).slice(0,3);
@@ -607,7 +612,7 @@ function drawTrend(){
   const keys=Object.keys(DAYS), st=Object.fromEntries(keys.map(k=>[k,dayStats(DAYS[k].data)])), r=x=>x==null?"–":Math.round(x), dg=x=>x==null?"–":Math.round(x)+"°", dk=kTxt;
   $("trendTitle").textContent=keys.length>1?`${keys.length} 場比較`:"這場數字";
   const rows=[
-    ["鏡頭",k=>DAYS[k].camera||"–"],
+    ["鏡頭",k=>esc(DAYS[k].camera||"–")],
     ["自拋正拍・準備時膝蓋",k=>dk(st[k].feed)],
     ["對打正拍・準備時膝蓋",k=>dk(st[k].rally)],
     ["<b>膝蓋差距（自拋 − 對打）</b>",k=>{ const a=st[k].feed, b=st[k].rally; return `<b>${a.knee==null||b.knee==null?"–":(a.kSrc===b.kSrc?a.kSrc:a.kSrc+"／"+b.kSrc)+" "+dg(a.knee-b.knee)}</b>`; }],
@@ -615,7 +620,7 @@ function drawTrend(){
     ["對打正拍・擊球高度",k=>r(st[k].rally.h)],
     ["拍數（自拋 / 對打）",k=>`${DAYS[k].data.filter(s=>s.kind==="FH"&&s.drill==="feed").length} / ${DAYS[k].data.filter(s=>s.kind==="FH"&&s.drill==="rally").length}`],
   ];
-  $("trend").innerHTML=`<thead><tr><th></th>${keys.map(k=>`<th>${DAYS[k].label}</th>`).join("")}</tr></thead><tbody>`+
+  $("trend").innerHTML=`<thead><tr><th></th>${keys.map(k=>`<th>${esc(DAYS[k].label)}</th>`).join("")}</tr></thead><tbody>`+
     rows.map(([lab,f])=>`<tr><td>${lab}</td>${keys.map(k=>`<td class="${k===DAY?"cur":""}">${f(k)}</td>`).join("")}</tr>`).join("")+"</tbody>";
 }
 const prepLow=s=>s.prep_trunc===true||s.prep_trunc==null&&s.prep>=0.999;  // lower bound only: truncated, or an old session (no prep_trunc) at the old 1.0 s window edge; same rule as score.py
@@ -720,7 +725,7 @@ function drawList(){
     const b=document.createElement("button"); b.dataset.id=s.id;
     const bad = s.kind==="FH" && s.knee>150;
     const dn=drillName(s);
-    b.innerHTML=`<span class="row"><span class="tag ${s.kind}">${NAMES[s.kind]}</span><span class="clock">${esc(s.clock)}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":kSrcOf(s)+" "+Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
+    b.innerHTML=`<span class="row"><span class="tag ${esc(s.kind)}">${esc(NAMES[s.kind]||s.kind)}</span><span class="clock">${esc(s.clock)}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":kSrcOf(s)+" "+Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
     b.title=strokeLabel(s);
     b.onclick=()=>load(s.id,false); box.append(b);
   }
@@ -741,7 +746,40 @@ const playSafe=(vid,badge)=>vid.play()?.catch(e=>{ if(e.name!=="NotAllowedError"
 const hold=vid=>{ if(vid.readyState) vid.pause(); };
 // a clip is fetched only once its stage is on screen (home and the overview tab fetch none); route() runs the waiting ones
 const LATER=new Map();
-function whenShown(vid,fn){ if(vid.offsetParent){ LATER.delete(vid); fn(); } else LATER.set(vid,fn); }
+// the comparison clips also wait until scrolled near (_near), so opening the video tab fetches only the main clip
+const shown=vid=>!!vid.offsetParent&&vid._near!==false;
+function whenShown(vid,fn){ if(shown(vid)){ LATER.delete(vid); fn(); } else LATER.set(vid,fn); }
+const NEAR=new IntersectionObserver(es=>{ for(const e of es){ const vid=e.target; vid._near=e.isIntersecting; if(LATER.has(vid)&&shown(vid)){ const fn=LATER.get(vid); LATER.delete(vid); fn(); } } },{rootMargin:"100px"});
+for(const vid of [$("vA"),$("vB")]){ vid._near=false; NEAR.observe(vid); }
+// a clip stuck on a slow link: say so after 1 s; after 10 s with no progress reload it once at the same time, then offer a retry tap
+function watchStall(vid){
+  const m=document.createElement("button"); m.type="button"; m.className="vid-msg"; m.hidden=true; vid.parentElement.append(m);
+  let sig="", since=0, wait=0, tries=0, src="";
+  let restore=null, keep=null;  // the pending time restore of the last reload and its [time, playing]; dropped when the clip changes
+  const reload=(tap=false)=>{ tries++; since=Date.now(); const url=vid.currentSrc;
+    const [t,play,rate]=keep&&!vid.readyState?keep:[vid.readyState?vid.currentTime:null,!vid.paused,vid.playbackRate]; keep=[t,play,rate];  // a reload that never got metadata keeps the first target; never loaded: load()'s own handler seeks
+    if(restore) vid.removeEventListener("loadedmetadata",restore);
+    restore=()=>{ restore=keep=null; vid._reloading=false; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t; if(!play) vid.pause(); else if(vid===vA){ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); } };  // vA's play handler skips a play fired before metadata
+    vid.addEventListener("loadedmetadata",restore,{once:true});
+    vid._reloading=true; vid.src=url; vid.playbackRate=rate; if(play||tap) playSafe(vid,vid.parentElement.querySelector(".badge")); };
+  const fail=()=>{ m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; };
+  m.onclick=()=>{ delete m.dataset.fail; tries=0; m.textContent="影片下載中…"; reload(true); };
+  setInterval(()=>{
+    if(!vid.currentSrc||!vid.offsetParent) return;
+    if(vid.currentSrc!==src){ src=vid.currentSrc; if(restore){ vid.removeEventListener("loadedmetadata",restore); restore=null; } keep=null; vid._reloading=false; tries=0; wait=0; delete m.dataset.fail; m.hidden=true; }
+    const now=Date.now();
+    if(vid.error){ if(m.dataset.fail) return; if(tries<1&&now-since>=2000) reload(); else if(tries>=1) fail(); return; }
+    const need=!(vid._blocked&&!vid.readyState)&&(vid.readyState<1||vid.seeking||!vid.paused&&vid.readyState<3);  // metadata only and idle is fine: preload=metadata, and a compare clip waits for its partner to scroll into view
+    if(!need){ wait=0; tries=0; delete m.dataset.fail; m.hidden=true; return; }
+    const b=vid.buffered, k=vid.currentTime+"|"+(b.length?b.end(b.length-1):0)+"|"+vid.readyState;
+    if(!wait){ wait=since=now; sig=k; }
+    if(k!==sig){ sig=k; since=now; }
+    if(m.dataset.fail) return;
+    if(now-since>=10000){ tries<1?reload():fail(); return; }
+    if(now-wait>=1000){ m.hidden=false; m.textContent="影片下載中…"; }
+  },500);
+}
+[v,$("vA"),$("vB")].forEach(watchStall);
 function load(id, scroll){
   S=ALL[id]; S._poseErr=false; N=S.n??S.frames.length; seek.max=N-1;  // n: frame count in data.js; older builds only have frames
   S.phases=[{f:S.contact-48,name:"準備"},...(S.prep!=null?[{f:S.contact-Math.round(S.prep*FPS),name:"引拍完成"}]:[]),{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}].sort((a,b)=>a.f-b.f);  // 引拍完成 can fall before 準備 or after 向前揮拍
@@ -834,8 +872,8 @@ let A=null, B=null, cmpCur=0, cmpRate=0.25;
 // from notes.json: a/b are a stroke number in that session, or [session, number] to compare across sessions
 const PRESETS=Object.values(DAYS).flatMap(d=>(d.presets||[]).map(p=>{ const a=Array.isArray(p.a)?p.a:[d.id,p.a], b=Array.isArray(p.b)?p.b:[d.id,p.b]; return {day:a[0]===b[0]&&a[0]===d.id?d.id:"*",a,b,label:p.label}; })).filter(p=>p.a[0] in DAYS&&p.b[0] in DAYS);
 const sKey=s=>s.day+":"+s.id, fromKey=k=>{ const [d,i]=k.split(":"); return DAYS[d].data[+i]; };
-function fillSelect(sel){ sel.innerHTML=Object.entries(DAYS).map(([k,d])=>`<optgroup label="${d.label}">`+d.data.map(s=>`<option value="${sKey(s)}">${d.label} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</option>`).join("")+"</optgroup>").join(""); }
-function capFor(s){ const r=Math.round; return `<b>${DAYS[s.day].label} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${s.knee==null?"–":kSrcOf(s)+" "+r(s.knee)+"°"}${s.knee_warn?"⚠不準":""} · 轉肩 ${s.open_min==null?"–":r(s.open_min)+"%"} · 擊球高度 ${s.contact_h==null?"–":r(hPct(s))}</span>`; }
+function fillSelect(sel){ sel.innerHTML=Object.entries(DAYS).map(([k,d])=>`<optgroup label="${esc(d.label)}">`+d.data.map(s=>`<option value="${esc(sKey(s))}">${esc(d.label)} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</option>`).join("")+"</optgroup>").join(""); }
+function capFor(s){ const r=Math.round; return `<b>${esc(DAYS[s.day].label)} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${s.knee==null?"–":kSrcOf(s)+" "+r(s.knee)+"°"}${s.knee_warn?"⚠不準":""} · 轉肩 ${s.open_min==null?"–":r(s.open_min)+"%"} · 擊球高度 ${s.contact_h==null?"–":r(hPct(s))}</span>`; }
 function drawPresets(){
   $("presets").innerHTML="";
   for(const p of PRESETS.filter(p=>p.day===DAY||p.day==="*")){ const b=document.createElement("button"); b.textContent=p.label; b._p=p; b.onclick=()=>cmpLoad(dayNo(...p.a),dayNo(...p.b)); $("presets").append(b); }
@@ -863,7 +901,7 @@ function cmpTick(){
 vA.loop=vB.loop=true;
 for(const x of [v,vA,vB]) x.addEventListener("loadedmetadata",()=>{ x._blocked=false; });  // a tap lifted Low Power Mode's block; later loads show times again
 vA.addEventListener("play",()=>{ if(!vA.readyState) return; $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
-vA.addEventListener("pause",()=>{ $("cmpPlay").textContent="▶ 同步播放"; hold(vB); });
+vA.addEventListener("pause",()=>{ if(vA._reloading) return; $("cmpPlay").textContent="▶ 同步播放"; hold(vB); });
 for(const vid of [vA,vB]) vid.addEventListener("seeked",()=>{ if(vA.paused) cmpRender(Math.floor(vA.currentTime*FPS+1e-3)); });
 $("cmpPlay").onclick=()=>{ if(vA.paused||!vA.readyState){ vB.currentTime=cmpBt(); vA.playbackRate=vB.playbackRate=cmpRate; playSafe(vA,$("badgeA")); playSafe(vB,$("badgeB")); } else vA.pause(); };
 $("cmpPrev").onclick=()=>cmpGoto(cmpCur-1); $("cmpNext").onclick=()=>cmpGoto(cmpCur+1); $("cmpContact").onclick=()=>cmpGoto(A.contact);
@@ -935,7 +973,7 @@ function route(){
   document.querySelector("main").classList.toggle("noplayer",!PLAYER_TABS.includes(TAB));
   document.querySelectorAll("main [hidden] video").forEach(hold);  // player, compare and reel stop when their tab is left
   if(TAB==="charts") drawCharts();
-  for(const [vid,fn] of LATER){ if(!vid.isConnected) LATER.delete(vid); else if(vid.offsetParent){ LATER.delete(vid); fn(); } }  // drop reel <video>s that drawSummary replaced
+  for(const [vid,fn] of LATER){ if(!vid.isConnected) LATER.delete(vid); else if(shown(vid)){ LATER.delete(vid); fn(); } }  // drop reel <video>s that drawSummary replaced
   if(S){ render(cur); cmpRender(cmpCur); }  // canvases were 0x0 while hidden
 }
 addEventListener("hashchange",route);
@@ -948,10 +986,10 @@ function drawHome(){
     const tr=T.filter(t=>t.player===p);
     const rows=days.map(d=>{
       const g=(d.scores?.groups||[]).filter(g=>g.player===p), n=d.data.filter(s=>who(s)===p).length;
-      const sc=g.length?g.map(g=>`${NAMES[g.kind]||g.kind} <b>${g.total==null?"–":g.total.toFixed(1)}</b>`).join(" "):"未評分";
+      const sc=g.length?g.map(g=>`${esc(NAMES[g.kind]||g.kind)} <b>${g.total==null?"–":g.total.toFixed(1)}</b>`).join(" "):"未評分";
       return `<li><a href="#d${encodeURIComponent(d.id)}/overview" data-p="${esc(p)}"><b>${esc(d.label)}</b><span class="sc">${sc}</span><span class="meta">${n} 拍 · ${esc(d.camera||"沒寫鏡頭")}</span></a></li>`;
     }).join("");
-    const trend=tr.map(t=>`<h3>${NAMES[t.kind]||t.kind}・分數走勢</h3>`+(t.history.length<2?`<p class="hint">只有 ${t.history.length} 場有評分，還不能看走勢。</p>`:`<svg class="spark" data-player="${esc(p)}" data-kind="${t.kind}"></svg>`)+flagList(t.flags)).join("");
+    const trend=tr.map(t=>`<h3>${esc(NAMES[t.kind]||t.kind)}・分數走勢</h3>`+(t.history.length<2?`<p class="hint">只有 ${t.history.length} 場有評分，還不能看走勢。</p>`:`<svg class="spark" data-player="${esc(p)}" data-kind="${esc(t.kind)}"></svg>`)+flagList(t.flags)).join("");
     return `<div class="card"><h2>${esc(PN(p))}</h2><p class="hint" style="margin:0 0 6px">${days.length} 場</p><ul class="sess">${rows}</ul>${trend||`<p class="hint">還沒有評分趨勢（跑 tools/score.py 和 tools/trend.py）。</p>`}</div>`;
   }).join("")+`</div><p class="caveat">分數走勢只比同一個鏡頭位置的場次（docs/scoring.md §6）。缺點改善 = 原本低於 6 分的項目進步；優點退步 = 原本 8 分以上的項目退步。</p>`;
   $("home").querySelectorAll("a[data-p]").forEach(a=>a.addEventListener("click",()=>{ pfilter=a.dataset.p; }));

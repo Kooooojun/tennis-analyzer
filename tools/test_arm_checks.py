@@ -41,4 +41,9 @@ r = arm_checks([Pl] * 150, 90, SIZE, [Wl] * 150, "SV", hand="L"); assert r["serv
 # 10. BH contact in front: wrist ahead of the leading (right) shoulder along the shoulder line
 Pf, Wf = pose((0.2, 0, 0), (0.4, 0, 0), (0.7, 0, 0), nose=(0.2, -0.25, 0.1)); r = arm_checks([Pf] * 150, 90, SIZE, [Wf] * 150, "BH", one_hand=True); assert r["bh_front_ok"] is True, r
 Pb, Wb = pose((0.2, 0, 0), (0.1, 0, 0), (-0.1, 0, 0)); r = arm_checks([Pb] * 150, 90, SIZE, [Wb] * 150, "BH", one_hand=True); assert r["bh_front_ok"] is False, r
+# arm-bent-detect (a) mean 2D/3D elbow 100 deg, all gates pass -> False ; (b) gate fails -> None ; (c) 150 deg -> True
+import math
+def bend(deg, **kw):  # forearm turned (180-deg) from the upper arm, in the image plane
+    t = math.radians(180 - deg); return run((0.2, 0, 0), (0.2, -0.3, 0), (0.2 + 0.3 * math.sin(t), -0.3 - 0.3 * math.cos(t), 0), **kw)[0]["serve_arm_straight"]
+assert bend(100) is False and bend(150) is True and bend(100, vis=0.3) is None
 print("ok")

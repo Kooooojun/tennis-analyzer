@@ -129,6 +129,7 @@ CHECKS = [("SV", "serve_arm_straight", "serve_arm_conf", "發球擊球時手臂�
           ("BH", "bh_elbow_ok", "bh_elbow_conf", "單手反拍擊球時手肘不明顯彎曲", "同上"),
           ("BH", "bh_front_ok", "bh_elbow_conf", "單手反拍擊球點在身體前方", "手腕在持拍側肩膀之前 ≥ 0.1 m（3D，沿肩線）")]
 MIN_DECIDED = 3
+VERIFIED = {"serve_arm_straight"}  # only check with eye labels behind its passes (THETIS 12/12); no truth yet for bent serves, one-hand BH elbow (1/2) or BH contact-in-front
 
 
 def check_session(strokes):
@@ -138,8 +139,10 @@ def check_session(strokes):
         for p in sorted({who(s) for s in strokes if s.get("kind") == kind and _num(s.get(conf))}):
             g = [s for s in strokes if who(s) == p and s.get("kind") == kind and _num(s.get(conf))]
             ps, fl = sum(s.get(field) is True for s in g), sum(s.get(field) is False for s in g); n = len(g)
+            ok = ps + fl >= MIN_DECIDED and (ps + fl) / n >= MIN_COVER
             out.append(dict(player=p, kind=kind, field=field, name=name, n=n, passed=ps, failed=fl, unclear=n - ps - fl, coverage=_r((ps + fl) / n, 2),
-                            status="ok" if ps + fl >= MIN_DECIDED and (ps + fl) / n >= MIN_COVER else "資料不足", formula=rule))
+                            status="ok" if ok else "資料不足", formula=rule,
+                            verified=field in VERIFIED and ok and ps > 0 and fl == 0))  # needs status ok and >= 1 pass; False verdicts were never checked against truth. The web does not read this yet (greys every row)
     return out
 
 
