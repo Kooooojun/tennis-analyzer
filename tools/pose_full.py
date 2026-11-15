@@ -109,7 +109,9 @@ def crop_to_full(q, box, W, H):
 
 
 def use_crop(found):
-    """found: people seen per sampled full frame. Crop when the full frame misses everyone in most of them (far camera)."""
+    """found: people seen per sampled full frame. Crop when the full frame misses everyone in most of them (far camera).
+    Measured on 1 frame/s samples: a far-camera dataset (people 150-300 px of 1088) 0.05-0.31, wall practice and web clips
+    >= 0.83. Person height cannot split them (far camera 0.18-0.23 of the frame when found, wall practice from 0.25)."""
     return np.mean(np.asarray(found) > 0) < 0.6
 
 
