@@ -67,4 +67,13 @@ for rw in ((0.45, 0.1, 0.3), (-0.4, 0.1, 0.3)):
     for w, h in ((540, 960), (960, 540)):
         Q = P.copy(); Q[:, :, 0] = (w / 2 + px[:, :, 0]) / w; Q[:, :, 1] = (h / 2 + px[:, :, 1]) / h; res.append(classify(Q, F, "R", None, size=(w, h)))
     assert res[0]["kind"] == res[1]["kind"] != "?" and abs(res[0]["side"] - res[1]["side"]) < 0.05, res
+# 16: hand above the head in only 1-2 of f-3..f+1 (the rest NaN) is not enough for SV / OH
+P, W = body(0.0, (0.45, 0.1, 0.3), (-0.2, 0.1, 0.2)); P[F - 3:F + 2, 16, :2] = np.nan; P[F, 16, :2] = (0.6, 0.5 - 0.5 * 0.95)
+assert classify(P, F, "R", W)["kind"] not in ("SV", "OH")
+# 17: landscape 2D path (no world): hips 15 px wide in a 960x540 frame are below 2% of the width -> "?"; 60 px wide -> FH
+for hw, want in ((15, "?"), (60, "FH")):
+    Q = np.full((N, 33, 3), np.nan); Q[:, :, 2] = 0.9
+    for k, (x, y) in {0: (480, 160), 11: (450, 200), 12: (510, 200), 23: (480 - hw / 2, 300), 24: (480 + hw / 2, 300), 15: (440, 290), 16: (480 + hw * 1.5, 290)}.items():
+        Q[:, k, 0] = x / 960; Q[:, k, 1] = y / 540
+    assert classify(Q, F, "R", None, size=(960, 540))["kind"] == want, (hw, classify(Q, F, "R", None, size=(960, 540)))
 print("kind tests ok")
