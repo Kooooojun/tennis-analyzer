@@ -11,6 +11,7 @@ from kind import classify, CONF_MIN
 from match import match, WRIST
 from assemble import cands_fp
 from metrics import hand_gate
+from platform_util import read_text, unlink, write_text
 
 OFF = [-45, -25, -8, 0, 12]
 PER_SHEET = 24
@@ -49,7 +50,7 @@ if names or any(len(t) > 1 for t in T.values()):
             row = [tile(cap, [P], int(f), f"v{vn} t{k} {int(f / 60 // 60)}:{f / 60 % 60:04.1f}") for f in fs]
             rows.append(np.hstack(row + [np.zeros((200, 200, 3), np.uint8)] * (10 - len(row))))
         cv2.imwrite(str(Wd / "players.jpg"), np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 80])
-        with open(Wd / "players.txt", "a") as fh:
+        with open(Wd / "players.txt", "a", encoding="utf-8", newline="\n") as fh:
             if not names: fh.write("# <video no> <track> <name>: who each tracked person is (see players.jpg). Same name across videos; x = not a player\n")
             fh.writelines(f"{vn} {k} ?\n" for vn, k in missing)
         sys.exit(f"{len(missing)} tracked people need a name: look at {Wd / 'players.jpg'} and replace the ? in {Wd / 'players.txt'}, then re-run")
@@ -96,7 +97,9 @@ for vi, v in enumerate(V):
             C.append(dict(v=v, vn=vi + 1, t=float(t), arc=float(arc), sp=float(sp), track=k, player=names[(vi + 1, k)], hand=prof[k]))  # profile hand only: a guessed hand must not pre-fill FH/BH (a wrong guess mirrors them)
 save(Wd / "cands.json", C)
 
-for old in Wd.glob("sheet*.jpg"): old.unlink()
+for old in Wd.glob("sheet*.jpg"):
+    try: unlink(old)
+    except PermissionError: print(f"warning: cannot delete {old} (open in another program?), left it")
 caps, poses = {}, {}
 for k in range(0, len(C), PER_SHEET):
     rows = []
@@ -127,12 +130,12 @@ def guess(c):
 worlds, sizes = {}, {}
 lab = Wd / "labels.txt"
 if lab.exists():
-    old = next((l.split()[2] for l in lab.read_text().splitlines() if l.startswith("# cands ") and len(l.split()) > 2), None)
+    old = next((l.split()[2] for l in read_text(lab).splitlines() if l.startswith("# cands ") and len(l.split()) > 2), None)
     print("labels.txt exists, left untouched" + ("" if old in (None, cands_fp(Wd / "cands.json")) else
           ". WARNING: it was written for other candidates, its lines now point at other hits; assemble.py will refuse it. Move it aside and re-run to get a fresh one"))
 else:
     G = [guess(c) for c in C]
-    lab.write_text("# idx kind drill [@player]   kind: FH BH SV OH, or x = not a player / not a stroke (a kind already filled in is the automatic guess: confirm or change it)."
+    write_text(lab, "# idx kind drill [@player]   kind: FH BH SV OH, or x = not a player / not a stroke (a kind already filled in is the automatic guess: confirm or change it)."
                    "  drill: feed rally high unsure (SV takes none). @player: who hit it (prefilled from players.txt, change it if the crop shows someone else). Anything after is a comment\n"
                    + f"# cands {cands_fp(Wd / 'cands.json')}   (which candidates these lines belong to; leave it)\n"
                    + "".join(f"{i} {g} ?{' @' + c['player'] if multi else ''}\n" for i, (g, c) in enumerate(zip(G, C))))

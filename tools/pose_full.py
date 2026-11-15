@@ -110,11 +110,16 @@ def main():
         tr.append((p, w))
     tr = sorted([t for t in tr if (~np.isnan(t[0][:, 0, 0])).any()], key=lambda t: -(~np.isnan(t[0][:, 0, 0])).sum()) or tr[:1]
     from pathlib import Path
-    for old in Path(out).parent.glob("pose*_t*.npy"):  # a re-run may find fewer people: stale extra tracks would be read as people
-        if int(old.stem.rsplit("_t", 1)[1]) >= len(tr): old.unlink()
+    sys.path.insert(0, str(Path(__file__).resolve().parent))  # run with -I: the script's folder is not on sys.path
+    from platform_util import unlink
+    out = Path(out)
+    for old in out.parent.glob("pose*_t*.npy"):  # a re-run may find fewer people: stale extra tracks would be read as people
+        if int(old.stem.rsplit("_t", 1)[1]) >= len(tr):
+            try: unlink(old)
+            except PermissionError: sys.exit(f"cannot delete {old} (open in another program?); it would be read as a person")
     for i, (p, w) in reversed(list(enumerate(tr))):  # pose.npy last: prep.sh treats it as "this video is done"
         sfx = "" if i == 0 else f"_t{i}"
-        np.save(out.replace("pose.npy", f"pose_world{sfx}.npy"), w); np.save(out.replace("pose.npy", f"pose{sfx}.npy"), p)
+        np.save(out.with_name(f"pose_world{sfx}.npy"), w); np.save(out.with_name(f"pose{sfx}.npy"), p)
     print("done", n, "frames; frames seen per slot:", S.sum(0).tolist(), "-> per track after joining one person's slots:",
           [int((~np.isnan(p[:, 0, 0])).sum()) for p, _ in tr])
 

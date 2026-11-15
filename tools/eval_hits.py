@@ -32,7 +32,7 @@ def self_test():
 if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]: self_test(); sys.exit(print("ok"))
     if len(sys.argv) not in (3, 4): sys.exit("usage: eval_hits.py <labels.csv> <hits.npy> [player]")
-    rows = list(csv.DictReader(open(sys.argv[1])))
+    rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8-sig", newline="")))
     who = sys.argv[3] if len(sys.argv) == 4 else None
     is_target = lambda r: r["kind"] == "stroke" and (who is None or r["player"] == who)
     targets = [float(r["t_sec"]) for r in rows if is_target(r)]

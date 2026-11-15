@@ -56,7 +56,7 @@ def apex(P, hand, fps):
 
 
 # 眼睛確認的慣用手（只列兩段動作都清楚的；其他受試者沒有真值）
-EYE = {int(k): v for k, v in json.load(open(f"{W}/eye_hands.json")).items()} if os.path.exists(f"{W}/eye_hands.json") else {}
+EYE = {int(k): v for k, v in json.load(open(f"{W}/eye_hands.json", encoding="utf-8")).items()} if os.path.exists(f"{W}/eye_hands.json") else {}
 
 
 def clip_layout(P, Wd, f):
@@ -69,8 +69,8 @@ def main():
     mode = sys.argv[1]; which = sys.argv[2] if len(sys.argv) > 2 else "first"
     assert mode in ("native18", "dup60", "interp60") and which in ("first", "all"), __doc__
     fps = 18 if mode == "native18" else 60
-    names = [os.path.basename(l.strip())[:-4] for l in open(f"{W}/list_first.txt")]
-    if which == "all": names += [os.path.basename(l.strip())[:-4] for l in open(f"{W}/list_rest.txt")]
+    names = [os.path.basename(l.strip())[:-4] for l in open(f"{W}/list_first.txt", encoding="utf-8")]
+    if which == "all": names += [os.path.basename(l.strip())[:-4] for l in open(f"{W}/list_rest.txt", encoding="utf-8")]
     names = [n for n in names if os.path.exists(f"{W}/{'p60' if mode == 'dup60' else 'p18'}/{n}/pose.npy")]
     meta = {n: re.match(r"p(\d+)_(.+)_s(\d+)", n).groups() for n in names}
     D = {n: load(mode, n) for n in names}
@@ -94,7 +94,7 @@ def main():
         else: row.update(kind="?", conf=0.0, side=None)
         out.append(row)
     tag = os.environ.get("HAND", "") + ("E" if os.environ.get("EYE") else "") + ("A" if os.environ.get("APEX") else "")
-    json.dump(dict(hands={str(k): v for k, v in hands.items()}, rows=out), open(f"{W}/res_{mode}{tag}_{which}.json", "w"), ensure_ascii=False)
+    json.dump(dict(hands={str(k): v for k, v in hands.items()}, rows=out), open(f"{W}/res_{mode}{tag}_{which}.json", "w", encoding="utf-8", newline="\n"), ensure_ascii=False)
     print(mode, len(out), "clips; hands:", {v[0] for v in hands.values()})
 
 

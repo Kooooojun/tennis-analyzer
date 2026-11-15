@@ -3,11 +3,11 @@
 import json, sys, collections
 import os; W = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "work", "thetis")
 # 眼睛標註（拍號 = 抽樣清單順序 1 起算）：直 / 彎 / ?＝看不出來。低解析度三格小圖判讀，只有粗略可信度。
-_L = json.load(open(f"{W}/arm_eye_labels.json")); SV, BH = _L["SV"], _L["BH"]  # 本機眼睛標註（不進 git）
+_L = json.load(open(f"{W}/arm_eye_labels.json", encoding="utf-8")); SV, BH = _L["SV"], _L["BH"]  # 本機眼睛標註（不進 git）
 assert len(SV) == 40 and len(BH) == 28
-samp = json.load(open(f"{W}/arm_sample.json"))
+samp = json.load(open(f"{W}/arm_sample.json", encoding="utf-8"))
 for mode in sys.argv[1:]:
-    rows = {r["name"]: r for r in json.load(open(f"{W}/res_{mode}_first.json"))["rows"]}
+    rows = {r["name"]: r for r in json.load(open(f"{W}/res_{mode}_first.json", encoding="utf-8"))["rows"]}
     print(f"\n### {mode}")
     for lab, names, key, eye in (("發球 serve_arm_straight", samp["SV"], "serve_arm_straight", SV), ("單手反拍 bh_elbow_ok", samp["BH"], "bh_elbow_ok", BH)):
         c = collections.Counter(); beg = collections.Counter()

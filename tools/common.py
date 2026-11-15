@@ -1,5 +1,8 @@
 import json, sys
 from pathlib import Path
+from platform_util import read_text, write_text
+
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # piped stdout on Windows is cp1252/cp950: Chinese would raise
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS = ROOT / "tools"
@@ -29,7 +32,7 @@ def web(s):
 
 def videos(s):
     """Work subdirs in clock order: the n-th video is shown as 'n·m:ss' on the page."""
-    return json.loads((work(s) / "videos.json").read_text())
+    return json.loads(read_text(work(s) / "videos.json"))
 
 
 def tracks(d):
@@ -46,7 +49,7 @@ def players(s):
     """work/<s>/players.txt -> {(video no, track): name}. One line per tracked person: '<video no> <track> <name>', name x = ignore."""
     p = work(s) / "players.txt"
     if not p.exists(): return {}
-    rows = [l.split("#")[0].split() for l in p.read_text().splitlines()]; rows = [r for r in rows if r]
+    rows = [l.split("#")[0].split() for l in read_text(p).splitlines()]; rows = [r for r in rows if r]
     bad = [r for r in rows if len(r) != 3 or not (r[0].isdigit() and r[1].isdigit()) or r[2] == "?"]
     if bad: sys.exit(f"players.txt lines must be '<video no> <track> <name>' (fill in every ?): {bad[:5]}")
     return {(int(r[0]), int(r[1])): r[2] for r in rows}
@@ -66,12 +69,12 @@ def load(p, default=None):
         if default is not None:
             return default
         sys.exit(f"missing {p.relative_to(ROOT)}")
-    return json.loads(p.read_text())
+    return json.loads(read_text(p))
 
 
 def save(p, obj, compact=False):
-    Path(p).write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")) if compact
-                       else json.dumps(obj, ensure_ascii=False, indent=1))
+    write_text(p, json.dumps(obj, ensure_ascii=False, separators=(",", ":")) if compact
+               else json.dumps(obj, ensure_ascii=False, indent=1))
 
 
 def load_profiles():

@@ -7,6 +7,7 @@ import json, subprocess, sys, time, numpy as np, cv2
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from common import ROOT, FPS, session, work, web, videos, load, tracks, track_file
+from platform_util import h264_args
 
 LONG = 1280  # long side of the output, px
 FONTS = ["/System/Library/Fonts/STHeiti Medium.ttc", "/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc",
@@ -78,7 +79,7 @@ def active(S, n):
 
 def annotate(s, name, src):
     Wd = work(s) / name
-    if not (Wd / "pose.npy").exists(): sys.exit(f"missing work/{s}/{name}/pose.npy; run tools/prep.sh {s}")
+    if not (Wd / "pose.npy").exists(): sys.exit(f"missing work/{s}/{name}/pose.npy; run python tools/prep.py {s}")
     ks = tracks(Wd)  # every tracked person is drawn; a stroke's tag sits on the body of the track that swung (strokes.json "track")
     poses = {k: np.load(track_file(Wd, "pose", k)) for k in ks}; pose = poses[0]
     worlds = {k: np.load(w) if (w := track_file(Wd, "pose_world", k)).exists() else None for k in ks}
@@ -87,7 +88,7 @@ def annotate(s, name, src):
     S = starts(sorted(({**x, "no": i + 1, "c": round(x["t"] * FPS)} for i, x in enumerate(allS) if x["video"] == vn), key=lambda x: x["c"]))
     w, h = probe(src); sc = LONG / max(w, h); W, H = int(round(w * sc / 2)) * 2, int(round(h * sc / 2)) * 2
     out = web(s) / f"annotated_{name}.mp4"; out.parent.mkdir(parents=True, exist_ok=True)
-    vcodec = ["-c:v", "h264_videotoolbox", "-b:v", "6000k"] if sys.platform == "darwin" else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22"]
+    vcodec = h264_args("6000k", 22)
     dec = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(src), "-an", "-vf", f"scale={W}:{H},fps={FPS}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"], stdout=subprocess.PIPE)
     enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-i", str(src), "-map", "0:v", "-map", "1:a:0?",
                             *vcodec, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", str(out)], stdin=subprocess.PIPE)

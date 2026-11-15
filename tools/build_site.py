@@ -5,6 +5,7 @@
 import hashlib, json, re, sys
 from check_findings import check
 from common import ROOT, load, work
+from platform_util import read_text, unlink, write_text
 
 S = ROOT / "web" / "sessions"
 POSE = ("frames", "world")  # per-frame arrays: ~99% of the bytes, only needed for the stroke on screen
@@ -12,7 +13,7 @@ POSE = ("frames", "world")  # per-frame arrays: ~99% of the bytes, only needed f
 
 def src_fps(s):
     """Lowest source fps prep.sh recorded for the session's videos, or None when unknown (older work dirs)."""
-    fps = [int(t) for p in work(s).glob("*/src_fps.txt") if (t := p.read_text().strip()).isdigit() and int(t) > 0]
+    fps = [int(t) for p in work(s).glob("*/src_fps.txt") if (t := read_text(p).strip()).isdigit() and int(t) > 0]
     return min(fps) if fps else None
 
 
@@ -42,12 +43,12 @@ for d, s, sess, has_notes in built:  # pass 2: write
     js = "(window.SESSIONS=window.SESSIONS||[]).push(" + json.dumps(sess, ensure_ascii=False, separators=(",", ":")) + ");"
     (d / "pose").mkdir(exist_ok=True); h = hashlib.sha1(js.encode())
     for old in (d / "pose").glob("*.js"):  # a re-analysis with fewer strokes must not leave stale skeletons behind
-        if old.stem not in {str(x["id"]) for x in strokes}: old.unlink()
+        if old.stem not in {str(x["id"]) for x in strokes}: unlink(old)
     for x in strokes:  # pose/<id>.js hands one stroke's skeleton to the page via a <script> tag, so file:// works (no fetch)
         pj = f"POSE({json.dumps(s)},{x['id']}," + json.dumps({k: x.get(k) for k in POSE}, separators=(",", ":")) + ");"
-        (d / "pose" / f"{x['id']}.js").write_text(pj); h.update(pj.encode())
-    (d / "data.js").write_text(js); ver[s] = h.hexdigest()[:10]  # page loads data.js and pose/*.js with ?v=<hash> so browsers cache them
+        write_text(d / "pose" / f"{x['id']}.js", pj); h.update(pj.encode())
+    write_text(d / "data.js", js); ver[s] = h.hexdigest()[:10]  # page loads data.js and pose/*.js with ?v=<hash> so browsers cache them
     ids.append(s); print(f"{s}: {n} strokes, {len(sess['findings'])} findings{', reel' if sess['reel'] else ''}{'' if has_notes else '  (no notes.json yet)'}")
-(S / "manifest.js").write_text("window.SESSION_IDS=" + json.dumps(ids) + ";window.SESSION_VER=" + json.dumps(ver) + ";")
-(S / "trend.js").write_text("window.TREND=" + json.dumps(load(S / "trend.json", []), ensure_ascii=False, separators=(",", ":")) + ";")
+write_text(S / "manifest.js", "window.SESSION_IDS=" + json.dumps(ids) + ";window.SESSION_VER=" + json.dumps(ver) + ";")
+write_text(S / "trend.js", "window.TREND=" + json.dumps(load(S / "trend.json", []), ensure_ascii=False, separators=(",", ":")) + ";")
 print("open web/index.html")
