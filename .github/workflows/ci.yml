@@ -27,7 +27,7 @@ jobs:
       - name: ffmpeg
         run: |
           case "$RUNNER_OS" in
-            Linux) sudo apt-get update -q && sudo apt-get install -y -q ffmpeg fonts-noto-cjk ;;  # CJK font for annotate.py
+            Linux) sudo apt-get update -q && sudo apt-get install -y -q ffmpeg fonts-noto-cjk libegl1 libgles2 ;;  # CJK font for annotate.py; EGL/GLES for mediapipe
             macOS) brew install ffmpeg ;;
             Windows) choco install ffmpeg -y --no-progress ;;
           esac
