@@ -113,4 +113,18 @@ assert edge_skipped(np.zeros((0, 3)), N) == 0
 p = body(N); p[:, 0, 1] = 0.2; p[:, [27, 28], 1] = 0.9
 ev = np.array([[44 / 60, -20, 12], [100 / 60, -20, 12], [(N - 29) / 60, -20, 12]])
 assert edge_skipped(ev, N) == 2 and set(match(p, ev, A)[:, 0]) <= {100 / 60}
+assert edge_skipped(np.array([[np.nan, -20, 12], [44 / 60, -20, 12]]), N) == 1   # NaN time: not counted
+
+# T16: CLI prints exactly one stderr line for edge hits, same stdout as without them; nothing on stderr with none
+import subprocess, tempfile, cv2
+with tempfile.TemporaryDirectory() as d:
+    d = Path(d); np.save(d / "pose.npy", p)
+    vw = cv2.VideoWriter(str(d / "proxy.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 60, (960, 540)); vw.write(np.zeros((540, 960, 3), np.uint8)); vw.release()
+    def cli(e):
+        np.save(d / "events.npy", e)
+        return subprocess.run([sys.executable, str(Path(__file__).resolve().parent.parent / "tools" / "match.py"), str(d / "pose.npy"),
+                               str(d / "events.npy"), str(d / "out.npy"), "R"], capture_output=True, text=True, encoding="utf-8", check=True)
+    edge, plain = cli(ev), cli(ev[[1]])
+    assert len(edge.stderr.splitlines()) == 1 and "2 個擊球" in edge.stderr and plain.stderr == "", (edge.stderr, plain.stderr)
+    assert edge.stdout == plain.stdout, (edge.stdout, plain.stdout)
 print("ok")
