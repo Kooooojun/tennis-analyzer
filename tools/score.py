@@ -141,7 +141,7 @@ def check_session(strokes):
             ps, fl = sum(s.get(field) is True for s in g), sum(s.get(field) is False for s in g); n = len(g)
             out.append(dict(player=p, kind=kind, field=field, name=name, n=n, passed=ps, failed=fl, unclear=n - ps - fl, coverage=_r((ps + fl) / n, 2),
                             status="ok" if ps + fl >= MIN_DECIDED and (ps + fl) / n >= MIN_COVER else "資料不足", formula=rule,
-                            verified=field in VERIFIED and fl == 0))  # False verdicts were never checked against truth; the web greys unverified rows
+                            verified=field in VERIFIED and ps > 0 and fl == 0))  # needs >= 1 pass; False verdicts were never checked against truth. The web does not read this yet (greys every row)
     return out
 
 

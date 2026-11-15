@@ -232,4 +232,5 @@ r = {x["field"]: x for x in check_session([bh(True, True)] * 4)}
 assert r["bh_front_ok"]["verified"] is False and r["bh_elbow_ok"]["verified"] is False, r
 r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] * 4)[0]; assert r["verified"] is True, r
 r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] * 4 + [dict(kind="SV", serve_arm_straight=False, serve_arm_conf=0.9)])[0]; assert r["verified"] is False, r
+r = check_session([dict(kind="SV", serve_arm_straight=None, serve_arm_conf=0.9)] * 4)[0]; assert r["verified"] is False, r  # nothing decided, nothing verified
 print("verified tests ok")
