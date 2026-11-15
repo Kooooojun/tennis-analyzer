@@ -4,6 +4,8 @@
 import subprocess, sys
 from pathlib import Path
 
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # the out dir may be Chinese; Windows console is cp1252
+
 out = Path(sys.argv[1]); sec = sys.argv[2] if len(sys.argv) > 2 else "6"; wh = sys.argv[3] if len(sys.argv) > 3 else "1280x720"
 out.mkdir(parents=True, exist_ok=True)
 run = lambda *a: subprocess.run(["ffmpeg", "-v", "error", "-y", *a], check=True)
