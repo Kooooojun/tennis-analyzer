@@ -76,7 +76,7 @@
 | 2 | 3° | 125° |
 | 3 | 13° | 111° |
 
-重現：這是公開網路片，影片 ID 不放在 repo。npz 用 `testset/eval/angle_extract.py <影片 ID>` 產生（MediaPipe pose_heavy、VIDEO 模式、1920×1080、偵測／追蹤信心 0.3；輸出 `p2` 2D、`p3` world），擊球格 66、741、1055，`hand="R"`（`--front` 固定用右手）。
+重現：這是公開網路片，影片 ID 不放在 repo。npz 用本機的 `testset/eval/angle_extract.py <影片 ID>` 產生（這支腳本和 `testset/` 都不在 repo；MediaPipe pose_heavy、VIDEO 模式、1920×1080、偵測／追蹤信心 0.3；輸出 `p2` 2D、`p3` world），擊球格 66、741、1055，`hand="R"`（`--front` 固定用右手）。
 
 三拍都 ≥ 60°：正面機位也讀得到職業球員的轉肩。只有 3 拍、持拍手預設右手、沒排除非揮拍，只能推翻「正面一律讀 0」，不能當 `turn` 在正面準確的證據；舊反例（初學者正面 7 拍全 0°）的原因還是不確定。
 
