@@ -1,5 +1,5 @@
 """Run: .venv/bin/python tests/test_eval_hits.py"""
-import os, subprocess, sys, tempfile
+import os, subprocess, sys, tempfile, unittest
 from pathlib import Path
 import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
@@ -36,3 +36,26 @@ with tempfile.TemporaryDirectory() as tmp:
     r = cli("# span 0 2\nplayer,kind\nme,stroke\n")
     assert r.returncode != 0 and "Traceback" not in r.stderr, r.stderr
 print("ok")
+
+
+class InputAndSpanTests(unittest.TestCase):
+    def test_boundary_match_without_outside_false_positives(self):
+        self.assertEqual(score([10.], [], [10.02, 10.03, 12.], spans=[(0., 10.)]), ([(10., 10.02)], [], []))
+        self.assertEqual(score([0.], [], [-.02], spans=[(0., 10.)]), ([(0., -.02)], [], []))
+
+    def test_invalid_csv_reports_clean_error(self):
+        cases = ["t_sec,player,kind\n", "player,kind\n", "t_sec,player,kind\nbad,me,stroke\n",
+                 "t_sec,player,kind\n1,me\n", "t_sec,player,kind\n,me,stroke\n",
+                 "#span 0 10\nt_sec,player,kind\n1,me,stroke\n",
+                 "# spam 0 10\nt_sec,player,kind\n1,me,stroke\n",
+                 "# span: 0 10\nt_sec,player,kind\n1,me,stroke\n"]
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp); np.save(d / "events.npy", np.empty((0, 3)))
+            for text in cases:
+                with self.subTest(text=text):
+                    (d / "labels.csv").write_text(text, encoding="utf-8")
+                    r = subprocess.run([sys.executable, "tools/eval_hits.py", str(d / "labels.csv"), str(d / "events.npy")], capture_output=True, text=True, encoding="utf-8")
+                    self.assertNotEqual(r.returncode, 0, r.stdout)
+                    self.assertNotIn("Traceback", r.stderr)
+
+if __name__ == "__main__": unittest.main()

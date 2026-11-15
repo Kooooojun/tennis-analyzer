@@ -1,5 +1,5 @@
 """Run: .venv/bin/python tests/test_events.py"""
-import sys
+import sys, subprocess, tempfile, unittest
 from pathlib import Path
 import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
@@ -32,3 +32,91 @@ assert len(pick(slow, h, source_fps=24)) == len(slow)
 assert pick(slow[:1], h, source_fps=24) == []
 assert pick(rows[:1], hand, source_fps=60)  # existing callers retain peak-speed behavior
 print("ok")
+
+
+class CandidateTests(unittest.TestCase):
+    def test_window_front(self):
+        h = np.zeros(180); h[48:54] = 8
+        self.assertEqual(len(pick(rows[:1], h, source_fps=24)), 1)
+
+    def test_missing_samples_count_as_zero(self):
+        h = np.zeros(180); h[48:63] = np.nan; h[48] = 0; h[49:52] = 8
+        self.assertEqual(pick(rows[:1], h, source_fps=24), [])
+
+    def scene(self, speeds, broadband=None):
+        ts = 1 + np.arange(len(speeds)) * 2.; h = np.zeros(round((ts[-1] + 1) * 60))
+        for t, speed in zip(ts, speeds): h[round(t*60)-12:round(t*60)+3] = speed
+        return np.array([[t, -20, 12, bb] for t, bb in zip(ts, [9]*len(ts) if broadband is None else broadband)]), h
+
+    def test_ten_candidates_required(self):
+        r, h = self.scene([4]*10)
+        self.assertEqual(pick(r[:9], h, source_fps=24), [])
+        self.assertEqual(len(pick(r, h, source_fps=24)), 10)
+
+    def test_broadband_and_zero_speed_excluded(self):
+        r, h = self.scene([4]*10, [9]*9+[3.99])
+        self.assertEqual(pick(r, h, source_fps=24), [])
+        r, h = self.scene([4]*9+[0])
+        self.assertEqual(pick(r, h, source_fps=24), [])
+
+    def test_lower_and_upper_clamps(self):
+        r, h = self.scene([2]*10+[3])
+        self.assertEqual([x[0] for x in pick(r, h, source_fps=24)], [r[-1, 0]])
+        r, h = self.scene([12]*10+[6])
+        self.assertEqual(len(pick(r, h, source_fps=24, low=False)), 11)
+
+    def test_sustained_person_wins_over_peak_person(self):
+        r = np.array([[1., -20, 12, 9], [1.7, -20, 12, 9]])
+        h = np.zeros(180); people = np.zeros(180, dtype=int)
+        h[48:63] = h[90:105] = 8; h[60] = 30; people[60] = 1
+        self.assertEqual(len(pick(r, h, who=people, source_fps=24)), 1)
+
+    def test_tied_people_fall_back_to_peak(self):
+        r = np.array([[1., -20, 12, 9], [1.7, -20, 12, 9]])
+        h = np.zeros(180); people = np.zeros(180, dtype=int)
+        h[48:58] = h[90:105] = 8; people[53:58] = 1; h[55] = 30
+        self.assertEqual(len(pick(r, h, who=people, source_fps=24)), 2)
+
+
+class SourceGateTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory(); cls.d = Path(cls.tmp.name)
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=s=64x64:r=60:d=3", "-pix_fmt", "yuv420p", str(cls.d / "proxy.mp4")], check=True)
+        p = pose.copy(); p[:, 16, 0] = .6 + np.interp(np.arange(180), [0, 58, 60, 179], [0, 0, .08, .08])
+        np.save(cls.d / "pose.npy", p); np.save(cls.d / "ball.npy", np.full((180, 3), np.nan)); np.save(cls.d / "sounds.npy", rows[:1])
+
+    @classmethod
+    def tearDownClass(cls): cls.tmp.cleanup()
+
+    def cli(self, fps, method):
+        for name, value in (("src_fps.txt", fps), ("pose_method.txt", method)):
+            p = self.d / name
+            if p.exists():
+                if p.is_dir(): p.rmdir()
+                else: p.unlink()
+            if value == "directory": p.mkdir()
+            elif value is not None: p.write_text(value, encoding="utf-8")
+        return subprocess.run([sys.executable, "tools/events.py", *[str(self.d / f) for f in ("sounds.npy", "ball.npy", "pose.npy", "events.npy")]], capture_output=True, text=True, encoding="utf-8")
+
+    def test_pose_method_gate_and_source_fps(self):
+        r = self.cli(None, None); self.assertEqual(r.returncode, 0, r.stderr); baseline = np.load(self.d / "events.npy")
+        self.assertEqual(len(baseline), 1)
+        cases = [("24", None, False), ("24", "1", False), ("24", "2", True), ("24", "3", True),
+                 ("24", "2.0", False), ("24", "bad", False), ("24", "directory", False),
+                 ("24", "\ufeff2", True), ("\ufeff24", "2", True), ("60", "2", False), ("50", "2", False), (None, "2", False)]
+        for fps, method, active in cases:
+            with self.subTest(fps=fps, method=method):
+                r = self.cli(fps, method); self.assertEqual(r.returncode, 0, r.stderr)
+                result = np.load(self.d / "events.npy")
+                if active: self.assertEqual(len(result), 0)
+                else: self.assertTrue(np.array_equal(result, baseline))
+
+    def test_invalid_source_fps(self):
+        for fps in ("", "0", "-24", "nan", "inf", "bad"):
+            with self.subTest(fps=fps):
+                r = self.cli(fps, "2")
+                self.assertNotEqual(r.returncode, 0)
+                self.assertNotIn("Traceback", r.stderr)
+
+if __name__ == "__main__": unittest.main()

@@ -2,7 +2,7 @@
 # labels.csv: t_sec,player,kind with kind stroke | touch | unsure. Strokes are the targets. touch/unsure rows are ignore zones:
 # a detection within IGNORE s of one is neither right nor wrong. events.npy (or sounds.npy): rows whose first column is the hit time in seconds.
 # With [player], only that player's strokes are targets and the other players' rows become ignore zones.
-# Optional '# span start end' comments specify inclusive annotated intervals; predictions outside them are not scored.
+# Optional '# span start end' comments specify inclusive annotated intervals; outside predictions can match within TOL but never count as FP.
 import csv, sys
 import numpy as np
 
@@ -18,6 +18,8 @@ def read_labels(path):
             text = line.strip()
             if text.startswith("#"):
                 fields = text.split()
+                if text[1:].lstrip().lower().startswith(("span", "spam")) and fields[:2] != ["#", "span"]:
+                    raise ValueError("範圍註解格式必須是 # span 開始 結束")
                 if fields[:2] == ["#", "span"]:
                     if len(fields) != 4: raise ValueError("span 需要開始與結束秒數")
                     start, end = map(float, fields[2:])
@@ -25,8 +27,12 @@ def read_labels(path):
                         raise ValueError("span 必須是有限且遞增的非負秒數")
                     spans.append((start, end))
             else: lines.append(line)
-    rows = list(csv.DictReader(lines))
-    if rows and "t_sec" not in rows[0]: raise ValueError("標註缺少 t_sec 欄位")
+    reader = csv.DictReader(lines); rows = list(reader)
+    if not reader.fieldnames or "t_sec" not in reader.fieldnames: raise ValueError("標註缺少 t_sec 欄位")
+    if not rows: raise ValueError("標註沒有資料列")
+    for r in rows:
+        if None in r or any(value is None for value in r.values()): raise ValueError("標註資料列欄數不符")
+        if not np.isfinite(float(r["t_sec"])): raise ValueError("標註時間必須是有限秒數")
     if spans and any(not any(a <= float(r["t_sec"]) <= b for a, b in spans) for r in rows):
         raise ValueError("標註時間在 span 範圍外")
     return rows, spans or None
@@ -36,14 +42,16 @@ def score(targets, ignore, pred, tol=TOL, spans=None):
     """Greedy one-to-one matching within optional spans, closest first. Returns (tp [(label, pred)], fn, fp)."""
     if spans is not None:
         inside = lambda t: any(a <= t <= b for a, b in spans)
-        targets, ignore, pred = ([t for t in values if inside(t)] for values in (targets, ignore, pred))
+        targets, ignore = ([t for t in values if inside(t)] for values in (targets, ignore))
+        pred = [p for p in pred if any(a - tol <= p <= b + tol for a, b in spans)]
     pairs = sorted((abs(p - t), i, j) for i, t in enumerate(targets) for j, p in enumerate(pred) if abs(p - t) <= tol)
     used_t, used_p, tp = set(), set(), []
     for _, i, j in pairs:
         if i in used_t or j in used_p: continue
         used_t.add(i); used_p.add(j); tp.append((targets[i], pred[j]))
     fn = [t for i, t in enumerate(targets) if i not in used_t]
-    fp = [p for j, p in enumerate(pred) if j not in used_p and not any(abs(p - g) <= IGNORE for g in ignore)]
+    fp = [p for j, p in enumerate(pred) if j not in used_p and (spans is None or inside(p))
+          and not any(abs(p - g) <= IGNORE for g in ignore)]
     return sorted(tp), fn, fp
 
 

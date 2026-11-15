@@ -26,7 +26,10 @@ mirw = lambda W, sw: np.concatenate([-W[..., sw, :1], W[..., sw, 1:]], axis=-1) 
 def close(a, b, tol, tag):
     for k in a:
         x, y = a[k], b[k]
-        if x is None or y is None or isinstance(x, (bool, str)): assert x == y, (tag, k, x, y); continue
+        if k == "pose_jump_joints" and x is not None and y is not None:
+            # These labels name anatomical sides, so mirroring must swap them back before comparison.
+            x, y = sorted(x), sorted(("r" if j[0] == "l" else "l") + j[1:] if j[0] in "lr" else j for j in y)
+        if x is None or y is None or isinstance(x, (bool, str, list)): assert x == y, (tag, k, x, y); continue
         if k == "auto_kind": assert x == y, (tag, k, x, y); continue
         if x != x and y != y: continue  # NaN 對 NaN
         assert abs(x - y) <= tol.get(k, 0.011), (tag, k, x, y)

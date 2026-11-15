@@ -6,6 +6,7 @@
 # runner-up. There is no cooldown beyond that.
 # Two candidates 0.6-0.9 s apart are a hit and its bounce or wall echo: the one with more low band and a faster hand stays.
 # A slower swing (HAND_LO, a scoop or self-fed start) counts only with a loud low band one rally beat from a normal hit.
+# For method >=2 poses below 50 source fps, the normal gate may fall to 3; a gate <=HAND_LO deliberately disables the slow tier.
 # Rows are (t, pk, on) like before, t moved back by the sound lag, measured per video from ball turns (estimate_lag).
 # With several tracked people (pose_t1.npy.. next to pose.npy) any tracked person's fast wrist confirms a hit; people the
 # pose model never sees (far doubles players) still cannot confirm theirs. A wrist is not trusted while its person's hip
@@ -105,16 +106,22 @@ def estimate_lag(hit_t, turns, lo=-3, hi=15):
 
 def pick(rows, hand, lag=LAG, slack=0, who=None, low=True, source_fps=FPS):
     """rows (t, pk, on, bb) from hits.py, hand speed per frame -> [(t - lag, pk, on)] for the hits.
-    The hand must be fast in the 6 frames before the contact (sound - lag) up to 2 after; `slack` widens that window back
+    The hand window runs from 6 frames before contact (12 below 50 source fps) up to 2 after; `slack` widens it back
     in time when the lag is not known yet. `who` (per frame, from hands(.., who=True)) is whose wrist that was: a PAIR
     is only merged when it is the same person (two players can hit 0.7 s apart at the net). low=False skips the slow tier.
     Below 50 source fps, use sustained speed over 0.2 s: isolated interpolated pose spikes must not win sound suppression.
-    Calibrate that statistic from broadband moving candidates (at least 10), bounded to 3..HAND; otherwise keep HAND."""
+    Calibrate that statistic from broadband moving candidates (at least 10), bounded to 3..HAND; otherwise keep HAND.
+    A gate <=HAND_LO intentionally disables the slow tier. Callers must verify pose_method >=2 before passing low source fps."""
     def fast(t):
         f = int(round(t * FPS)) - lag; a = max(0, f - (12 if source_fps < 50 else 6) - slack); w = hand[a:max(0, f + 3)]
         if not len(w) or np.isnan(w).all(): return 0.0, -1
         speed = np.percentile(np.nan_to_num(w), 70) if source_fps < 50 else np.nanmax(w)
-        return speed, (-1 if who is None else int(who[a + np.nanargmax(w)]))
+        person = -1 if who is None else int(who[a + np.nanargmax(w)])
+        if source_fps < 50 and who is not None:
+            people, counts = np.unique(who[a:a + len(w)][w >= speed], return_counts=True)
+            winners = people[counts == counts.max()]
+            if len(winners) == 1: person = int(winners[0])
+        return speed, person
     cand = [(t, pk, on, bb, *fast(t)) for t, pk, on, bb in rows]
     gate = HAND
     if source_fps < 50:
@@ -134,14 +141,19 @@ def pick(rows, hand, lag=LAG, slack=0, who=None, low=True, source_fps=FPS):
 
 
 if __name__ == "__main__":
+    from platform_util import read_text, utf8_stdout
+    utf8_stdout()
     if len(sys.argv) != 5: sys.exit("usage: events.py <sounds.npy> <ball.npy> <pose.npy> <events.npy>")
     rows, pp = np.load(sys.argv[1]).reshape(-1, 4), Path(sys.argv[3])
     source_fps = FPS
     fps_file = pp.parent / "src_fps.txt"
     if fps_file.exists():
-        try: source_fps = float(fps_file.read_text(encoding="utf-8").strip())
+        try: source_fps = float(read_text(fps_file).strip())
         except (OSError, ValueError): sys.exit("無法讀取來源 fps")
         if not np.isfinite(source_fps) or source_fps <= 0: sys.exit("來源 fps 必須是有限的正數")
+    try: method = int(read_text(pp.parent / "pose_method.txt").strip())
+    except (OSError, ValueError, SystemExit): method = 0
+    if method < 2: source_fps = FPS  # Old duplicated-frame poses require the original peak-speed rule.
     poses = [np.load(q).astype(np.float64) for q in [pp, *sorted(pp.parent.glob(pp.stem + "_t*.npy"))]]
     w, h = size(pp.parent / "proxy.mp4"); ball = np.load(sys.argv[2]); n = min(len(ball), len(poses[0]))
     hand, who = hands(poses, w / h, who=True)
