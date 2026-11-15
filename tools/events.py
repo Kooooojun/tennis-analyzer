@@ -119,8 +119,9 @@ def pick(rows, hand, lag=LAG, slack=0, who=None, low=True, source_fps=FPS):
         person = -1 if who is None else int(who[a + np.nanargmax(w)])
         if source_fps < 50 and who is not None:
             people, counts = np.unique(who[a:a + len(w)][w >= speed], return_counts=True)
-            winners = people[counts == counts.max()]
-            if len(winners) == 1: person = int(winners[0])
+            if len(counts):
+                winners = people[counts == counts.max()]
+                if len(winners) == 1: person = int(winners[0])
         return speed, person
     cand = [(t, pk, on, bb, *fast(t)) for t, pk, on, bb in rows]
     gate = HAND

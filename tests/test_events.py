@@ -62,6 +62,8 @@ class CandidateTests(unittest.TestCase):
     def test_lower_and_upper_clamps(self):
         r, h = self.scene([2]*10+[3])
         self.assertEqual([x[0] for x in pick(r, h, source_fps=24)], [r[-1, 0]])
+        r, h = self.scene([2]*10+[2.7])
+        self.assertEqual(pick(r, h, source_fps=24), [])
         r, h = self.scene([12]*10+[6])
         self.assertEqual(len(pick(r, h, source_fps=24, low=False)), 11)
 
@@ -76,6 +78,10 @@ class CandidateTests(unittest.TestCase):
         h = np.zeros(180); people = np.zeros(180, dtype=int)
         h[48:58] = h[90:105] = 8; people[53:58] = 1; h[55] = 30
         self.assertEqual(len(pick(r, h, who=people, source_fps=24)), 2)
+
+    def test_no_eligible_person_samples(self):
+        h = np.full(180, np.nan); h[48] = -1
+        self.assertEqual(pick(rows[:1], h, who=np.zeros(180, dtype=int), source_fps=24), [])
 
 
 class SourceGateTests(unittest.TestCase):
