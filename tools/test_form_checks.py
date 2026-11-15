@@ -27,8 +27,8 @@ fr, W = clip({}); r = form_checks(fr, c, SIZE, W, "FH"); assert r["finish"] < 0,
 # 4. reach (SV): racket wrist 0.6 m above shoulders = 1.2 L at contact
 fr, W = clip({c + i: dict(rw=(0.2, -0.6, 0)) for i in range(-3, 4)}); r = form_checks(fr, c, SIZE, W, "SV"); assert abs(r["reach"] - 1.2) < 0.05, r
 assert r["finish"] is None, r
-# 5. tilt: racket (right) shoulder 0.1 m lower than left, shoulder width 0.4 -> asin(0.1 / hypot(0.4, 0.1)) = 14.0 deg; left-hand player is the mirror
-sh = dict(rs=(0.2, 0.1, 0), ls=(-0.2, 0, 0)); fr, W = clip({i: sh for i in range(c - 8, c - 2)})
+# 5. tilt (peak over c-30..c-5, so a trophy-time dip counts even though the shoulders level out near contact; hence the whole window is set): racket (right) shoulder 0.1 m lower than left, shoulder width 0.4 -> asin(0.1 / hypot(0.4, 0.1)) = 14.0 deg; left-hand player is the mirror
+sh = dict(rs=(0.2, 0.1, 0), ls=(-0.2, 0, 0)); fr, W = clip({i: sh for i in range(c - 30, c - 4)})
 r = form_checks(fr, c, SIZE, W, "SV"); assert abs(r["tilt"] - 14.0) < 0.5, r
 r = form_checks(fr, c, SIZE, W, "SV", hand="L"); assert abs(r["tilt"] + 14.0) < 0.5, r
 r = form_checks(fr, c, SIZE, None, "SV"); assert abs(r["tilt"] - 14.0) < 1.0, r  # 2D fallback gives the same on an orthographic front view
