@@ -25,9 +25,11 @@ def tile(cap, Ps, f, label, mark=None):
     cs = [np.nanmean(P[max(0, f - 5):f + 6, [11, 12, 23, 24], :2], axis=(0, 1)) * (W, H) for P in Ps]
     pts = np.array([c for c in cs if np.isfinite(c).all()]).reshape(-1, 2)
     lo, hi = (pts.min(0), pts.max(0)) if len(pts) else (np.array([W / 2, H * 5 / 8]),) * 2
-    side = int(min(max(220, *(hi - lo + 240)), H, W)); cx, cy = (lo + hi) / 2
-    x0 = int(min(max(cx - side / 2, 0), W - side)); y0 = int(min(max(cy - side * 0.6, 0), H - side))
-    t = cv2.resize(im[y0:y0 + side, x0:x0 + side], (200, 200)) if ok else np.zeros((200, 200, 3), np.uint8)
+    side = int(min(max(220, *(hi - lo + 240)), max(H, W))); cx, cy = (lo + hi) / 2
+    x0 = int(min(max(cx - side / 2, 0), W - side)) if side <= W else int(cx - side / 2)  # wider than the frame: black bars, never cut a player off
+    y0 = int(min(max(cy - side * 0.6, 0), H - side)) if side <= H else int(cy - side / 2)
+    if ok: im = cv2.copyMakeBorder(im, side, side, side, side, cv2.BORDER_CONSTANT)
+    t = cv2.resize(im[y0 + side:y0 + 2 * side, x0 + side:x0 + 2 * side], (200, 200)) if ok else np.zeros((200, 200, 3), np.uint8)
     if mark is not None and len(Ps) > 1 and np.isfinite(cs[mark]).all():
         cv2.circle(t, (int((cs[mark][0] - x0) * 200 / side), int((cs[mark][1] - y0) * 200 / side)), 5, (0, 255, 255), -1)
     cv2.putText(t, label, (3, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
