@@ -581,7 +581,7 @@ function citeText(c){  // one cite from notes.json (docs/scoring.md §8) in plai
 const fpsLow = d => d.srcFps!=null && d.srcFps<50;  // build_site.py srcFps: lowest source fps from prep.sh; missing = old session, not shown
 function drawOverview(){
   const d=DAYS[DAY], sc=d.scores, r1=x=>x==null?"–":x.toFixed(1), multi=d.players.length>1;
-  const counts=["FH","BH","SV","OH"].map(k=>[k,ALL.filter(s=>s.kind===k).length]).filter(([,n])=>n).map(([k,n])=>`${NAMES[k]||k} ${n}`).join("、");
+  const counts=["FH","BH","SV","OH"].map(k=>[k,ALL.filter(s=>s.kind===k).length]).filter(([,n])=>n).map(([k,n])=>`${esc(NAMES[k]||k)} ${n}`).join("、");
   let h=`<h2>${esc(d.label)} 總覽</h2><p class="hint" style="margin:0 0 10px">${esc(d.camera||"沒寫鏡頭位置")} · 共 ${ALL.length} 拍（${counts}）${multi?` · ${d.players.length} 位玩家`:""}</p>`;
   if(fpsLow(d)) h+=`<p class="caveat" style="margin:0 0 10px">來源 ${d.srcFps} fps：proxy 補成 60 fps（重複影格），速度類數字（手速、準備時間）沒驗證過。下次用 60 fps 拍。</p>`;
   const hn=handNote(ALL); if(hn) h+=`<p class="caveat" style="margin:0 0 10px">${esc(hn)}</p>`;
@@ -594,7 +594,7 @@ function drawOverview(){
         return `<span>${ITEM[m]||m}</span><span class="bar"><i style="width:${(s??0)*10}%"></i></span><span class="num" title="中位數 ${x.median??"–"}，${x.n} 拍${m.startsWith("knee")?`，膝角來源 ${g.knee_src==="knee3d"?"3D":"2D"}`:""}">${val}</span>`;
       }).join("");
       const flags=(window.TREND||[]).filter(t=>t.player===g.player&&t.kind===g.kind&&t.history.at(-1)?.session===d.id).flatMap(t=>t.flags);
-      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?esc(PN(g.player))+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}${g.n<5?`<br><b class="few">拍數少，參考就好</b>`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
+      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?esc(PN(g.player))+" · ":""}${esc(NAMES[g.kind]||g.kind)} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}${g.n<5?`<br><b class="few">拍數少，參考就好</b>`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
     }).join("")+`</div>`;
     const ck=(sc.checks||[]).filter(c=>(c.passed||0)+(c.failed||0)+(c.unclear||0)>0);  // reference only: low-coverage checks are the ones that need the "mostly unclear" warning
     if(ck.length) h+=`<h3>姿勢檢查・參考（未驗證）</h3><ul class="flags armref">`+ck.map(c=>`<li>${multi?esc(PN(c.player))+" · ":""}${esc(c.name)}：${(w=>`${w[0]} ${c.passed||0}、${w[1]} ${c.failed||0}`)((c.field?c.field==="bh_front_ok":/身前/.test(c.name))?["判在身前","判不在身前"]:c.field||/伸直|彎/.test(c.name)?["判伸直","判彎"]:["判通過","判沒通過"])}、看不出來 ${c.unclear||0}${(c.unclear||0)>((c.passed||0)+(c.failed||0)+(c.unclear||0))/2?"，一半以上看不出來":""}</li>`).join("")+`</ul><p class="caveat">這幾項沒有足夠驗證（彎手臂在測試資料裡一拍都沒抓到），看不出來的拍可能有問題，不要當成沒問題。</p>`;
@@ -725,7 +725,7 @@ function drawList(){
     const b=document.createElement("button"); b.dataset.id=s.id;
     const bad = s.kind==="FH" && s.knee>150;
     const dn=drillName(s);
-    b.innerHTML=`<span class="row"><span class="tag ${s.kind}">${NAMES[s.kind]}</span><span class="clock">${esc(s.clock)}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":kSrcOf(s)+" "+Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
+    b.innerHTML=`<span class="row"><span class="tag ${esc(s.kind)}">${esc(NAMES[s.kind]||s.kind)}</span><span class="clock">${esc(s.clock)}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":kSrcOf(s)+" "+Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
     b.title=strokeLabel(s);
     b.onclick=()=>load(s.id,false); box.append(b);
   }
@@ -755,14 +755,17 @@ for(const vid of [$("vA"),$("vB")]){ vid._near=false; NEAR.observe(vid); }
 function watchStall(vid){
   const m=document.createElement("button"); m.type="button"; m.className="vid-msg"; m.hidden=true; vid.parentElement.append(m);
   let sig="", since=0, wait=0, tries=0, src="";
-  const reload=()=>{ const t=vid.readyState?vid.currentTime:null, play=!vid.paused, url=vid.currentSrc; tries++; since=Date.now();  // never loaded: load()'s own loadedmetadata handler seeks
-    vid.addEventListener("loadedmetadata",()=>{ if(t!=null) vid.currentTime=t; if(!play) vid.pause(); },{once:true});
-    vid.src=url; playSafe(vid,vid.parentElement.querySelector(".badge")); };  // play() so iOS fetches; paused again once metadata is in
+  let restore=null;  // the pending time restore of the last reload; dropped when the clip changes or reloads again
+  const reload=(tap=false)=>{ const t=vid.readyState?vid.currentTime:null, play=!vid.paused, url=vid.currentSrc; tries++; since=Date.now();  // never loaded: load()'s own loadedmetadata handler seeks
+    if(restore) vid.removeEventListener("loadedmetadata",restore);
+    restore=()=>{ restore=null; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t; if(!play) vid.pause(); };
+    vid.addEventListener("loadedmetadata",restore,{once:true});
+    vid.src=url; if(play||tap) playSafe(vid,vid.parentElement.querySelector(".badge")); else vid.load(); };
   const fail=()=>{ m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; };
-  m.onclick=()=>{ delete m.dataset.fail; tries=0; m.textContent="影片下載中…"; reload(); };
+  m.onclick=()=>{ delete m.dataset.fail; tries=0; m.textContent="影片下載中…"; reload(true); };
   setInterval(()=>{
     if(!vid.currentSrc||!vid.offsetParent) return;
-    if(vid.currentSrc!==src){ src=vid.currentSrc; tries=0; wait=0; delete m.dataset.fail; m.hidden=true; }
+    if(vid.currentSrc!==src){ src=vid.currentSrc; if(restore){ vid.removeEventListener("loadedmetadata",restore); restore=null; } tries=0; wait=0; delete m.dataset.fail; m.hidden=true; }
     const now=Date.now();
     if(vid.error){ if(m.dataset.fail) return; if(tries<1&&now-since>=2000) reload(); else if(tries>=1) fail(); return; }
     const need=!(vid._blocked&&!vid.readyState)&&(vid.readyState<1||vid.seeking||!vid.paused&&vid.readyState<3);  // metadata only and idle is fine: preload=metadata, and a compare clip waits for its partner to scroll into view
@@ -982,10 +985,10 @@ function drawHome(){
     const tr=T.filter(t=>t.player===p);
     const rows=days.map(d=>{
       const g=(d.scores?.groups||[]).filter(g=>g.player===p), n=d.data.filter(s=>who(s)===p).length;
-      const sc=g.length?g.map(g=>`${NAMES[g.kind]||g.kind} <b>${g.total==null?"–":g.total.toFixed(1)}</b>`).join(" "):"未評分";
+      const sc=g.length?g.map(g=>`${esc(NAMES[g.kind]||g.kind)} <b>${g.total==null?"–":g.total.toFixed(1)}</b>`).join(" "):"未評分";
       return `<li><a href="#d${encodeURIComponent(d.id)}/overview" data-p="${esc(p)}"><b>${esc(d.label)}</b><span class="sc">${sc}</span><span class="meta">${n} 拍 · ${esc(d.camera||"沒寫鏡頭")}</span></a></li>`;
     }).join("");
-    const trend=tr.map(t=>`<h3>${NAMES[t.kind]||t.kind}・分數走勢</h3>`+(t.history.length<2?`<p class="hint">只有 ${t.history.length} 場有評分，還不能看走勢。</p>`:`<svg class="spark" data-player="${esc(p)}" data-kind="${t.kind}"></svg>`)+flagList(t.flags)).join("");
+    const trend=tr.map(t=>`<h3>${esc(NAMES[t.kind]||t.kind)}・分數走勢</h3>`+(t.history.length<2?`<p class="hint">只有 ${t.history.length} 場有評分，還不能看走勢。</p>`:`<svg class="spark" data-player="${esc(p)}" data-kind="${esc(t.kind)}"></svg>`)+flagList(t.flags)).join("");
     return `<div class="card"><h2>${esc(PN(p))}</h2><p class="hint" style="margin:0 0 6px">${days.length} 場</p><ul class="sess">${rows}</ul>${trend||`<p class="hint">還沒有評分趨勢（跑 tools/score.py 和 tools/trend.py）。</p>`}</div>`;
   }).join("")+`</div><p class="caveat">分數走勢只比同一個鏡頭位置的場次（docs/scoring.md §6）。缺點改善 = 原本低於 6 分的項目進步；優點退步 = 原本 8 分以上的項目退步。</p>`;
   $("home").querySelectorAll("a[data-p]").forEach(a=>a.addEventListener("click",()=>{ pfilter=a.dataset.p; }));

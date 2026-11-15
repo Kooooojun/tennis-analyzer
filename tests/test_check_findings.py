@@ -86,4 +86,12 @@ assert errs(f(c1, "膝蓋 120.0°")) == []  # ° keeps its 0.5 tolerance
 assert errs(f(c1, "膝蓋落在 154–156°"))  # a degree range is still checked
 S6 = [st(contact_fwd=-0.2)]
 assert check(dict(findings=[f([dict(stroke=1, field="contact_fwd", value=-0.2)], "擊球位置 -0.20")]), S6, dict(groups=score_session(S6, False))) == []  # sign kept
+# hyphen between two numbers is a range, not a minus sign; ° ranges check both ends; times and thousands are not decimals
+c2 = [dict(stroke=1, field="knee", value=120), dict(stroke=3, field="knee", value=140)]
+assert errs(f(c2, "膝蓋 120°-140°")) == []
+assert errs(f(c2, "膝蓋 120-140°")) == []
+assert errs(f(c1, "膝蓋 120°-130°"))  # 130 has no cite
+assert errs(f(c1, "膝蓋 110–120°"))   # lower end checked too
+assert errs(f(c1, "目標 75%-85%")) == []
+assert errs(f(c1, "在 1:04.8 那拍，共 1,234.5 次")) == []
 print("ok")

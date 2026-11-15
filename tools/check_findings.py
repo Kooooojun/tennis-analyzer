@@ -75,8 +75,11 @@ def check(notes, strokes, scores):
         errs += [r for r in (_cite(c, strokes, scores.get("groups", []), scores.get("show_open") is True) for c in cites) if r]
         vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
         text = f.get("text", "")
-        bare = re.sub(r"#\d+|\d+(?:\.\d+)?\s*[–~～-]\s*\d+(?:\.\d+)?(?!\d|\.\d|\s*°)", " ", text)  # stroke numbers and target ranges (0.3–0.8) are not citations
-        for m in re.finditer(r"(?<![\d.])([-−]?\d+(?:\.\d+)?)(\s*(?:°|%|％|秒))?", bare):
+        U = r"(?:°|%|％|秒)"
+        # target ranges (0.3–0.8, 75%-85%) are not citations, but a degree range (120–130°) cites both ends
+        rng = lambda m: f" {m.group(1)}° {m.group(3)}° " if "°" in (m.group(2) or "") + (m.group(4) or "") else " "
+        bare = re.sub(rf"#\d+|(\d+(?:\.\d+)?)\s*({U})?\s*[–~～-]\s*(\d+(?:\.\d+)?)\s*({U})?", lambda m: " " if m.group(0).startswith("#") else rng(m), text)
+        for m in re.finditer(rf"(?<![\d.:,°%％])([-−]?\d+(?:\.\d+)?)(\s*{U})?", bare):  # 1:04.8 and 1,234.5 are not decimals
             x, u = m.group(1).replace("−", "-"), (m.group(2) or "").strip()
             if not u and "." not in x: continue  # plain integers (62 拍, 3 次) are counts
             ok = (lambda v: abs(float(x) - v) <= 0.5 + 1e-9) if u == "°" else \
