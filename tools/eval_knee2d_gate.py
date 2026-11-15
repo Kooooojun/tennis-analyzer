@@ -52,13 +52,14 @@ def measure():
             if not 48 <= g < len(P) - 6: continue
             k2 = _knee(xy, FULL, g)
             out.append(dict(cam=cam, partner=r["partner"], t=r["t"], g=g, ref=r["knee_ref"], k2=k2, err=abs(k2 - r["knee_ref"]) if np.isfinite(k2) else np.nan,
-                            xy=xy, hand=r["hand"]))
+                            xy=xy, vis=P[:, :, 2], hand=r["hand"]))
     return out, al
 
 
 def gate(o, limb):
     old, metrics.LIMB_FULL = metrics.LIMB_FULL, limb
-    try: return kinematics(o["xy"], FULL, o["g"], o["hand"])["knee2d_ok"]
+    a = max(0, o["g"] - 90); xk = o["xy"][a:o["g"] + 61].copy(); xk[o["vis"][a:o["g"] + 61] < metrics.FORM_VIS_MIN] = np.nan  # same mask as metrics._core
+    try: return kinematics(xk, FULL, o["g"] - a, o["hand"])["knee2d_ok"]
     finally: metrics.LIMB_FULL = old
 
 
