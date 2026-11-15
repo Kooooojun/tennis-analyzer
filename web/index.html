@@ -685,6 +685,8 @@ const v=$("v"), cv=$("cv"), seek=$("seek");
 const OPT={skel:true, guides:true, trail:true};
 let S=null, cur=0, N=150, rate=0.25;
 const clipSrc=s=>s.src;
+// iOS Safari ignores preload and fetches nothing until play(), so the stage stays black; a muted play+pause makes it load (no-op elsewhere)
+const wake=vid=>{ const p=vid.play(); if(p) p.then(()=>vid.pause(),()=>{}); };
 function load(id, scroll){
   S=ALL[id]; N=S.frames.length; seek.max=N-1;
   S.phases=[{f:S.contact-48,name:"準備"},...(S.prep!=null?[{f:S.contact-Math.round(S.prep*FPS),name:"引拍完成"}]:[]),{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}].sort((a,b)=>a.f-b.f);  // 引拍完成 can fall before 準備 or after 向前揮拍
@@ -715,7 +717,7 @@ function load(id, scroll){
   $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]);
   v.src=clipSrc(S); v.playbackRate=rate;
   const start=()=>goto(S.contact-48);
-  if(v.readyState>=1 && v.currentSrc.endsWith(clipSrc(S))) start(); else v.addEventListener("loadedmetadata",start,{once:true});
+  if(v.readyState>=1 && v.currentSrc.endsWith(clipSrc(S))) start(); else { v.addEventListener("loadedmetadata",start,{once:true}); wake(v); }
   markList(); markStrips(); drawNotes();
   if(scroll && !PLAYER_TABS.includes(TAB)) go(DAY,"stroke");
   if(scroll && matchMedia("(max-width:820px)").matches) scrollTo({top:0,behavior:"smooth"});
@@ -783,7 +785,7 @@ function cmpLoad(a,b){
   A=a; B=b; $("selA").value=sKey(A); $("selB").value=sKey(B); $("capA").innerHTML=capFor(A); $("capB").innerHTML=capFor(B);
   [...$("presets").children].forEach(x=>x.classList.toggle("on",dayNo(...x._p.a)===A&&dayNo(...x._p.b)===B));
   let ready=0; const go=()=>{ if(++ready===2) cmpGoto(A.contact-48); };
-  for(const [vid,s] of [[vA,A],[vB,B]]){ vid.pause(); vid.playbackRate=cmpRate; vid.src=clipSrc(s); vid.addEventListener("loadedmetadata",go,{once:true}); }
+  for(const [vid,s] of [[vA,A],[vB,B]]){ vid.pause(); vid.playbackRate=cmpRate; vid.src=clipSrc(s); vid.addEventListener("loadedmetadata",go,{once:true}); wake(vid); }
 }
 function cmpRender(f){
   if(!A||!B) return; cmpCur=f; cmpSeek.value=f;
