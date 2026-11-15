@@ -8,6 +8,18 @@ WRIST = {"R": 16, "L": 15}
 H_MIN = 0.06   # nose-to-ankle in portrait-frame heights
 SEEN = 0.3     # share of the 31 frames around the hit with the person tall enough and the wrist visible
 NAN_MAX = 0.8  # share of the 25 wrist speeds around the hit allowed missing (at least 5 left)
+HEAD, TAIL = 45, 30  # frames at the start / end of a clip where hits are dropped (60 fps: 0.75 s / 0.5 s)
+
+
+def _edge(f, N):
+    return (f < HEAD) | (f > N - TAIL)
+
+
+def edge_skipped(O, N):
+    """How many hit events match() drops for being in the first HEAD or last TAIL frames of an N-frame clip.
+    NaN times are not counted (match() raises on them: int(round(nan)))."""
+    t = np.asarray(O, dtype=np.float64).reshape(-1, 3)[:, 0]
+    return int(_edge(np.round(t[np.isfinite(t)] * 60).astype(int), N).sum())
 
 
 def match(P, O, A, hand="R"):
@@ -24,7 +36,7 @@ def match(P, O, A, hand="R"):
         out = []
         for t, pk, on in O:
             f = int(round(t * 60))
-            if f < 45 or f > N - 30: continue  # not f-15: candidates.py swing() reads f-30.. and would wrap to the end
+            if _edge(f, N): continue  # not f-15: candidates.py swing() reads f-30.. and would wrap to the end
             win = v[f - 12:f + 13]
             # only the frames the features use must be seen: far players are tracked in fragments (often 20-40% of a
             # second), and the hitter's fragment usually covers the hit itself
@@ -36,9 +48,14 @@ def match(P, O, A, hand="R"):
 
 if __name__ == "__main__":
     import cv2
+    from platform_util import utf8_stdout
+    utf8_stdout()
     if len(sys.argv) not in (4, 5): sys.exit("usage: match.py <pose.npy> <events.npy> <out.npy> [R|L]")
     c = cv2.VideoCapture(str(Path(sys.argv[1]).parent / "proxy.mp4")); A = np.array([c.get(cv2.CAP_PROP_FRAME_WIDTH), c.get(cv2.CAP_PROP_FRAME_HEIGHT)]) / 540; c.release()
     if not A.all(): sys.exit(f"cannot read {Path(sys.argv[1]).parent / 'proxy.mp4'}")
-    out = match(np.load(sys.argv[1]), np.load(sys.argv[2]), A, sys.argv[4] if len(sys.argv) > 4 else "R")
+    P, E = np.load(sys.argv[1]), np.load(sys.argv[2])
+    out = match(P, E, A, sys.argv[4] if len(sys.argv) > 4 else "R")
+    n = edge_skipped(E, len(P))  # CLI only: candidates.py calls match() per person and hand, it would repeat
+    if n: print(f"頭 {HEAD / 60:g} 秒／尾 {TAIL / 60:g} 秒內有 {n} 個擊球沒算（影片太靠近邊界" + ("，影片太短" if len(P) < HEAD + TAIL else "") + "）", file=sys.stderr)
     print(len(out), "events with player in frame;", " ".join(f"arc>{q}: {(out[:, 4] > q).sum()}" for q in (0.5, 1, 1.5, 2, 2.5, 3)))
     np.save(sys.argv[3], out)

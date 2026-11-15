@@ -66,14 +66,12 @@ print("猜慣用手 OK", h, ratio)
 
 # 3b. 多人：candidates.py 用每人自己的持拍手腕算 match / swing（左手玩家鏡像後要跟右手原資料相同）
 from match import match, WRIST
-import ast
 E = np.load(ROOT / "work/wall-1/IMG_8460/events.npy"); A = np.array([960, 540]) / 540
 for v in ("pose.npy", "pose_t1.npy"):
     Q = np.load(ROOT / "work/wall-1/IMG_8460" / v).astype(float); a = match(Q, E, A, "R"); b = match(mir(Q, SW33), E, A, "L")
     assert len(a) and np.array_equal(a, b, equal_nan=True), v
     assert not np.array_equal(a, match(mir(Q, SW33), E, A, "R"), equal_nan=True), "對照組：左手資料當右手應該不同"
-src = (ROOT / "tools/candidates.py").read_text(encoding="utf-8"); fn = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "swing")
-exec(ast.get_source_segment(src, fn))
+from attrib import swing
 f0 = [int(round(t * 60)) for t in E[:, 0] if 30 < t * 60 < len(Q) - 30]
 assert all(abs(swing(Q, f, A) - swing(mir(Q, SW33), f, A, WRIST["L"])) < 1e-9 for f in f0)
 print("多人 match/swing 鏡像 OK", len(a), "個擊球事件")

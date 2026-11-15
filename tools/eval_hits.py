@@ -1,6 +1,6 @@
-# eval_hits.py <labels.csv> <hits.npy> [player] — score detected hits against hand labels (one-to-one, nearest first).
+# eval_hits.py <labels.csv> <events.npy> [player] — score detected hits against hand labels (one-to-one, nearest first).
 # labels.csv: t_sec,player,kind with kind stroke | touch | unsure. Strokes are the targets. touch/unsure rows are ignore zones:
-# a detection within IGNORE s of one is neither right nor wrong. hits.npy: rows whose first column is the hit time in seconds.
+# a detection within IGNORE s of one is neither right nor wrong. events.npy (or sounds.npy): rows whose first column is the hit time in seconds.
 # With [player], only that player's strokes are targets and the other players' rows become ignore zones.
 import csv, sys
 import numpy as np
@@ -31,7 +31,7 @@ def self_test():
 
 if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]: self_test(); sys.exit(print("ok"))
-    if len(sys.argv) not in (3, 4): sys.exit("usage: eval_hits.py <labels.csv> <hits.npy> [player]")
+    if len(sys.argv) not in (3, 4): sys.exit("usage: eval_hits.py <labels.csv> <events.npy> [player]")
     rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8-sig", newline="")))
     who = sys.argv[3] if len(sys.argv) == 4 else None
     is_target = lambda r: r["kind"] == "stroke" and (who is None or r["player"] == who)

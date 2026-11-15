@@ -184,7 +184,7 @@ def _hand(J, hand):
 def _core(xy, vis, c, J, world=None, hand="R", prev=None):
     """J maps names to landmark indices for this array layout. world: optional (frames, n, 3) metres, same layout, for knee3d.
     knee = 2D knee (unchanged definition); knee3d = same window/percentile on 3D angles, None without world data.
-    hand: racket hand, "R" or "L" (per-player setting, work/profiles.json); everything with the hitting arm follows it."""
+    hand: racket hand, "R" or "L" (per-player setting: work/<s>/profiles.json, names it does not list fall back to work/profiles.json); everything with the hitting arm follows it."""
     az = cam_az(world, J, range(c - 48, c - 5)) if world is not None and c >= 48 else None  # knee window; before _hand, which swaps ls/rs
     J = _hand(J, hand)
     L = np.linalg.norm((xy[:, J['ls']] + xy[:, J['rs']]) / 2 - (xy[:, J['lh']] + xy[:, J['rh']]) / 2, axis=1)

@@ -1,6 +1,7 @@
 # assemble.py <session> — labels.txt + cands.json -> work/<s>/strokes_all.json (one entry per labelled stroke, with metrics)
 import collections, hashlib, json, sys, numpy as np
-from common import session, work, load, save, size, track_file, players, load_profiles, profile_for
+from common import session, work, load, save, size, track_file, players, profile_for
+from profiles import load_session_profiles
 from metrics import measure_full, hand_gate
 from kind import PREFILL_MIN
 from platform_util import read_text
@@ -37,6 +38,14 @@ def bulk_warning(rows):
                 "re-check every sheet and keep a line only where you see the ball on the strings or just leaving them (ignore this if every line really is a hit)")
 
 
+def rename_warning(rows, C, who, hands):
+    """A warning when '@name' moved a FH/BH line to someone whose hand differs from the hand its pre-fill was computed with
+    (cands.json 'hand' = the original player's profile hand; None = nothing was pre-filled). Only a hint: nothing is changed."""
+    idx = [int(r[0]) for r in rows if r[1] in ("FH", "BH") and who[int(r[0])] not in (None, C[int(r[0])].get("player")) and C[int(r[0])].get("hand") and hands.get(who[int(r[0])]) not in (None, C[int(r[0])]["hand"])]
+    if idx:
+        return f"WARNING: lines {', '.join(map(str, idx))} were renamed to a player with the other racket hand: their FH/BH pre-fill was worked out for the original player's hand (it mirrors). Check the kind on those sheets again"
+
+
 player_of = lambda i, who, C: who[i] or C[i].get("player") or "me"  # '@name' first; null / missing player = me
 
 
@@ -56,22 +65,23 @@ def main():
         if c["v"] not in SZ: SZ[c["v"]] = size(Wd / c["v"] / "proxy.mp4")
         return key
     name = lambda i: player_of(i, who, C)
-    # Racket hand / backhand type per player: work/profiles.json first, else guessed from this session's video (flagged hand_guess);
+    # Racket hand / backhand type per player: work/<s>/profiles.json, then work/profiles.json (per name), else guessed from this session's video (flagged hand_guess);
     # an unsure guess stops here: a wrong hand mirrors FH/BH, elbow and contact checks for every stroke
-    PROF = load_profiles(); H = {}; vids = {}; unsure = {}
+    PROF, WHERE = load_session_profiles(s); H = {}; vids = {}; unsure = {}
     for r in rows:
         if r[1] != "x": c = C[int(r[0])]; vids.setdefault(name(int(r[0])), {}).setdefault(pose(c), []).append(c["t"])
     for nm, cs in vids.items():
         p = profile_for(PROF, nm)
-        if p: H[nm] = dict(hand=p["hand"], hand_guess=False, backhand=p["backhand"]); print(f"player {nm}: hand {p['hand']}, backhand {p['backhand']} (work/profiles.json)")
+        if p: H[nm] = dict(hand=p["hand"], hand_guess=False, backhand=p["backhand"]); print(f"player {nm}: hand {p['hand']}, backhand {p['backhand']} ({WHERE[nm]})")
         else:
             g, ratio, why = hand_gate([P[k] for k in cs], [SZ[k[0]] for k in cs], list(cs.values()))
             if g is None: unsure[nm] = why; continue
             H[nm] = dict(hand=g, hand_guess=True, backhand=None)
-            print(f"player {nm}: hand {g} GUESSED (wrist speed ratio {ratio}, wrist height agrees). Ask the user for the hand and backhand type, then write work/profiles.json: " + json.dumps({nm: {"hand": g, "backhand": "two"}}))
+            print(f"player {nm}: hand {g} GUESSED (wrist speed ratio {ratio}, wrist height agrees). Ask the user for the hand and backhand type, then write work/<s>/profiles.json: " + json.dumps({nm: {"hand": g, "backhand": "two"}}))
     if unsure:
-        sys.exit("cannot tell the racket hand of " + "; ".join(f"{nm} ({why})" for nm, why in unsure.items()) + ". Ask the user, then write work/profiles.json, e.g. "
+        sys.exit("cannot tell the racket hand of " + "; ".join(f"{nm} ({why})" for nm, why in unsure.items()) + ". Ask the user, then write work/<s>/profiles.json (or work/profiles.json when the hand is the same in every session), e.g. "
                  + json.dumps({nm: {"hand": "R", "backhand": "two"} for nm in unsure}) + " and re-run")
+    if w := rename_warning(rows, C, who, {n: h["hand"] for n, h in H.items()}): print(w)
     kept = [(C[int(r[0])]["v"], name(int(r[0])), C[int(r[0])]["t"]) for r in rows if r[1] != "x"]  # prep stops at the same player's previous hit
     for r in sorted(rows, key=lambda r: int(r[0])):
         if r[1] == "x": continue
