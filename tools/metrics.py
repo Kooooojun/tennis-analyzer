@@ -22,7 +22,7 @@ def _med(a):
     a = np.array(a, float); return float(np.nanmedian(a)) if np.isfinite(a).any() else None
 
 
-KNEE_GAP_MAX = 20.0  # deg; |knee3d - knee| above this = "angle unreliable for this stroke" (checked against multi-view ground truth, docs/research/multiview-angles.md: flags 28%, catches 79/129 errors > 20 deg)
+KNEE_GAP_MAX = 20.0  # deg; |knee3d - knee| above this = "angle unreliable for this stroke" (checked against multi-view ground truth: docs/research/multiview-angles.md)
 
 
 def _knee(xy, J, c):
@@ -223,7 +223,7 @@ def guess_hand(poses, size=None, times=None):
 # --- arm shape checks (docs/scoring.md §7): pass/fail with a confidence gate, never a degree score ---
 ARM_STRAIGHT = 135.0  # deg, mean of 2D and 3D elbow angle (180 = straight): >= this passes. Meta-analysis impact flexion 30 +/- 16 deg; 3D reads ~20 deg more bent than 2D on straight arms, so 135 is loose on purpose
 ARM_BENT = 120.0      # deg: mean below this fails; the band between is "cannot tell"
-ARM_GAP_MAX = 35.0    # deg; |elbow 3D - elbow 2D| above this = view or tracking is off, say "cannot tell" (straight arms show a 14-31 deg gap, see testset/results/elbow-shape.md; 25 deg did not lower kept errors, docs/research/multiview-angles.md)
+ARM_GAP_MAX = 35.0    # deg; |elbow 3D - elbow 2D| above this = view or tracking is off, say "cannot tell" (straight arms show a 14-31 deg gap, see testset/results/elbow-shape.md; multi-view check: docs/research/multiview-angles.md)
 ARM_DEPTH_MAX = 0.75  # |depth| / length of upper arm and forearm; 0.75 = segment 49 deg out of the image plane
 ARM_VIS_MIN = 0.5
 FRONT_MIN = 0.1       # m; one-hand BH contact: wrist ahead of the leading shoulder along the shoulder line

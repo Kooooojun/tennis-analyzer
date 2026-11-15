@@ -26,7 +26,8 @@ def peaks(v, thr, gap):
     return sorted(keep)
 
 
-SW = np.arange(33); _l = [1, 2, 3, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31]; SW[_l] = [x + 1 for x in _l]; SW[[x + 1 for x in _l]] = _l
+SW = np.arange(33)  # left<->right landmark index map: eyes 1-3 <-> 4-6, then (7,8), (9,10) ... (31,32)
+for _x, _y in [(1, 4), (2, 5), (3, 6)] + [(x, x + 1) for x in range(7, 32, 2)]: SW[[_x, _y]] = _y, _x
 
 
 def tri(Pa, Pb, ua, ub):
@@ -69,8 +70,11 @@ for a, b in ((1, 3), (3, 1), (2, 4), (4, 2)):
         kr = _knee(X, FULL, c); k2 = _knee(xy, FULL, c); k3 = _knee(Wd, FULL, c)
         el = lambda P: float(np.nanmedian([_angle(P, i, s_, e_, w_) for i in ct]))
         er, e2, e3 = el(X), el(xy), el(Wd)
+        # elbow2d/3d use the camera's own labels (what the app would measure); *_fix relabel frames where this camera's
+        # left/right disagrees with the anatomical reference (fl), so they isolate angle error from side mix-ups
+        xf, wf = xy.copy(), Wd.copy(); xf[fl], wf[fl] = xy[fl][:, SW], Wd[fl][:, SW]
         rows.append(dict(cam=a, partner=b, hand=hand, f=c, t=round(float(t[c]), 3), speed=round(float(v[c]), 1),
-                         knee_ref=kr, knee2d=k2, knee3d=k3, elbow_ref=er, elbow2d=e2, elbow3d=e3,
+                         knee_ref=kr, knee2d=k2, knee3d=k3, elbow_ref=er, elbow2d=e2, elbow3d=e3, elbow2d_fix=el(xf), elbow3d_fix=el(wf),
                          az_knee=az(X, Ca, list(win)), az_contact=az(X, Ca, list(ct)),
                          err_leg=float(np.nanmedian(e[list(win)][:, LEG])), err_arm=float(np.nanmedian(e[list(ct)][:, [s_, e_, w_]])),
                          vis_leg=float(np.nanmean(A["lm"][list(win)][:, LEG, 2])), vis_arm=float(np.nanmean(A["lm"][list(ct)][:, [s_, e_, w_], 2]))))

@@ -1,4 +1,4 @@
-# ct_report.py <res.csv> <fig dir> — numbers and plots for testset/results/eval-caltennis.md
+# ct_report.py <res.csv> <fig dir> — numbers and plots for docs/research/multiview-angles.md
 import sys, csv, numpy as np, matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
 
 R = list(csv.DictReader(open(sys.argv[1]))); fd = sys.argv[2]
@@ -55,3 +55,19 @@ for part, ref, e2k, e3k, azk, errk in (("膝", "knee_ref", "knee2d", "knee3d", "
     a.scatter(gap, abs(d2), s=10, alpha=0.6, label="2D |error|"); a.scatter(gap, abs(d3), s=10, alpha=0.6, label="3D |error|")
     a.set_xlabel("|3D - 2D| (deg)"); a.set_ylabel("|error| vs reference (deg)"); a.set_title(part == "膝" and "knee" or "elbow"); a.legend(); fig.tight_layout()
     fig.savefig(f"{fd}/{'knee' if part == '膝' else 'elbow'}_gap_vs_error.png", dpi=110)
+
+
+print("\n## 同一拍兩機互比（README 預先寫的標準：3D 兩機差 p95 < 10°）")
+for k in ("knee2d", "knee3d", "elbow2d", "elbow3d"):
+    d = []
+    for x, y in ((1, 3), (2, 4)):
+        B = [r for r in R if int(r["cam"]) == y]
+        for r in R:
+            if int(r["cam"]) != x: continue
+            m = [s for s in B if abs(float(s["t"]) - float(r["t"])) < 0.05]  # t is on the shared, corrected clock
+            if m: d.append(abs(float(r[k]) - float(m[0][k])))
+    d = np.array(d); d = d[np.isfinite(d)]
+    print(f"- {k}：n={len(d)} 中位數 {np.median(d):.1f}° p95 {np.percentile(d, 95):.1f}°")
+for k in ("elbow2d_fix", "elbow3d_fix"):
+    rows = [r for r in R if float(r["err_arm"]) <= REF_ERR]; e = np.abs(col(k, rows) - col("elbow_ref", rows)); e = e[np.isfinite(e)]
+    print(f"- 肘 {k}（相機左右標籤改成和參考一致）|誤差|：{q(e)}")
