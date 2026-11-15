@@ -78,4 +78,7 @@ assert arm_checks(fr, 90, (540, 540), None, "FH")["serve_arm_conf"] is None and 
 from annotate import active, starts
 S = starts([dict(c=100), dict(c=120)])
 assert active(S, 95) is S[0] and active(S, 103) is S[0] and active(S, 104) is S[1] and active(S, 60) is None and active(S, 70) is S[0]
+# two players hitting 2 frames apart: each track only looks at its own previous stroke, and a tag never starts after its contact
+S = starts([dict(c=100, track=0), dict(c=102, track=1), dict(c=103, track=0)])
+assert S[1]["a"] == 72 and S[2]["a"] == 103 and all(x["a"] <= x["c"] for x in S), S
 print("metrics tests ok")

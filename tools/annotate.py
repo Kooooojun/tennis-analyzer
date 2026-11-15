@@ -65,8 +65,10 @@ def stroke_info(x):
 
 
 def starts(S):
-    """S sorted by contact frame "c": add each stroke's tag start "a", never earlier than 4 frames after the previous contact."""
-    for i, x in enumerate(S): x["a"] = max(x["c"] - PRE, S[i - 1]["c"] + 4) if i else x["c"] - PRE
+    """S sorted by contact frame "c": add each stroke's tag start "a", never earlier than 4 frames after the same track's previous contact, never after its own."""
+    last = {}
+    for x in S:
+        k = x.get("track", 0); x["a"] = min(x["c"], max(x["c"] - PRE, last[k] + 4)) if k in last else x["c"] - PRE; last[k] = x["c"]
     return S
 
 
