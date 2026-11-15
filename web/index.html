@@ -188,6 +188,7 @@ main.noplayer>.col{max-width:820px}
 .highlights{list-style:none;padding:0;margin:0;display:grid;gap:6px}
 .highlights button{width:100%;text-align:left;background:var(--chip);border-color:transparent;border-left:3px solid var(--warn);border-radius:6px}
 .highlights button.good{border-left-color:var(--good)} .highlights button.info{border-left-color:var(--line)}
+body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{padding:24px;color:var(--muted)}  /* data.js is MBs: hide the half-built page until it has run */
 </style>
 <header>
   <h1><a href="#home" class="home-link" id="homeLink">網球練習</a><span id="h1Sub"></span></h1>
@@ -195,6 +196,7 @@ main.noplayer>.col{max-width:820px}
   <div class="days" id="days" role="tablist" aria-label="選擇練習日期"></div>
   <nav class="tabbar" id="tabbar" aria-label="這場的分頁"></nav>
 </header>
+<p class="loading">載入練習資料中…</p>
 <section id="home" class="home" hidden></section>
 <main>
   <section class="player" data-tab="video stroke">
@@ -362,10 +364,10 @@ main.noplayer>.col{max-width:820px}
   </section>
 </main>
 
-<script src="sessions/manifest.js"></script>
-<script src="sessions/trend.js"></script>
-<script>for(const id of window.SESSION_IDS||[]) document.write(`<script src="sessions/${id}/data.js?v=${Date.now()}"><\/script>`);</script>
+<script>for(const f of ["manifest","trend"]) document.write(`<script src="sessions/${f}.js?v=${Date.now()}"><\/script>`);</script>  <!-- small, rebuilt together: always fresh -->
+<script>for(const id of window.SESSION_IDS||[]) document.write(`<script src="sessions/${id}/data.js?v=${(window.SESSION_VER||{})[id]||Date.now()}"><\/script>`);</script>  <!-- content hash: the browser keeps data.js until it is rebuilt -->
 <script>
+document.body.classList.add("ready");  // data.js scripts above have run; before route() so canvases get their real size
 const FPS = 60, NAMES = {FH:"正拍", BH:"反拍", SV:"發球"};
 // one entry per practice session (built by tools/build_site.py); strokes carry their day so compare can mix sessions
 const DAYS = Object.fromEntries((window.SESSIONS||[]).map(d=>[d.id,{...d,players:d.players||["me"],data:d.strokes}]));
@@ -685,6 +687,12 @@ const v=$("v"), cv=$("cv"), seek=$("seek");
 const OPT={skel:true, guides:true, trail:true};
 let S=null, cur=0, N=150, rate=0.25;
 const clipSrc=s=>s.src;
+// iOS Safari ignores preload and fetches nothing until play(), so a muted play() starts the fetch; start()/cmpGoto pause it once metadata is in.
+// Low Power Mode also blocks that until a tap, so the badge says to tap. Never throws: a play cut short by pause() rejects with AbortError.
+const TAP="點畫面載入影片";
+const playSafe=(vid,badge)=>vid.play()?.catch(e=>{ if(e.name!=="NotAllowedError") return; vid._blocked=true; if(!vid.readyState) badge.textContent=TAP; });
+// iOS stops fetching a clip paused before its metadata, so the stage stays black; an unloaded clip pauses itself on loadedmetadata instead
+const hold=vid=>{ if(vid.readyState) vid.pause(); };
 function load(id, scroll){
   S=ALL[id]; N=S.frames.length; seek.max=N-1;
   S.phases=[{f:S.contact-48,name:"準備"},...(S.prep!=null?[{f:S.contact-Math.round(S.prep*FPS),name:"引拍完成"}]:[]),{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}].sort((a,b)=>a.f-b.f);  // 引拍完成 can fall before 準備 or after 向前揮拍
@@ -715,14 +723,14 @@ function load(id, scroll){
   $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]);
   v.src=clipSrc(S); v.playbackRate=rate;
   const start=()=>goto(S.contact-48);
-  if(v.readyState>=1 && v.currentSrc.endsWith(clipSrc(S))) start(); else v.addEventListener("loadedmetadata",start,{once:true});
+  if(v.readyState>=1 && v.currentSrc.endsWith(clipSrc(S))) start(); else { v.addEventListener("loadedmetadata",start,{once:true}); playSafe(v,$("badge")); }
   markList(); markStrips(); drawNotes();
   if(scroll && !PLAYER_TABS.includes(TAB)) go(DAY,"stroke");
   if(scroll && matchMedia("(max-width:820px)").matches) scrollTo({top:0,behavior:"smooth"});
 }
 const frameOf=t=>Math.max(0,Math.min(N-1,Math.floor(t*FPS+1e-3)));
 const relLabel=f=>{ const dt=(f-S.contact)/FPS; return dt===0?"擊球":(dt>0?"+":"")+dt.toFixed(2)+"s"; };
-function goto(f){ f=Math.max(0,Math.min(N-1,f)); v.pause(); v.currentTime=(f+0.5)/FPS; render(f); }
+function goto(f){ f=Math.max(0,Math.min(N-1,f)); hold(v); v.currentTime=(f+0.5)/FPS; render(f); }
 function drawChart(f){
   const c=$("chart"), {g,W,H}=fitCanvas(c); g.clearRect(0,0,W,H);
   const ser=series(S), pad={l:30,r:6,t:8,b:18}, x=i=>pad.l+i/(N-1)*(W-pad.l-pad.r), y=(val,lo,hi)=>pad.t+(1-(val-lo)/(hi-lo))*(H-pad.t-pad.b);
@@ -740,14 +748,14 @@ function drawChart(f){
   c._map=px=>Math.round((px-pad.l)/(W-pad.l-pad.r)*(N-1));
 }
 function render(f){
-  cur=f; paint(cv,v,S,f,OPT); drawChart(f); seek.value=f; $("badge").textContent=relLabel(f);
+  cur=f; paint(cv,v,S,f,OPT); drawChart(f); seek.value=f; $("badge").textContent=v._blocked&&!v.readyState?TAP:relLabel(f);
   let ph=null; for(const p of S.phases) if(f>=p.f) ph=p;
   const pb=$("phaseBadge"); pb.style.display=ph?"block":"none"; if(ph) pb.textContent=ph.name;
 }
 function tick(){ render(frameOf(v.currentTime)); if(!v.paused) (v.requestVideoFrameCallback?v.requestVideoFrameCallback(tick):requestAnimationFrame(tick)); }
-function toggle(){ v.paused?v.play():v.pause(); }
+function toggle(){ v.paused||!v.readyState?playSafe(v,$("badge")):v.pause(); }  // not loaded yet: a tap means load, even while the muted play() is pending
 v.loop=true;
-v.addEventListener("play",()=>{$("play").textContent="⏸ 暫停"; tick();});
+v.addEventListener("play",()=>{ if(!v.readyState) return; $("play").textContent="⏸ 暫停"; tick(); });  // a play with no metadata is the load in load(); start() pauses it
 v.addEventListener("pause",()=>{$("play").textContent="▶ 播放";});
 v.addEventListener("seeked",()=>{ if(v.paused) render(frameOf(v.currentTime)); });
 $("play").onclick=toggle; $("prev").onclick=()=>goto(cur-1); $("next").onclick=()=>goto(cur+1);
@@ -782,27 +790,28 @@ function drawPresets(){
 function cmpLoad(a,b){
   A=a; B=b; $("selA").value=sKey(A); $("selB").value=sKey(B); $("capA").innerHTML=capFor(A); $("capB").innerHTML=capFor(B);
   [...$("presets").children].forEach(x=>x.classList.toggle("on",dayNo(...x._p.a)===A&&dayNo(...x._p.b)===B));
-  let ready=0; const go=()=>{ if(++ready===2) cmpGoto(A.contact-48); };
-  for(const [vid,s] of [[vA,A],[vB,B]]){ vid.pause(); vid.playbackRate=cmpRate; vid.src=clipSrc(s); vid.addEventListener("loadedmetadata",go,{once:true}); }
+  let ready=0; const go=()=>{ if(++ready===2) cmpGoto(A.contact-48); };  // each clip stops itself first, so one that never loads can't leave the other looping
+  for(const [vid,s] of [[vA,A],[vB,B]]){ vid.pause(); vid.playbackRate=cmpRate; vid.src=clipSrc(s); vid.addEventListener("loadedmetadata",()=>{ vid.pause(); go(); },{once:true}); playSafe(vid,$(vid===vA?"badgeA":"badgeB")); }
 }
 function cmpRender(f){
   if(!A||!B) return; cmpCur=f; cmpSeek.value=f;
   const zo={...OPT,zoom:true}; paint(cvA,vA,A,f,zo); paint(cvB,vB,B,f+cmpOff(),zo);
-  const dt=(f-A.contact)/FPS, t=dt===0?"擊球":(dt>0?"+":"")+dt.toFixed(2)+"s"; $("badgeA").textContent=t; $("badgeB").textContent=t;
+  const dt=(f-A.contact)/FPS, t=dt===0?"擊球":(dt>0?"+":"")+dt.toFixed(2)+"s"; for(const [vid,id] of [[vA,"badgeA"],[vB,"badgeB"]]) $(id).textContent=vid._blocked&&!vid.readyState?TAP:t;
 }
 const cmpOff=()=>B.contact-A.contact;  // clips cut at a video edge have their contact before/after frame 90, so B is shifted to keep both on contact
 const cmpBt=()=>Math.max(0,vA.currentTime+cmpOff()/FPS);
-function cmpGoto(f){ f=Math.max(0,Math.min(149,f)); vA.pause(); vB.pause(); vA.currentTime=(f+0.5)/FPS; vB.currentTime=Math.max(0,(f+cmpOff()+0.5)/FPS); cmpRender(f); }
+function cmpGoto(f){ f=Math.max(0,Math.min(149,f)); hold(vA); hold(vB); vA.currentTime=(f+0.5)/FPS; vB.currentTime=Math.max(0,(f+cmpOff()+0.5)/FPS); cmpRender(f); }
 function cmpTick(){
   if(Math.abs(vB.currentTime-cmpBt())>1.5/FPS) vB.currentTime=cmpBt();
   cmpRender(Math.max(0,Math.min(149,Math.floor(vA.currentTime*FPS+1e-3))));
   if(!vA.paused) (vA.requestVideoFrameCallback?vA.requestVideoFrameCallback(cmpTick):requestAnimationFrame(cmpTick));
 }
 vA.loop=vB.loop=true;
-vA.addEventListener("play",()=>{ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
-vA.addEventListener("pause",()=>{ $("cmpPlay").textContent="▶ 同步播放"; vB.pause(); });
+for(const x of [v,vA,vB]) x.addEventListener("loadedmetadata",()=>{ x._blocked=false; });  // a tap lifted Low Power Mode's block; later loads show times again
+vA.addEventListener("play",()=>{ if(!vA.readyState) return; $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
+vA.addEventListener("pause",()=>{ $("cmpPlay").textContent="▶ 同步播放"; hold(vB); });
 for(const vid of [vA,vB]) vid.addEventListener("seeked",()=>{ if(vA.paused) cmpRender(Math.floor(vA.currentTime*FPS+1e-3)); });
-$("cmpPlay").onclick=()=>{ if(vA.paused){ vB.currentTime=cmpBt(); vA.playbackRate=vB.playbackRate=cmpRate; vA.play(); vB.play(); } else vA.pause(); };
+$("cmpPlay").onclick=()=>{ if(vA.paused||!vA.readyState){ vB.currentTime=cmpBt(); vA.playbackRate=vB.playbackRate=cmpRate; playSafe(vA,$("badgeA")); playSafe(vB,$("badgeB")); } else vA.pause(); };
 $("cmpPrev").onclick=()=>cmpGoto(cmpCur-1); $("cmpNext").onclick=()=>cmpGoto(cmpCur+1); $("cmpContact").onclick=()=>cmpGoto(A.contact);
 cmpSeek.oninput=()=>cmpGoto(+cmpSeek.value);
 speedButtons($("cmpSpeeds"),()=>cmpRate,s=>{cmpRate=s;vA.playbackRate=vB.playbackRate=s;});
@@ -860,7 +869,7 @@ function route(){
   const home=!m||!Object.hasOwn(DAYS,m[1]), wasHome=!$("home").hidden;
   document.querySelector("main").hidden=$("days").hidden=$("tabbar").hidden=home; $("home").hidden=!home;
   $("homeLink").textContent=home?"網球練習":"‹ 網球練習"; $("homeLink").title=home?"":"回到所有場次";
-  if(home){ $("h1Sub").textContent=""; $("sub").textContent=`${DAY_KEYS.length} 場練習`; drawHome(); document.querySelectorAll("video").forEach(x=>x.pause()); return; }
+  if(home){ $("h1Sub").textContent=""; $("sub").textContent=`${DAY_KEYS.length} 場練習`; drawHome(); document.querySelectorAll("video").forEach(hold); return; }
   if(m[1]!==DAY||!S) setDay(m[1]);
   else if(wasHome){ drawSummary(); drawTabs(); drawList(); }  // home overwrote #sub and may have set pfilter
   $("days").querySelector(".on")?.scrollIntoView({block:"nearest",inline:"nearest"});
@@ -869,7 +878,7 @@ function route(){
   [...$("tabbar").children].forEach(b=>{ const on=b.dataset.tab===TAB; b.classList.toggle("on",on); b.setAttribute("aria-current",on?"page":"false"); });
   document.querySelectorAll("main [data-tab]").forEach(e=>{ e.hidden=!e.dataset.tab.split(" ").includes(TAB) || (e.id==="reelCard"&&!DAYS[DAY].reel); });
   document.querySelector("main").classList.toggle("noplayer",!PLAYER_TABS.includes(TAB));
-  document.querySelectorAll("main [hidden] video").forEach(x=>x.pause());  // player, compare and reel stop when their tab is left
+  document.querySelectorAll("main [hidden] video").forEach(hold);  // player, compare and reel stop when their tab is left
   if(TAB==="charts") drawCharts();
   if(S){ render(cur); cmpRender(cmpCur); }  // canvases were 0x0 while hidden
 }
