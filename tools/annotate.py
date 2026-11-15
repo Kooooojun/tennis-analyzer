@@ -57,7 +57,7 @@ def draw_text(img, x, y, s, size, col, anchor="la"):
 def stroke_info(x):
     k = x["knee3d"] if x.get("knee3d") is not None else x["knee"]
     head = f"#{x['no']:02d} {KIND.get(x['kind'], x['kind'])}" + (f"·{DRILL[x['drill']]}" if x.get("drill") in DRILL else "")
-    lines = [(f"準備時膝蓋 {k:.0f}°", kc(k))]
+    lines = [(f"準備時膝蓋 {k:.0f}°", kc(k))] if k is not None else []
     if x.get("prep") is not None: lines.append((f"準備時間 {x['prep']:.2f}s", INK))
     if x.get("contact_h") is not None: lines.append((f"擊球高度 {x['contact_h']:.2f}", INK))
     if x.get("knee_warn"): lines.append(("這拍角度不準", BAD))

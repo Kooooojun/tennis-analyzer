@@ -392,7 +392,8 @@ const byKind = k => ALL.filter(s=>s.kind===k);
 const feedFH = () => ALL.filter(s=>s.kind==="FH"&&s.drill==="feed");
 const rallyFH = () => ALL.filter(s=>s.kind==="FH"&&s.drill==="rally");
 const kneeColor = a => a==null ? "#fff" : a<=130 ? "#4ade80" : a<=150 ? "#fbbf24" : "#f87171";
-const stats = g => ({knee:median(g.map(s=>s.knee)), open:median(g.map(s=>s.open_min)), h:median(g.map(s=>s.contact_h*100)), openC:median(g.map(s=>s.open_contact))});
+const hPct = s => s.contact_h==null ? null : s.contact_h*100;  // null*100 would be 0
+const stats = g => ({knee:median(g.map(s=>s.knee)), open:median(g.map(s=>s.open_min)), h:median(g.map(hPct)), openC:median(g.map(s=>s.open_contact))});
 const dayStats = data => { const k=(kind,drill)=>data.filter(s=>s.kind===kind&&(!drill||s.drill===drill)); return {FH:stats(k("FH")), BH:stats(k("BH")), SV:stats(k("SV")), feed:stats(k("FH","feed")), rally:stats(k("FH","rally"))}; };
 let MED = dayStats(ALL);
 const byNo = n => ALL[n-1];
@@ -525,7 +526,7 @@ function drawSummary(){
 // charts measure their container, so they are drawn when the 圖表 tab is shown (a hidden tab is 0 px wide)
 function drawCharts(){
   strip("stripKnee","準備時膝蓋角度","越低越蹲",s=>s.knee,90,180,"°",[90,110,130,150,170]);
-  strip("stripHeight","擊球高度","髖部 = 0、肩膀 = 100，綠帶是腰到胸口",s=>s.contact_h*100,-40,100,"",[-40,-20,0,20,40,60,80,100]);
+  strip("stripHeight","擊球高度","髖部 = 0、肩膀 = 100，綠帶是腰到胸口",hPct,-40,100,"",[-40,-20,0,20,40,60,80,100]);
   $("stripPrep").hidden=!ALL.some(s=>s.prep!=null); $("contactPlot").hidden=$("stripPrep").hidden;  // sessions before prep-contact have neither field
   if(!$("stripPrep").hidden){ strip("stripPrep","準備時間","引拍完成到擊球，越高越早拉好",s=>s.prep,0,1,"s",[0,0.2,0.4,0.6,0.8,1],v=>v.toFixed(1)); drawContact(); }
   $("stripOpen").hidden=!DAYS[DAY].showOpen;
@@ -671,7 +672,7 @@ function drawList(){
     const b=document.createElement("button"); b.dataset.id=s.id;
     const bad = s.kind==="FH" && s.knee>150;
     const dn=drillName(s);
-    b.innerHTML=`<span class="row"><span class="tag ${s.kind}">${NAMES[s.kind]}</span><span class="clock">${s.clock}</span></span><span class="mini ${bad?"bad":""}">膝 ${Math.round(s.knee)}°${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
+    b.innerHTML=`<span class="row"><span class="tag ${s.kind}">${NAMES[s.kind]}</span><span class="clock">${s.clock}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
     b.title=strokeLabel(s);
     b.onclick=()=>load(s.id,false); box.append(b);
   }
@@ -700,7 +701,7 @@ function load(id, scroll){
   $("mBody").innerHTML=S.trunk_share==null?"–":`${Math.round(S.trunk_share*100)}<small>%</small>`;
   $("cBody").textContent=`肩膀速度占手腕 ${pc(S.trunk_share)} · 轉肩 ${S.turn==null?"–":Math.round(S.turn)+"°"} · 下蹲 ${pc(S.leg_load)} · 手速 ${S.wrist_speed==null?"–":S.wrist_speed.toFixed(1)}；只用手臂打時這幾個都偏低`;
   $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${Math.round(m.open)}%`:"這場鏡頭角度不適合看轉肩，參考就好";
-  $("mHeight").innerHTML=fmt(S.contact_h*100,""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
+  $("mHeight").innerHTML=fmt(hPct(S),""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
   $("mPrep").innerHTML=S.prep==null?"–":`${S.prep.toFixed(2)}<small>s</small>`; $("cPrep").textContent=S.prep==null?"":`${grp}中位數 ${median(ALL.filter(x=>x.kind===S.kind&&(!(S.kind==="FH"&&dn)||x.drill===S.drill)).map(x=>x.prep))?.toFixed(2)??"–"}s`;  // same group as the cards beside it
   const sv=S.kind==="SV", f1=sv?S.reach:S.finish, num=(x,u,d=1)=>x==null?"–":`${x.toFixed(d)}<small>${u}</small>`;  // form_checks fields (docs/scoring.md §10); null = gate failed
   const med=(f,g=S.kind)=>median(ALL.filter(x=>x.kind===g).map(x=>x[f]));
@@ -773,7 +774,7 @@ let A=null, B=null, cmpCur=0, cmpRate=0.25;
 const PRESETS=Object.values(DAYS).flatMap(d=>(d.presets||[]).map(p=>{ const a=Array.isArray(p.a)?p.a:[d.id,p.a], b=Array.isArray(p.b)?p.b:[d.id,p.b]; return {day:a[0]===b[0]&&a[0]===d.id?d.id:"*",a,b,label:p.label}; })).filter(p=>p.a[0] in DAYS&&p.b[0] in DAYS);
 const sKey=s=>s.day+":"+s.id, fromKey=k=>{ const [d,i]=k.split(":"); return DAYS[d].data[+i]; };
 function fillSelect(sel){ sel.innerHTML=Object.entries(DAYS).map(([k,d])=>`<optgroup label="${d.label}">`+d.data.map(s=>`<option value="${sKey(s)}">${d.label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</option>`).join("")+"</optgroup>").join(""); }
-function capFor(s){ const r=Math.round; return `<b>${DAYS[s.day].label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${r(s.knee)}°${s.knee_warn?"⚠不準":""} · 轉肩 ${r(s.open_min)}% · 擊球高度 ${r(s.contact_h*100)}</span>`; }
+function capFor(s){ const r=Math.round; return `<b>${DAYS[s.day].label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${s.knee==null?"–":r(s.knee)+"°"}${s.knee_warn?"⚠不準":""} · 轉肩 ${r(s.open_min)}% · 擊球高度 ${s.contact_h==null?"–":r(hPct(s))}</span>`; }
 function drawPresets(){
   $("presets").innerHTML="";
   for(const p of PRESETS.filter(p=>p.day===DAY||p.day==="*")){ const b=document.createElement("button"); b.textContent=p.label; b._p=p; b.onclick=()=>cmpLoad(dayNo(...p.a),dayNo(...p.b)); $("presets").append(b); }
