@@ -11,7 +11,7 @@ L = [("JnlQnmFAq4s", f, "SV", "S") for f in (7046, 9170, 9611, 9984, 10183, 1041
 rows = []
 for v, f, k, t in L:
     D = R / "work/elbow-eval" / v; P = np.load(D / "pose.npy"); W = np.load(D / "pose_world.npy")
-    for off in (0, -2, 2):  # my frame label is +-2 frames; report all three
+    for off in range(-3, 4):  # my frame label is +-2 frames; sweep -3..+3
         c = f + off; a = c - 90
         fr = [None if np.isnan(x[0, 0]) else x[KEEP].tolist() for x in P[a:a + 150]]; wd = [None if np.isnan(x[0, 0]) else x[KEEP].tolist() for x in W[a:a + 150]]
         r = arm_checks(fr, 90, (960, 540), wd, "SV" if k == "SV" else "BH", one_hand=True)
@@ -25,7 +25,7 @@ def tally(sel, name):
     ok = sum((r[5] is True) == (r[4] == "S") for r in dec)
     b2 = sum((r[7] >= 130) == (r[4] == "S") for r in sel if np.isfinite(r[7]))
     print(f"{name}: n={n} unclear={unk} ({100*unk/n:.0f}%) decided={len(dec)} correct={ok} ({100*ok/max(1,len(dec)):.0f}%) | ungated 2D>=130: {b2}/{len(sel)} ({100*b2/len(sel):.0f}%)")
-for off in (0, -2, 2): tally([r for r in rows if r[2] == off], f"offset {off:+d}")
+for off in range(-3, 4): tally([r for r in rows if r[2] == off], f"offset {off:+d}")
 tally([r for r in rows if r[2] == 0 and r[3] == "SV" and r[4] == "S"], "serve straight only")
 tally([r for r in rows if r[2] == 0 and r[3] == "BH"], "one-hand BH only")
 tally([r for r in rows if r[2] == 0 and r[4] == "B"], "bent only")
