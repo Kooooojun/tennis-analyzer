@@ -82,4 +82,6 @@ assert prefill("FH", PREFILL_MIN - 0.01) == "?" and prefill("FH", PREFILL_MIN) =
 assert prefill("FH", 0.5) == "?"  # the old line pre-filled this one
 assert prefill("?", 0.9) == "?" and prefill("FH", None) == "?"  # no kind / no conf (no hand profile) -> '?'
 assert prefill("FH", 0.5, 0.5) == "FH"  # explicit line = the old behaviour
+import kind as K  # line=None reads PREFILL_MIN at call time (a changed constant applies)
+K.PREFILL_MIN, old = 0.9, K.PREFILL_MIN; assert prefill("FH", 0.8) == "?"; K.PREFILL_MIN = old
 print("kind tests ok")

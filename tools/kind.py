@@ -17,8 +17,9 @@ HIPW_MIN = 0.02  # 2D path: hip width must exceed this fraction of the frame wid
 SV_CONF = 0.45   # below CONF_MIN: the hanging-arm cue does not separate serves from smashes (THETIS: median -0.77 vs -0.71)
 
 
-def prefill(kind, conf, line=PREFILL_MIN):
-    """labels.txt pre-fill: the kind when conf >= line, else '?' (no conf = no hand profile = no guess)."""
+def prefill(kind, conf, line=None):
+    """labels.txt pre-fill: the kind when conf >= line (default PREFILL_MIN), else '?' (no conf = no hand profile = no guess)."""
+    line = PREFILL_MIN if line is None else line
     return kind if kind != "?" and conf is not None and conf >= line else "?"
 
 

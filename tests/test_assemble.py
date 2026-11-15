@@ -21,11 +21,13 @@ assert len(read_labels(d, C2)) == 2
 
 who = {0: "white", 1: None}  # 0 用 '@white' 改名
 assert player_of(0, who, C2) == "white" and player_of(1, who, C2) == "black"
-# 整批照收警告：沒有任何 x、且同一 kind >= BULK_N 拍才警告；有一行 x 或 kind 不夠多就不警告；沒有註解行的舊 labels 也照常
+# 整批照收警告：>= BULK_N 行且 x 不到 3% 才警告（隨手寫一行 x 繞不過）；少於 BULK_N 行或 x 夠多就不警告；文字註明全是真擊球時可忽略
 row = lambda i, k: [str(i), k, "rally"]
 assert BULK_N == 10
-assert bulk_warning([row(i, "FH") for i in range(10)]) and "FH" in bulk_warning([row(i, "FH") for i in range(10)])
-assert bulk_warning([row(i, "FH") for i in range(9)] + [row(9, "BH")]) is None
-assert bulk_warning([row(i, "FH") for i in range(20)] + [["20", "x"]]) is None
-assert bulk_warning(rows) is None  # 上面的舊 labels（有 x）
+w = bulk_warning([row(i, "FH") for i in range(10)]); assert w and "ignore" in w, w
+assert bulk_warning([row(i, "FH") for i in range(9)]) is None  # 太少行
+assert bulk_warning([row(i, "FH") for i in range(40)] + [["40", "x"]])  # 1/41 = 2.4% < 3%：仍警告
+assert bulk_warning([row(i, "FH") for i in range(20)] + [["20", "x"]]) is None  # 1/21 = 4.8%
+assert bulk_warning([row(i, "FH") for i in range(5)] + [row(i, "BH") for i in range(5, 10)])  # 混合拍種也算
+assert bulk_warning(rows) is None  # 上面的舊 labels（2 行，有 x）
 print("assemble labels OK")

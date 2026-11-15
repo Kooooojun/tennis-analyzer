@@ -52,6 +52,12 @@ def frames(src, ts):
     return {t: b[1] for t, b in best.items()}
 
 
+def readable(p):
+    """True when OpenCV decodes a frame of video p (opens but cannot decode = a codec it lacks: use the proxy)."""
+    cap = cv2.VideoCapture(str(p)); ok = cap.read()[0]; cap.release()
+    return ok
+
+
 def text(t, s, y=22, c=(0, 255, 255)):
     cv2.putText(t, s, (5, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3); cv2.putText(t, s, (5, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, c, 1)
 
@@ -62,6 +68,7 @@ def sheet(c, idx, Ps, mark, src, low):
     (-45 -20 0: a feed toss, and who else is there). Crop box from the pose (normalised), so it maps onto any frame size."""
     f = int(round(c["t"] * FPS)); P = Ps[mark]
     T = {o: c["t"] + o / FPS for o in OFF_NEW + WHOLE}; F = frames(src, sorted(set(T.values())))
+    if all(im is None for im in F.values()): print(f"WARNING: candidate {idx}: no frame decoded from {src.name} at {c['t']:.2f} s, its sheet is black")
     H, W = next((im.shape[:2] for im in F.values() if im is not None), (1080, 1920)); wh = np.array((W, H), float)
     rows, row = [], []
     for o in OFF_NEW:
@@ -167,7 +174,7 @@ if LEGACY:
 else:
     srcs, low = {}, set()
     for v in dict.fromkeys(c["v"] for c in C):  # original video = the file whose stem is v (a glob "v.*" would also match "v.x.mov"); not openable (codec) -> proxy
-        src = next((p for p in sorted((ROOT / "videos" / s).iterdir()) if p.stem == v and p.suffix.lower() in (".mov", ".mp4", ".m4v") and cv2.VideoCapture(str(p)).isOpened()), None)
+        src = next((p for p in sorted((ROOT / "videos" / s).iterdir()) if p.stem == v and p.suffix.lower() in (".mov", ".mp4", ".m4v") and readable(p)), None)
         if src is None: low.add(v)
         srcs[v] = src or Wd / v / "proxy.mp4"
     for i, c in enumerate(C):  # each candidate decodes only ~0.9 s of its video
