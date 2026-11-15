@@ -36,7 +36,7 @@ def _items(g):
 
 
 def _entry(r, g):
-    """One history row. Every session is kept; comparable / series_key let the web split or mark lines (compare() applies the same rules)."""
+    """One history row. Every session is kept; comparable / series_key let the web split or mark lines (same n / camera rules as compare(); the date filter there lives in dated())."""
     cam = r.get("camera") or ""
     return dict(session=r["session"], date=r.get("date"), camera=cam, n=g["n"], knee_src=g.get("knee_src"), score_version=g.get("score_version"), items=_items(g),
                 cons_set=sorted(m for m, x in g["metrics"].items() if x["cons"] is not None),

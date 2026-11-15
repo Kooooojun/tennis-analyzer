@@ -54,12 +54,13 @@ def spread(vals):
 
 def _cons_spread(strokes, m, knee_src="knee"):
     """Robust SD after centring each (video, drill) on its own median, so a camera or drill change between clips is not read as inconsistency.
-    Keys with < 3 values are centred on the whole-group median instead. One key (or old strokes without video) = plain spread()."""
-    pairs = [((s.get("video"), s.get("drill")), v) for s in strokes if _num(v := _value(s, m, knee_src))]
+    Keys with < MIN_N_CONS values are centred on the whole-group median (3 values minus their own median always include a 0, which would shrink the spread).
+    One key, or no stroke with a video (old strokes) = plain spread()."""
+    pairs = [((str(s.get("video")), s.get("drill")), v) for s in strokes if _num(v := _value(s, m, knee_src))]  # str: 1 and "1" are one video; missing = None
     keys = {k for k, _ in pairs}
-    if len(keys) < 2: return spread([v for _, v in pairs])
+    if len(keys) < 2 or all(s.get("video") is None for s in strokes): return spread([v for _, v in pairs])
     whole = float(np.median([v for _, v in pairs]))
-    mid = {k: float(np.median(vs)) if len(vs := [v for kk, v in pairs if kk == k]) >= MIN_N else whole for k in keys}
+    mid = {k: float(np.median(vs)) if len(vs := [v for kk, v in pairs if kk == k]) >= MIN_N_CONS else whole for k in keys}
     return spread([v - mid[k] for k, v in pairs])
 
 
@@ -110,7 +111,7 @@ def score_group(strokes, show_open, kind="FH"):
     power = _mean([x["score"] for m, x in out.items() if METRICS[m].get("power")])
     raw = None if form is None else form if cons is None else 0.75 * form + 0.25 * cons
     total = raw if raw is None or power is None else min(raw, power + POWER_MARGIN)  # no power data -> no cap (old sessions keep their scale)
-    power_n = sum(any(_num(s.get(m)) for m, x in out.items() if METRICS[m].get("power") and x["status"] == "ok") for s in strokes)  # cap is per group (docs/scoring.md §11); the web can show how many strokes fed it
+    power_n = sum(any(_num(_value(s, m)) for m, x in out.items() if METRICS[m].get("power") and x["status"] == "ok") for s in strokes)  # cap is per group (docs/scoring.md §11); the web can show how many strokes fed it
     return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), power=_r(power), power_n=power_n if kind in BASE_KINDS else None, uncapped=_r(raw),
                 capped=raw is not None and total < raw, metrics=out, knee_src=knee_src, score_version=SCORE_VERSION)
 

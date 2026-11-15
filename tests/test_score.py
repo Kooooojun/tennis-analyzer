@@ -178,6 +178,12 @@ m = grp(score_session(three, False))["metrics"]["contact_fwd"]; assert m["n"] ==
 one = [dict(s, video=1) for s in two]
 assert _cons_spread(one, "contact_fwd", "knee") == spread([s["contact_fwd"] for s in one])
 old = [{k: v for k, v in s.items() if k != "video"} for s in two]
+nov = [dict(s, drill="feed" if s["contact_fwd"] < 0.6 else "rally") for s in old]  # drill but no video: whole group, as documented
+assert _cons_spread(nov, "contact_fwd", "knee") == spread([s["contact_fwd"] for s in nov])
+mixed = [dict(s, video=1 if i % 2 else "1") for i, s in enumerate(one)]  # 1 and "1" are the same video
+assert _cons_spread(mixed, "contact_fwd", "knee") == _cons_spread(one, "contact_fwd", "knee")
+tiny = [st(video=i // 3, contact_fwd=0.5 + nd[(i * 7) % 10]) for i in range(24)]  # 8 clips of 3 strokes: no self-centring, so no shrink
+assert _cons_spread(tiny, "contact_fwd", "knee") >= spread([s["contact_fwd"] for s in tiny]) - 1e-9
 assert _cons_spread(old, "contact_fwd", "knee") == spread([s["contact_fwd"] for s in old])
 # 2: BH knee / open_min are consistency only; FH unchanged
 for kind in ("BH", "FH"):
