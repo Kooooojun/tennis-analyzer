@@ -66,9 +66,9 @@ assert [x[0][0, 0] for x in distinct([big, big2, small], 2, aspect=16 / 9)] == [
 assert [x[0][0, 0] for x in distinct([big2, small], 2, keep=[big], aspect=16 / 9)] == [0.7]  # already found by a crop
 assert len(distinct([big, small, sk(0.1, 0.5, 0.2)], 2, aspect=1)) == 2
 
-# --- real: a crop on a floodlight returns a skeleton with trunk visibility ~0.1; a player is 0.4-0.95 (far-camera dataset) ---
+# --- real: a crop on a floodlight returns a skeleton with legs visibility ~0 (trunk can be 0.4-0.9); a player's legs >= 0.44 ---
 p = sk(0.5, 0.6, 0.2)[0]; p[:, 2] = 0.9; assert real(p)
-p[[11, 12, 23, 24], 2] = 0.1; assert not real(p)
-p[[11, 12, 23, 24], 2] = 0.4; assert real(p)
+p[[25, 26, 27, 28], 2] = 0.02; assert not real(p)
+p[[11, 12, 23, 24], 2] = 0.1; p[[25, 26, 27, 28], 2] = 0.5; assert real(p)
 
 print("ok")

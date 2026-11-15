@@ -120,10 +120,10 @@ def distinct(cands, n, keep=(), aspect=1.0):
 
 
 def real(a, vmin=0.3):
-    """Normalized (33, 3) landmarks -> is it a person: trunk (shoulders, hips) visibility >= vmin. A square crop scaled up
-    finds skeletons in floodlights and fences with trunk visibility ~0.1 (players 0.4-0.95 on the far-camera dataset); one
-    such skeleton keeps its crop box on the light and the player is never searched for again."""
-    return float(np.mean(a[[11, 12, 23, 24], 2])) >= vmin
+    """Normalized (33, 3) landmarks -> is it a person: knees and ankles visibility >= vmin. A square crop scaled up finds
+    skeletons in floodlights; on the far-camera dataset their leg visibility is 0.00 median, <= 0.06 at p95, players 0.44-0.69
+    at p5 (trunk visibility does not split them: ghosts 0.38-0.94). One such skeleton keeps its crop box on the light."""
+    return float(np.mean(a[[25, 26, 27, 28], 2])) >= vmin
 
 
 def use_crop(found):
