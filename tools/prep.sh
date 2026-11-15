@@ -18,6 +18,10 @@ for V in $R/videos/$S/*.(mov|MOV|mp4|MP4|m4v)(N); do
   read w h < <(ffprobe -v error -select_streams v:0 -show_entries stream=width,height:stream_side_data=rotation -of default=nw=1 $V |
     awk -F= '/^width/{w=$2} /^height/{h=$2} /^rotation/{r=$2} END{ if (r==90||r==-90||r==270||r==-270) print h, w; else print w, h }')
   echo "== $n"
+  # source fps (avg handles variable frame rate); the proxy below is always 60 fps, so a 30 fps source becomes duplicated frames
+  fps=$(ffprobe -v error -select_streams v:0 -show_entries stream=avg_frame_rate -of csv=p=0 $V | awk -F/ '{ d=($2==""?1:$2); if (d>0 && $1>0) printf "%d", $1/d+0.5 }')
+  [ -n "$fps" ] && echo $fps > $D/src_fps.txt
+  [ -n "$fps" ] && (( fps < 50 )) && echo "警告：$n 來源 ${fps} fps，proxy 會補成 60 fps（重複影格），速度類數字（手速、準備時間）沒驗證過" >&2
   # shortcut: assumes 16:9 sources (phone video); other ratios get stretched, as before
   stale $D/proxy.mp4 $V && ffmpeg -v error -y -i $V -an -vf "scale=$( (( w > h )) && echo 960:540 || echo 540:960 ),fps=60" $ENC -g 30 $D/proxy.mp4
   stale $D/audio_hp.f32 $V && ffmpeg -v error -y -i $V -vn -ac 1 -ar 16000 -af "highpass=f=1500" -f f32le $D/audio_hp.f32
