@@ -51,4 +51,29 @@ P, W = body(0.0, (0.45, 0.1, 0.3), (-0.2, 0.1, 0.2)); P[:, 16, 2] = 0.1; assert 
 P, W = body(0.0, (0.2, 0.95, 0.1), (-0.2, 0.3, 0.1)); assert classify(P, 10, "R", W)["kind"] in ("SV", "OH", "?")
 # 9: without world data (2D only) a front-on FH still works
 P, W = body(0.0, (0.45, 0.1, 0.3), (-0.2, 0.1, 0.2)); assert classify(P, F, "R", None)["kind"] == "FH"
+# 10 (K4): high ball with no history 1.0-1.7 s before contact -> "?" with conf 0 (was OH)
+P, W = body(0.0, (0.2, 0.95, 0.1), (-0.2, 0.3, 0.1)); r = classify(P, 60, "R", W); assert r["kind"] == "?" and r["conf"] == 0.0, r
+P[F - 100:F - 60] = np.nan; r = classify(P, F, "R", W); assert r["kind"] == "?" and r["conf"] == 0.0, r
+# 11 (K5): serve evidence (hanging arm) alone is not enough to pre-fill: SV conf < 0.5
+P, W = body(0.0, (0.2, 0.95, 0.1), (-0.2, 0.3, 0.1)); P[F - 100:F - 60, 16, 1] = 0.6; r = classify(P, F, "R", W); assert r["kind"] == "SV" and r["conf"] < 0.5, r
+# 12 (K5): wrist only rises above the head after contact (high follow-through) is not a serve
+P, W = body(0.0, (0.45, 0.1, 0.3), (-0.2, 0.1, 0.2)); P[F + 2:F + 6, 16, 1] = 0.5 - 0.5 * 0.95; assert classify(P, F, "R", W)["kind"] not in ("SV", "OH")
+# 13: racket wrist hidden in the backswing window (vis 0.1) but visible at contact -> "?"
+P, W = body(0.0, (0.45, 0.1, 0.3), (-0.2, 0.1, 0.2)); P[F - 24:F - 13, 16, 2] = 0.1; P[F:F + 5, 16, 2] = 0.99; assert classify(P, F, "R", W)["kind"] == "?"
+# 14: portrait vs landscape: same body in pixels, normalised by each frame size -> same kind, side within 0.05
+for rw in ((0.45, 0.1, 0.3), (-0.4, 0.1, 0.3)):
+    P, _ = body(np.pi, rw, (-0.25, 0.1, 0.2)); px = (P[:, :, :2] - 0.5) * 300  # pixel offsets around the frame centre
+    res = []
+    for w, h in ((540, 960), (960, 540)):
+        Q = P.copy(); Q[:, :, 0] = (w / 2 + px[:, :, 0]) / w; Q[:, :, 1] = (h / 2 + px[:, :, 1]) / h; res.append(classify(Q, F, "R", None, size=(w, h)))
+    assert res[0]["kind"] == res[1]["kind"] != "?" and abs(res[0]["side"] - res[1]["side"]) < 0.05, res
+# 16: hand above the head in only 1-2 of f-3..f+1 (the rest NaN) is not enough for SV / OH
+P, W = body(0.0, (0.45, 0.1, 0.3), (-0.2, 0.1, 0.2)); P[F - 3:F + 2, 16, :2] = np.nan; P[F, 16, :2] = (0.6, 0.5 - 0.5 * 0.95)
+assert classify(P, F, "R", W)["kind"] not in ("SV", "OH")
+# 17: landscape 2D path (no world): hips 15 px wide in a 960x540 frame are below 2% of the width -> "?"; 60 px wide -> FH
+for hw, want in ((15, "?"), (60, "FH")):
+    Q = np.full((N, 33, 3), np.nan); Q[:, :, 2] = 0.9
+    for k, (x, y) in {0: (480, 160), 11: (450, 200), 12: (510, 200), 23: (480 - hw / 2, 300), 24: (480 + hw / 2, 300), 15: (440, 290), 16: (480 + hw * 1.5, 290)}.items():
+        Q[:, k, 0] = x / 960; Q[:, k, 1] = y / 540
+    assert classify(Q, F, "R", None, size=(960, 540))["kind"] == want, (hw, classify(Q, F, "R", None, size=(960, 540)))
 print("kind tests ok")

@@ -4,6 +4,7 @@ import sys, json, glob, collections, numpy as np
 from pathlib import Path
 sys.path.insert(0, "tools")
 from kind import classify, CONF_MIN
+from common import size
 
 def legacy(P, f):  # 改前的 metrics.measure_full 規則（右手），原樣保留供對照
     hip_x = np.nanmean((P[f - 8:f + 9, 23, 0] + P[f - 8:f + 9, 24, 0]) / 2)
@@ -22,15 +23,16 @@ for p in glob.glob("testset/archive/*/work/wall-1/labels.txt"):
         if r[1] == "FH":
             c = C[int(r[0])]; key = (c["v"], round(c["t"], 1))
             if key not in seen: seen.add(key); G.append((c["v"], int(round(c["t"] * 60)) - 2, "FH", "FH"))
-P = {}; W = {}
+P = {}; W = {}; SZ = {}
 for v in {g[0] for g in G}:
     d = Path("work/kind") / v; P[v] = np.load(d / "pose.npy").astype(float); w = d / "pose_world.npy"; W[v] = np.load(w).astype(float) if w.exists() else None
+    SZ[v] = size(d / "proxy.mp4") if (d / "proxy.mp4").exists() else None  # None = old normalised coordinates
 ids = {v: f"v{i + 1:02d}" for i, v in enumerate(sorted({g[0] for g in G}))}
 K = ["FH", "BH", "SV", "OH"]
 for off in (0, -2, 2):
     M = collections.defaultdict(collections.Counter); L = collections.Counter(); two = collections.Counter()
     for v, f, k, sub in G:
-        r = classify(P[v], f + off, "R", W[v]); pred = r["kind"] if r["conf"] >= CONF_MIN else "?"
+        r = classify(P[v], f + off, "R", W[v], SZ[v]); pred = r["kind"] if r["conf"] >= CONF_MIN else "?"
         M[k][pred] += 1; L[k] += 1
         if off == 0: M[k]["_old_" + legacy(P[v], f + off)] += 1
     print(f"\n== 擊球格偏移 {off:+d}（對標準答案幀）  列＝標準答案  行＝預測，? = 未分類")
