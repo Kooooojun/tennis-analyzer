@@ -149,9 +149,11 @@ def main():
     ft = Path(out).parent / "src_fps.txt"  # written by prep.py (whole fps); the exact rate comes from the source itself
     if source and ft.is_file():
         c = cv2.VideoCapture(source); r = c.get(cv2.CAP_PROP_FPS); SW, SH = int(c.get(cv2.CAP_PROP_FRAME_WIDTH)), int(c.get(cv2.CAP_PROP_FRAME_HEIGHT)); c.release()
+        if not (SW and SH and r > 0): SW, SH, source = W, H, None  # OpenCV cannot open it (ffmpeg could): proxy path, as before
         if (SW > SH) != (W > H): SW, SH = SH, SW  # rotation metadata: ffmpeg outputs it upright, like the proxy
         sf = ft.read_text(encoding="utf-8").strip()
-        if sf.isdigit() and int(sf) < 50 and r > 0: fps = r
+        if source and sf.isdigit() and int(sf) < 50: fps = r
+    if source and ft.is_file():
         probe = mk(N, "IMAGE"); step = max(1, n60 // 60)
         crop = use_crop([len(probe.detect(img_of(f)).pose_landmarks) for f in frames(["-i", src, "-vf", f"select=not(mod(n\\,{step}))", "-vsync", "0"], W, H)])
         probe.close()
