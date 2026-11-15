@@ -225,3 +225,11 @@ assert G["status"] == "ok" and G["coverage"] == 0.5 and G["n"] == 6, G
 G = score_session([dict(kind="FH", lean=5.0 + i) for i in range(6)] + [dict(kind="FH", lean=None)] * 7, False)[0]["metrics"]["lean"]
 assert G["status"] == "資料不足", G
 print("form view-gate score tests ok")
+
+# arm-bent-detect: checks[] rows carry verified; only a serve-arm row with no "fail" is backed by eye labels (docs/scoring.md §9)
+bh = lambda ok, front: dict(kind="BH", bh_elbow_ok=ok, bh_elbow_conf=0.8, bh_front_ok=front)
+r = {x["field"]: x for x in check_session([bh(True, True)] * 4)}
+assert r["bh_front_ok"]["verified"] is False and r["bh_elbow_ok"]["verified"] is False, r
+r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] * 4)[0]; assert r["verified"] is True, r
+r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] * 4 + [dict(kind="SV", serve_arm_straight=False, serve_arm_conf=0.9)])[0]; assert r["verified"] is False, r
+print("verified tests ok")
