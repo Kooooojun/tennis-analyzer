@@ -769,8 +769,8 @@ const clipSrc=s=>s.src;
 // Low Power Mode also blocks that until a tap, so the badge says to tap. Never throws: a play cut short by pause() rejects with AbortError.
 const TAP="點畫面載入影片";
 const playSafe=(vid,badge)=>{ const token=vid._loadToken; return vid.play()?.catch(e=>{ if(token!==vid._loadToken||e.name!=="NotAllowedError") return; vid._blocked=true; if(!vid.readyState) badge.textContent=TAP; if(vid._want) stopDead(vid); }); };
-// iOS stops fetching a clip paused before its metadata, so the stage stays black; an unloaded clip pauses itself on loadedmetadata instead
-const hold=vid=>{ vid._want=false; vid._resume=false; if(vid.readyState||!vid.offsetParent) vid.pause(); };
+// Initial loads prime iOS with play(); an explicit pause must also cancel play() before metadata arrives.
+const hold=vid=>{ vid._want=false; vid._resume=false; vid.pause(); if(vid===v) $("play").textContent="▶ 播放"; else if(vid.id==="vA"||vid.id==="vB") $("cmpPlay").textContent="▶ 同步播放"; };
 // a clip is fetched only once its stage is on screen (home and the overview tab fetch none); route() runs the waiting ones
 const LATER=new Map();
 // the comparison clips also wait until scrolled near (_near), so opening the video tab fetches only the main clip
@@ -799,7 +799,7 @@ function clipFetch(key,background=false){
     try{
       const response=await fetch(key,{signal:e.controller.signal,priority:background?"low":"high"});
       if(!response.ok) throw new Error("clip unavailable");
-      if(!trimClips(Number(response.headers.get("Content-Length")))){ await response.body?.cancel(); CLIPS.delete(key); return key; }
+      if(!trimClips(Number(response.headers.get("Content-Length")))){ if(CLIPS.get(key)===e) CLIPS.delete(key); await response.body?.cancel(); return key; }
       const blob=await response.blob();
       if(e.controller.signal.aborted) return key;
       if(!trimClips(blob.size)){ CLIPS.delete(key); return key; }
@@ -824,9 +824,10 @@ function cancelAlign(vid){ if(vid._align) vid.removeEventListener("loadedmetadat
 function resetClip(vid,key){
   cancelAlign(vid); vid._resetStall(); vid._clipKey=key; vid._loadToken={}; vid._fetching=false; vid._blocked=false;
   vid.pause(); vid.removeAttribute("src"); vid.load(); trimClips();
+  $(vid===v?"play":"cmpPlay").textContent=vid===v?"▶ 播放":"▶ 同步播放";
   for(const [k,e] of CLIPS) if(!e.url&&e.foreground&&!players.some(x=>x._clipKey===k)){ e.controller.abort(); CLIPS.delete(k); }
 }
-async function setClip(vid,s,rate,start){
+async function setClip(vid,s,start){
   const key=clipSrc(s), token=vid._loadToken;
   vid._fetching=true; vid._fetchSince=Date.now();
   const src=location.protocol==="file:"?key:await clipFetch(key);
@@ -834,7 +835,7 @@ async function setClip(vid,s,rate,start){
   vid._fetching=false;
   vid._align=()=>{ vid._align=null; if(!vid._want){ vid.pause(); start(); } };
   vid.addEventListener("loadedmetadata",vid._align,{once:true});
-  vid.src=src; vid.playbackRate=rate;
+  vid.src=src; vid.playbackRate=vid===v?rate:cmpRate;
   if(vid!==v&&vid._want) cmpStart(); else playSafe(vid,vid.parentElement.querySelector(".badge"));
   if(vid===v&&src.startsWith("blob:")) preloadNeighbors(s);
 }
@@ -850,14 +851,14 @@ function watchStall(vid){
   let restore=null, keep=null;  // the pending time restore of the last reload and its [time, playing]; dropped when the clip changes
   vid._resetStall=()=>{ if(restore) vid.removeEventListener("loadedmetadata",restore); restore=keep=null; vid._want=vid._resume=vid._reloading=false; tries=wait=since=errorSince=0; delete m.dataset.fail; m.hidden=true; };
   const reload=(tap=false,still=false)=>{
-    if(tap||still) cancelAlign(vid); vid._loadToken={}; tries++; since=Date.now(); errorSince=0; const url=vid.currentSrc||vid.src;
-    const [t,play,rate]=keep&&!vid.readyState?keep:[vid.readyState?vid.currentTime:null,!!vid._want,vid.playbackRate]; const want=!still&&(play||tap); keep=[t,want,rate];
+    if(tap) cancelAlign(vid); vid._loadToken={}; tries++; since=Date.now(); errorSince=0; const url=vid.currentSrc||vid.src;
+    const [t,play]=keep&&!vid.readyState?keep:[vid.readyState?vid.currentTime:null,!!vid._want]; const want=!still&&(play||tap); keep=[t,want];
     if(restore) vid.removeEventListener("loadedmetadata",restore);
     vid._resume=vid._want=want;
     restore=()=>{ const go=vid._resume&&!!vid.offsetParent; restore=keep=null; vid._reloading=false; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t;
       if(!go) stopDead(vid); else if(vid===v){ playSafe(v,$("badge")); $("play").textContent="⏸ 暫停"; tick(); } else cmpStart(); };
     vid.addEventListener("loadedmetadata",restore,{once:true});
-    vid._reloading=url; vid.src=url; vid.playbackRate=rate; if(want) playSafe(vid,vid.parentElement.querySelector(".badge")); };
+    vid._reloading=url; vid.src=url; vid.playbackRate=vid===v?rate:cmpRate; playSafe(vid,vid.parentElement.querySelector(".badge")); };
   const fail=()=>{ stopDead(vid); m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; };
   m.onclick=()=>{ delete m.dataset.fail; tries=0; m.textContent="影片下載中…"; reload(!m._still,!!m._still); m._still=false; };
   vid.addEventListener("loadedmetadata",()=>{ if(!m.dataset.fail) return; tries=0; delete m.dataset.fail; m.hidden=true; });  // a clip that gave up came back (same src picked again); an automatic reload keeps its retry budget
@@ -881,7 +882,7 @@ function watchStall(vid){
 [v,$("vA"),$("vB")].forEach(watchStall);
 for(const vid of [v,$("vA"),$("vB")]){  // a reload that fails or is replaced must not leave pause events ignored (abort/emptied fire for the reload itself, so not those)
   vid.addEventListener("error",()=>{ vid._reloading=false; });
-  vid.addEventListener("pause",()=>{ if(vid.paused&&vid.readyState&&!vid.error&&!vid._reloading){ vid._want=vid._resume=false; } });
+  vid.addEventListener("pause",()=>{ if(vid.paused&&!vid.error&&!vid._reloading){ if(vid!==v&&vid._want) stopDead(vid); else vid._want=vid._resume=false; } });
   vid.addEventListener("loadstart",()=>{ if(vid._reloading&&vid.currentSrc!==vid._reloading) vid._reloading=false; });
 }
 function load(id, scroll){
@@ -916,7 +917,7 @@ function load(id, scroll){
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage
   $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]); $("stage").parentElement.classList.toggle("wide", !!S.size && S.size[0]>S.size[1]); document.querySelector("main").classList.toggle("wideplayer", !!S.size && S.size[0]>S.size[1]);
   const s=S, start=()=>{ if(S===s) goto(S.contact-48); };
-  whenShown(v,()=>setClip(v,s,rate,start));
+  whenShown(v,()=>setClip(v,s,start));
   render(Math.max(0,Math.min(N-1,S.contact-48)));  // the new stroke's frame now (its skeleton fetch starts here), not the last stroke's until the clip loads
   markList(); markStrips(); drawNotes();
   if(scroll && !PLAYER_TABS.includes(TAB)) go(DAY,"stroke");
@@ -951,14 +952,14 @@ function tick(){
   if(frameRequest!==null){ v.cancelVideoFrameCallback?v.cancelVideoFrameCallback(frameRequest):cancelAnimationFrame(frameRequest); frameRequest=null; }
   render(frameOf(v.currentTime)); if(!v.paused) frameRequest=v.requestVideoFrameCallback?v.requestVideoFrameCallback(tick):requestAnimationFrame(tick);
 }
-function toggle(){ cancelAlign(v); if(v.paused||!v.readyState){ v._want=true; if(!v._fetching) playSafe(v,$("badge")); } else hold(v); }
+function toggle(){ cancelAlign(v); if(v._want||!v.paused&&v.readyState) stopDead(v); else { v._want=v._resume=true; $("play").textContent="⏸ 暫停"; if(!v._fetching) playSafe(v,$("badge")); } }
 v.loop=true;
 v.addEventListener("playing",()=>{ $("play").textContent="⏸ 暫停"; tick(); });
 v.addEventListener("pause",()=>{$("play").textContent="▶ 播放";});
 v.addEventListener("seeked",()=>{ if(v.paused) render(frameOf(v.currentTime)); });
 $("play").onclick=toggle; $("prev").onclick=()=>goto(cur-1); $("next").onclick=()=>goto(cur+1);
 seek.oninput=()=>goto(+seek.value);
-function step(d){ const list=visible(); let i=list.findIndex(s=>s.id===S.id); if(i<0) i=0; load(list[(i+d+list.length)%list.length].id,false); }
+function step(d){ const list=visible(); if(!list.length) return; let i=list.findIndex(s=>s.id===S.id); if(i<0) i=0; load(list[(i+d+list.length)%list.length].id,false); }
 $("prevS").onclick=()=>step(-1); $("nextS").onclick=()=>step(1);
 function speedButtons(box,get,set){ for(const s of [0.1,0.25,0.5,1]){ const b=document.createElement("button"); b.textContent=s+"×"; b.onclick=()=>{ set(s); [...box.children].forEach(x=>x.classList.toggle("on",x===b)); }; if(s===get()) b.classList.add("on"); box.append(b); } }
 speedButtons($("speeds"),()=>rate,s=>{rate=s;v.playbackRate=s;});
@@ -990,7 +991,7 @@ function cmpLoad(a,b){
   A=a; B=b; $("selA").value=sKey(A); $("selB").value=sKey(B); $("capA").innerHTML=capFor(A); $("capB").innerHTML=capFor(B);
   [...$("presets").children].forEach(x=>x.classList.toggle("on",dayNo(...x._p.a)===A&&dayNo(...x._p.b)===B));
   let ready=0; const go=()=>{ if(++ready===2) cmpGoto(A.contact-48); };  // each clip stops itself first, so one that never loads can't leave the other looping
-  for(const [vid,s] of [[vA,A],[vB,B]]) whenShown(vid,()=>setClip(vid,s,cmpRate,go));
+  for(const [vid,s] of [[vA,A],[vB,B]]) whenShown(vid,()=>setClip(vid,s,go));
   cmpRender(Math.max(0,A.contact-48));  // the frame cmpGoto will land on, so the new skeleton never flashes at the old pair's time
 }
 function cmpRender(f){
@@ -1010,11 +1011,12 @@ function cmpTick(){
 vA.loop=vB.loop=true;
 for(const x of [v,vA,vB]) x.addEventListener("loadedmetadata",()=>{ x._blocked=false; });  // a tap lifted Low Power Mode's block; later loads show times again
 vA.addEventListener("playing",()=>{ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
-vA.addEventListener("pause",()=>{ if(!vA.paused||vA._reloading&&!vA.readyState&&vA._resume) return; $("cmpPlay").textContent="▶ 同步播放"; hold(vB); });
+vA.addEventListener("pause",()=>{ if(!vA.paused||vA._reloading&&!vA.readyState) return; $("cmpPlay").textContent="▶ 同步播放"; });
 function cmpStart(){
   for(const vid of [vA,vB]) cancelAlign(vid);
   if([vA,vB].some(x=>x.parentElement.querySelector(".vid-msg[data-fail]"))){ stopDead(vA); return; }
-  vA._want=vB._want=true;
+  vA._want=vB._want=vA._resume=vB._resume=true;
+  $("cmpPlay").textContent=!vA._reloading&&(vA._fetching||vB._fetching||!vA.readyState)?"取消播放":"⏸ 暫停";
   if(vA._fetching||vB._fetching) return;
   if(vB.readyState) vB.currentTime=cmpBt();
   vA.playbackRate=vB.playbackRate=cmpRate;
@@ -1024,7 +1026,7 @@ function cmpStart(){
 for(const vid of [vA,vB]) vid.addEventListener("seeked",()=>{ if(vA.paused) cmpRender(Math.floor(vA.currentTime*FPS+1e-3)); });
 $("cmpPlay").onclick=()=>{ const dead=[vA,vB].filter(x=>x.parentElement.querySelector(".vid-msg[data-fail]"));
   if(dead.length){ for(const x of dead){ const m=x.parentElement.querySelector(".vid-msg"); m._still=true; m.click(); } return; }  // a side that gave up: play means retry it; both stay paused until the next tap so they start together
-  if(vA.paused||!vA.readyState) cmpStart(); else stopDead(vA); };
+  if(vA._want||!vA.paused&&vA.readyState) stopDead(vA); else cmpStart(); };
 $("cmpPrev").onclick=()=>cmpGoto(cmpCur-1); $("cmpNext").onclick=()=>cmpGoto(cmpCur+1); $("cmpContact").onclick=()=>cmpGoto(A.contact);
 cmpSeek.oninput=()=>cmpGoto(+cmpSeek.value);
 speedButtons($("cmpSpeeds"),()=>cmpRate,s=>{cmpRate=s;vA.playbackRate=vB.playbackRate=s;});
