@@ -28,7 +28,7 @@ BASE_KINDS = ("FH", "BH")  # metrics without `kinds` apply here (knee etc. are n
 KINDS = ("FH", "BH", "SV")  # SV group exists only when the session has SV strokes
 MIN_N, MIN_N_CONS = 3, 5
 MIN_COVER = 0.5  # usable strokes / strokes in the group; below it the metric says 資料不足 (docs/scoring.md §1)
-SCORE_VERSION = 7  # 7: BH knee / open_min consistency only, turn out of the power cap, consistency spread centred per (video, drill) (score-groups-consistency). 6: knee view gate (camera within 30 deg of front/back -> knee_warn) + kinematics get visibility-masked xy (knee-view-gate). 5: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate (body-kinematics). 4: + finish, reach, tilt, lean, stance and the SV group (serve-finish). 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
+SCORE_VERSION = 8  # 8: prep followed back past 1.0 s when the window start is the minimum; prep_trunc (lower bound) strokes left out of prep; prep along the 3D swing axis for a front / back camera (prep-window-direction). 7: BH knee / open_min consistency only, turn out of the power cap, consistency spread centred per (video, drill) (score-groups-consistency). 6: knee view gate (camera within 30 deg of front/back -> knee_warn) + kinematics get visibility-masked xy (knee-view-gate). 5: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate (body-kinematics). 4: + finish, reach, tilt, lean, stance and the SV group (serve-finish). 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
 
 
 def _num(v):
@@ -68,6 +68,7 @@ def _value(s, m, knee_src="knee"):
     """The stroke's value for metric m, or None when a quality gate drops it (docs/scoring.md §3)."""
     if m == "knee":
         return None if s.get("knee_warn") or (knee_src == "knee" and s.get("knee2d_ok") is False) else s.get(knee_src)
+    if m == "prep" and s.get("prep_trunc"): return None  # lower bound only: its score is 10 either way (>= 1.0 s), but the unknown true value would distort the spread
     if m in ("contact_h", "contact_fwd") and (not _num(s.get("vis")) or s["vis"] < 0.5): return None  # missing or NaN vis fails the gate
     return s.get(m)
 

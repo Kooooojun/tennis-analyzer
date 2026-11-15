@@ -44,7 +44,8 @@ def _knee(xy, J, c):
     return float(np.nanpercentile(ks, 10))
 
 
-PREP_WIN = FPS  # frames (1.0 s) searched before contact; 84 caught the previous rally stroke (testset/results/prep-contact.md)
+PREP_WIN = FPS  # frames (1.0 s) searched before contact; a fixed 1.4 s window caught the previous rally stroke (testset/results/prep-contact.md)
+PREP_MAX = 90  # frames (1.5 s, the web clip before contact): how far a backswing end on the window's first frame is followed back
 
 
 def _swing_dir(xy, J, c):
@@ -55,19 +56,34 @@ def _swing_dir(xy, J, c):
     return float(np.sign(d)) if np.isfinite(d) and d != 0 else np.nan
 
 
+def _swing_vec(W, J, c):
+    """Unit (x, 0, z) world direction of the forward swing (wrist relative to the hip centre, same windows as _swing_dir), for a camera
+    straight in front / behind where the swing runs along depth and image x has no stable sign. None without data."""
+    if c < 20: return None
+    rel = W[:, J['rw']] - (W[:, J['lh']] + W[:, J['rh']]) / 2
+    v = np.nanmedian(rel[c - 2:c + 1], axis=0) - np.nanmedian(rel[c - 20:c - 13], axis=0); v[1] = 0
+    n = np.linalg.norm(v); return v / n if np.isfinite(n) and n > 0 else None
+
+
 def _rmed(a, h):
     """Rolling median over +-h samples (edges shrink); NaN where the whole window is NaN."""
     return np.array([np.nanmedian(a[max(0, i - h):i + h + 1]) if np.isfinite(a[max(0, i - h):i + h + 1]).any() else np.nan for i in range(len(a))])
 
 
-def _prep(xy, J, c, d):
-    """Seconds from backswing end to contact. Backswing end = the frame, within PREP_WIN before contact, where the hitting
-    wrist is furthest back relative to the hip centre along the swing direction (5-frame median against pose jitter)."""
-    a = max(0, c - PREP_WIN)
-    back = d * (xy[a:c - 3, J['rw'], 0] - (xy[a:c - 3, J['lh'], 0] + xy[a:c - 3, J['rh'], 0]) / 2)
-    sm = _rmed(back, 2)
+def _prep(P, J, c, u):
+    """(seconds from backswing end to contact, truncated) or None. Backswing end = the frame where the hitting wrist is furthest back
+    relative to the hip centre along the swing direction u (+1/-1 on image x, or a _swing_vec on world coordinates; 5-frame median against jitter).
+    truncated = the backswing end reaches back to the clip start (or PREP_MAX), so the time is a lower bound."""
+    rel = P[:, J['rw']] - (P[:, J['lh']] + P[:, J['rh']]) / 2
+    back = _rmed(rel[:, 0] * u if np.isscalar(u) else rel @ u, 2)
+    a = max(0, c - PREP_WIN); sm = back[a:c - 3]
     if not np.isfinite(sm).any(): return None
-    return round((c - a - int(np.nanargmin(sm))) / FPS, 3)
+    i = a + int(np.nanargmin(sm))
+    # minimum on the window's first frame: the wrist was back earlier. Follow it back while the wrist stays as far back (2% of the range);
+    # a previous stroke first swings forward, which stops the walk, so it is never caught
+    tol = 0.02 * (np.nanmax(sm) - np.nanmin(sm)); lo = max(0, c - PREP_MAX)
+    while i == a and a > lo and back[a - 1] <= back[a] + tol: a -= 1; i = a
+    return round((c - i) / FPS, 3), bool(i == a and (a == lo or not np.isfinite(back[a - 1])))
 
 
 # --- view-robust body kinematics (docs/scoring.md §11). Idea from Logan-Huang/Tennis-AI-Coach (no licence: rewritten, nothing copied).
@@ -166,23 +182,26 @@ def _core(xy, vis, c, J, world=None, hand="R"):
     k2 = _knee(xy, J, c) if pre else np.nan
     ok3 = bool(np.isfinite(k3)); ok2 = bool(np.isfinite(k2))
     d = _swing_dir(xy, J, c) if ct else np.nan
+    view = az is not None and min(az, 180 - az) < KNEE_VIEW_MIN  # front / behind: the swing runs along depth, image x has no stable sign
     if ct:
         hip = (xy[w, J['lh'], 1] + xy[w, J['rh'], 1]) / 2; hx = (xy[w, J['lh'], 0] + xy[w, J['rh'], 0]) / 2
-        fwd = _med(d * (xy[w, J['rw'], 0] - hx) / L[w])
+        fwd = None if view else _med(d * (xy[w, J['rw'], 0] - hx) / L[w])
         ch = _med((hip - xy[w, J['rw'], 1]) / L[w]); oc = _med(openp[w]); el = _med([_angle(xy, i, J['rs'], J['re'], J['rw']) for i in range(c - 2, c + 3)])
         vis_c = float(np.nanmean(vis[w, J['rw']])) if np.isfinite(vis[w, J['rw']]).any() else None
     else: fwd = ch = oc = el = vis_c = None
-    prep = _prep(xy, J, c, d) if np.isfinite(d) else None
+    u = _swing_vec(world, J, c) if view and ct else None
+    pr = _prep(world, J, c, u) if u is not None else None if view else _prep(xy, J, c, d) if np.isfinite(d) else None
+    prep, trunc = pr or (None, None)
     op = openp[c - 48:c - 5] if pre else np.array([np.nan])
     a = max(0, c - 90); xk = xy[a:c + 61].copy(); xk[vis[a:c + 61] < FORM_VIS_MIN] = np.nan  # same visibility cut as form_checks; only kinematics' 150-frame window, not the whole video
-    view = az is not None and min(az, 180 - az) < KNEE_VIEW_MIN; gap = ok3 and ok2 and abs(k3 - k2) > KNEE_GAP_MAX
+    gap = ok3 and ok2 and abs(k3 - k2) > KNEE_GAP_MAX
     return dict(knee=r(k2, 1) if ok2 else None, knee3d=round(k3, 1) if ok3 else None,
                 knee_warn=True if view else bool(gap) if ok3 and ok2 else None,
                 knee_warn_why="view" if view else "gap" if gap else None, cam_az=r(az, 1),
                 open_min=r(np.nanpercentile(op, 10), 1) if np.isfinite(op).any() else None,
                 open_contact=r(oc, 1),
                 contact_h=r(ch, 2),
-                contact_fwd=r(fwd, 2), prep=prep,
+                contact_fwd=r(fwd, 2), prep=prep, prep_trunc=trunc,
                 elbow=r(el, 1),
                 vis=r(vis_c, 2),
                 **kinematics(xk, J, c - a, "R", None if prep is None else c - a - round(prep * FPS)))  # J is already remapped for the racket hand

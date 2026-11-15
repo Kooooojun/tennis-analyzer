@@ -162,7 +162,7 @@ print("arm conf tests ok")
 from statistics import NormalDist
 from score import _cons_spread, spread
 from trend import _entry
-assert SCORE_VERSION == 7
+assert SCORE_VERSION >= 7
 nd = [NormalDist().inv_cdf((i + 0.5) / 10) for i in range(10)]; nd = [x * 0.15 / spread(nd) for x in nd]  # 10 values, robust SD exactly 0.15
 two = [st(video=1, contact_fwd=0.4 + x) for x in nd] + [st(video=2, contact_fwd=0.75 + x) for x in nd]
 assert spread([s["contact_fwd"] for s in two]) > 0.2  # 0.244: medians 0.35 apart widen the pooled IQR (the brief guessed >= 0.3)
@@ -203,7 +203,15 @@ B = grp(score_session([st(knee=130, stance=None)] * 10, False))
 run = lambda name: dict(session=name, date="2026-11-0" + str(len(name)), camera="c")
 assert compare([_entry(run("a"), A), _entry(run("b"), B)]) == []
 # 6: comparable / series_key
-e = _entry(run("a"), A); assert e["comparable"] and e["series_key"] == ["c", A["knee_src"], 7]
+e = _entry(run("a"), A); assert e["comparable"] and e["series_key"] == ["c", A["knee_src"], SCORE_VERSION]
 assert not _entry(dict(run("a"), camera=""), A)["comparable"] and not _entry(dict(run("a"), date="wall-1"), A)["comparable"]
 assert not _entry(run("a"), grp(score_session([st()] * 6, False)))["comparable"]
 print("score-groups-consistency tests ok")
+
+# --- prep-window-direction: a truncated prep is only a lower bound -> left out of the prep median / spread; SCORE_VERSION 8
+from score import _value
+assert SCORE_VERSION == 8
+assert _value(dict(prep=1.5, prep_trunc=True), "prep") is None and _value(dict(prep=0.4, prep_trunc=False), "prep") == 0.4 and _value(dict(prep=0.4), "prep") == 0.4
+G = score_session([dict(kind="FH", prep=0.4)] * 5 + [dict(kind="FH", prep=1.5, prep_trunc=True)], False)[0]["metrics"]["prep"]
+assert G["n"] == 5 and G["median"] == 0.4, G
+print("prep-trunc tests ok")
