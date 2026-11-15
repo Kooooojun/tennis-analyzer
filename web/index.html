@@ -785,7 +785,7 @@ function watchStall(vid){
   let sig="", since=0, wait=0, tries=0, src="";
   let restore=null, keep=null;  // the pending time restore of the last reload and its [time, playing]; dropped when the clip changes
   const reload=(tap=false)=>{ tries++; since=Date.now(); const url=vid.currentSrc;
-    const [t,play,rate]=keep&&!vid.readyState?keep:[vid.readyState?vid.currentTime:null,vid.error?!!vid._want:!vid.paused,vid.playbackRate];  // Chrome marks a failed clip paused before its error fires, so ask what the viewer wanted keep=[t,play||tap,rate];  // a retry tap means play  // a reload that never got metadata keeps the first target; never loaded: load()'s own handler seeks
+    const [t,play,rate]=keep&&!vid.readyState?keep:[vid.readyState?vid.currentTime:null,vid.error?!!vid._want:!vid.paused,vid.playbackRate]; keep=[t,play||tap,rate];  // a reload that never got metadata keeps the first target (a retry tap means play); Chrome marks a failed clip paused before its error fires, so ask what the viewer wanted
     if(restore) vid.removeEventListener("loadedmetadata",restore);
     restore=()=>{ const go=(play||tap)&&!!vid.offsetParent; restore=keep=null; vid._reloading=false; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t; if(!go||vid.paused){ vid.pause(); if(vid===v) $("play").textContent="▶ 播放"; else if(vid===vA) $("cmpPlay").textContent="▶ 同步播放"; } else if(vid===vA){ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); } else if(vid===v){ $("play").textContent="⏸ 暫停"; tick(); } };  // the play handlers skip a play fired before metadata; a blocked play() leaves the clip paused with no pause event, so the buttons are set here
     vid.addEventListener("loadedmetadata",restore,{once:true});
@@ -798,7 +798,7 @@ function watchStall(vid){
     const now=Date.now();
     if(vid.error){ if(m.dataset.fail) return; if(tries<1&&now-since>=2000) reload(); else if(tries>=1) fail(); return; }
     const need=!(vid._blocked&&!vid.readyState)&&(vid.readyState<1||vid.seeking||!vid.paused&&vid.readyState<3);  // metadata only and idle is fine: preload=metadata, and a compare clip waits for its partner to scroll into view
-    if(!need){ wait=0; tries=0; delete m.dataset.fail; m.hidden=true; return; }
+    if(!need){ wait=0; if(m.dataset.fail) return; tries=0; m.hidden=true; return; }  // a clip that gave up stays failed until the retry tap or a new clip
     const b=vid.buffered, k=vid.currentTime+"|"+(b.length?b.end(b.length-1):0)+"|"+vid.readyState;
     if(!wait){ wait=since=now; sig=k; }
     if(k!==sig){ sig=k; since=now; }
