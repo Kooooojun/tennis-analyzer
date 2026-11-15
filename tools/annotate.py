@@ -6,7 +6,7 @@
 import json, subprocess, sys, time, numpy as np, cv2
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
-from common import ROOT, FPS, session, work, web, videos, load
+from common import ROOT, FPS, session, work, web, videos, load, tracks, track_file
 
 LONG = 1280  # long side of the output, px
 FONTS = ["/System/Library/Fonts/STHeiti Medium.ttc", "/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc",
@@ -67,8 +67,9 @@ def stroke_info(x):
 def annotate(s, name, src):
     Wd = work(s) / name
     if not (Wd / "pose.npy").exists(): sys.exit(f"missing work/{s}/{name}/pose.npy; run tools/prep.sh {s}")
-    pose = np.load(Wd / "pose.npy")
-    wp = Wd / "pose_world.npy"; world = np.load(wp) if wp.exists() else None
+    ks = tracks(Wd)  # every tracked person is drawn; a stroke's tag sits on the body of the track that swung (strokes.json "track")
+    poses = {k: np.load(track_file(Wd, "pose", k)) for k in ks}; pose = poses[0]
+    worlds = {k: np.load(w) if (w := track_file(Wd, "pose_world", k)).exists() else None for k in ks}
     vn = videos(s).index(name) + 1
     sp = web(s) / "strokes.json"; allS = load(sp) if sp.exists() else []
     S = sorted(({**x, "no": i + 1, "c": round(x["t"] * FPS)} for i, x in enumerate(allS) if x["video"] == vn), key=lambda x: x["c"])
@@ -83,17 +84,18 @@ def annotate(s, name, src):
         b = dec.stdout.read(W * H * 3)
         if len(b) < W * H * 3: break
         img = np.frombuffer(b, np.uint8).reshape(H, W, 3).copy()
-        p = pose[n] if n < len(pose) and not np.isnan(pose[n][0, 0]) else None
         st = next((x for x in reversed(S) if x["c"] - PRE <= n <= x["c"] + POST), None)  # latest stroke whose window covers this frame
-        if p is not None:
+        for k in ks:
+            pk = poses[k]; p = pk[n] if n < len(pk) and not np.isnan(pk[n][0, 0]) else None
+            if p is None: continue
             P = lambda j: (int(p[j, 0] * W), int(p[j, 1] * H)); ok = lambda j: p[j, 2] >= MINVIS
             for a, c in EDGES:
                 if ok(a) and ok(c): cv2.line(img, P(a), P(c), (255, 140, 70) if a % 2 == 0 and c % 2 == 0 else (90, 180, 255), 3, cv2.LINE_AA)  # BGR: right side (even landmark ids) orange, left blue, like highlights.py
             for j in JOINTS:
                 if ok(j): cv2.circle(img, P(j), 4, (255, 255, 255), -1, cv2.LINE_AA)
-            a, j = live_knee(p, world[n] if world is not None and n < len(world) and not np.isnan(world[n][0, 0]) else None, (W, H))
+            wk = worlds[k]; a, j = live_knee(p, wk[n] if wk is not None and n < len(wk) and not np.isnan(wk[n][0, 0]) else None, (W, H))
             if a is not None and ok(j): x, y = P(j); draw_text(img, x + 14, y - 18, f"{a:.0f}°", 26, kc(a))
-            if st is not None:
+            if st is not None and st.get("track", 0) == k:
                 nx, ny = P(0); who = (f" {st['player']}" if st.get("player") else "")
                 draw_text(img, nx, max(ny - 44, 30), f"#{st['no']:02d}{who}", 30, INK, "ma")
         if st is not None:

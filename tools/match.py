@@ -1,26 +1,39 @@
-import sys,warnings,numpy as np,json,cv2; warnings.filterwarnings("ignore")
+# match.py — wrist motion of one tracked person around each hit event. Called by candidates.py; CLI kept for checks:
+# match.py <pose.npy> <events.npy> <out.npy> [R|L]. Rows (t, pk, on, sp, arc): peak wrist speed within +-0.2 s and wrist
+# arc over +-0.25 s, both in torso lengths, of the racket hand (L = left wrist 15, else right wrist 16).
+import sys, warnings, numpy as np
 from pathlib import Path
-P=np.load(sys.argv[1]).astype(np.float64); O=np.load(sys.argv[2]); N=len(P)
-c=cv2.VideoCapture(str(Path(sys.argv[1]).parent/"proxy.mp4")); A=np.array([c.get(cv2.CAP_PROP_FRAME_WIDTH),c.get(cv2.CAP_PROP_FRAME_HEIGHT)])/540; c.release()
-if not A.all(): sys.exit(f"cannot read {Path(sys.argv[1]).parent/'proxy.mp4'}")
-xy=P[:,:,:2]*A; vis=P[:,:,2]
-h=(np.nanmean(P[:,[27,28],1],1)-P[:,0,1])*A[1]*9/16  # nose-to-ankle in portrait-frame heights, so 0.11 = 106 px either way
-L=np.linalg.norm((xy[:,11]+xy[:,12])/2-(xy[:,23]+xy[:,24])/2,axis=1)
-valid=(h>0.11)&(vis[:,16]>0.2)
-w=xy[:,16].copy(); w[~valid]=np.nan
-v=np.full(N,np.nan); v[1:]=np.linalg.norm(w[1:]-w[:-1],axis=1)/L[1:]
-out=[]
-for t,pk,on in O:
-    f=int(round(t*60))
-    if f<30 or f>N-30: continue
-    win=v[f-12:f+13]
-    if np.isnan(win).mean()>0.5 or valid[f-45:f+15].mean()<0.6: continue
-    sp=np.nanmax(win)
-    # arc length of wrist over +-0.25s
-    seg=w[f-15:f+16]; d=np.linalg.norm(np.diff(seg,axis=0),axis=1)/L[f]; arc=np.nansum(d)
-    out.append((t,pk,on,sp,arc))
-out=np.array(out).reshape(-1,5)  # (0,5) when no hit sounds
-print(len(out),"onsets with player in frame")
-for q in [0.5,1,1.5,2,2.5,3]:
-    print("arc>",q,(out[:,4]>q).sum())
-np.save(sys.argv[3],out)
+
+WRIST = {"R": 16, "L": 15}
+
+
+def match(P, O, A, hand="R"):
+    """P pose (N,33,3) normalized, O events (t, pk, on), A = (W, H) / 540 -> (M,5) rows for events with the person in frame."""
+    wi = WRIST[hand]; P = P.astype(np.float64); N = len(P)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        xy = P[:, :, :2] * A; vis = P[:, :, 2]
+        h = (np.nanmean(P[:, [27, 28], 1], 1) - P[:, 0, 1]) * A[1] * 9 / 16  # nose-to-ankle in portrait-frame heights, so 0.11 = 106 px either way
+        L = np.linalg.norm((xy[:, 11] + xy[:, 12]) / 2 - (xy[:, 23] + xy[:, 24]) / 2, axis=1)
+        valid = (h > 0.11) & (vis[:, wi] > 0.2)
+        w = xy[:, wi].copy(); w[~valid] = np.nan
+        v = np.full(N, np.nan); v[1:] = np.linalg.norm(w[1:] - w[:-1], axis=1) / L[1:]
+        out = []
+        for t, pk, on in O:
+            f = int(round(t * 60))
+            if f < 30 or f > N - 30: continue
+            win = v[f - 12:f + 13]
+            if np.isnan(win).mean() > 0.5 or valid[f - 45:f + 15].mean() < 0.6: continue
+            seg = w[f - 15:f + 16]; arc = np.nansum(np.linalg.norm(np.diff(seg, axis=0), axis=1) / L[f])
+            out.append((t, pk, on, np.nanmax(win), arc))
+    return np.array(out, dtype=np.float64).reshape(-1, 5)  # (0,5) when no hit events
+
+
+if __name__ == "__main__":
+    import cv2
+    if len(sys.argv) not in (4, 5): sys.exit("usage: match.py <pose.npy> <events.npy> <out.npy> [R|L]")
+    c = cv2.VideoCapture(str(Path(sys.argv[1]).parent / "proxy.mp4")); A = np.array([c.get(cv2.CAP_PROP_FRAME_WIDTH), c.get(cv2.CAP_PROP_FRAME_HEIGHT)]) / 540; c.release()
+    if not A.all(): sys.exit(f"cannot read {Path(sys.argv[1]).parent / 'proxy.mp4'}")
+    out = match(np.load(sys.argv[1]), np.load(sys.argv[2]), A, sys.argv[4] if len(sys.argv) > 4 else "R")
+    print(len(out), "events with player in frame;", " ".join(f"arc>{q}: {(out[:, 4] > q).sum()}" for q in (0.5, 1, 1.5, 2, 2.5, 3)))
+    np.save(sys.argv[3], out)

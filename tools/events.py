@@ -5,7 +5,8 @@
 # one player cannot hit twice that fast, and the ball bouncing before the hit or hitting the wall after it is the usual
 # runner-up. There is no cooldown beyond that.
 # Rows are (t, pk, on) like before, t moved back by the sound lag, measured per video from ball turns (estimate_lag).
-# Only the posed player's hits are found: the other player's hit sounds have no wrist to confirm them.
+# With several tracked people (pose_t1.npy.. next to pose.npy) any tracked person's fast wrist confirms a hit; people the
+# pose model never sees (far doubles players) still cannot confirm theirs.
 import sys, warnings
 from pathlib import Path
 import numpy as np
@@ -54,7 +55,7 @@ def fill(xy, gap=GAP):  # linear interpolation over NaN runs of at most `gap` fr
 
 
 def ball_turns(ball, wrists, aspect):
-    """ball (N,3) x,y,conf normalized; wrists (N,2,2) normalized (NaN when unseen); aspect = W/H.
+    """ball (N,3) x,y,conf normalized; wrists (N,2k,2) for k tracked people, normalized (NaN when unseen); aspect = W/H.
     Frames where the ball turns sharply (local max of the velocity change over +-K frames) within NEAR of a wrist."""
     N = len(ball); p = fill(ball[:, :2]) * [aspect, 1]   # frame-height units on both axes
     dv = np.full(N, np.nan)
@@ -96,10 +97,12 @@ def pick(rows, hand, lag=LAG, slack=0):
 
 if __name__ == "__main__":
     if len(sys.argv) != 5: sys.exit("usage: events.py <sounds.npy> <ball.npy> <pose.npy> <events.npy>")
-    rows, pose = np.load(sys.argv[1]).reshape(-1, 4), np.load(sys.argv[3]).astype(np.float64)
-    w, h = size(Path(sys.argv[3]).parent / "proxy.mp4")
-    hand = hand_speed(pose, w / h); ball = np.load(sys.argv[2]); n = min(len(ball), len(pose))
-    wr = np.where((pose[:n, [15, 16], 2] > 0.2)[..., None], pose[:n, [15, 16], :2], np.nan)
+    rows, pp = np.load(sys.argv[1]).reshape(-1, 4), Path(sys.argv[3])
+    poses = [np.load(q).astype(np.float64) for q in [pp, *sorted(pp.parent.glob(pp.stem + "_t*.npy"))]]
+    w, h = size(pp.parent / "proxy.mp4"); ball = np.load(sys.argv[2]); n = min(len(ball), len(poses[0]))
+    with warnings.catch_warnings():  # frames nobody is seen in stay NaN
+        warnings.simplefilter("ignore", RuntimeWarning); hand = np.nanmax([hand_speed(q, w / h) for q in poses], 0)
+    wr = np.concatenate([np.where((q[:n, [15, 16], 2] > 0.2)[..., None], q[:n, [15, 16], :2], np.nan) for q in poses], axis=1)
     lag = estimate_lag([r[0] for r in pick(rows, hand, lag=0, slack=15)], ball_turns(ball[:n], wr, w / h))
     out = np.array(pick(rows, hand, lag), dtype=np.float64).reshape(-1, 3)
     np.save(sys.argv[4], out)

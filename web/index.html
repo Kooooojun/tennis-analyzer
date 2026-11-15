@@ -398,7 +398,7 @@ const dayStats = data => { const k=(kind,drill)=>data.filter(s=>s.kind===kind&&(
 let MED = dayStats(ALL);
 const byNo = n => ALL[n-1];
 const dayNo = (day,n) => DAYS[day].data[n-1];
-function strokeLabel(s){ return `#${String(s.id+1).padStart(2,"0")} ${NAMES[s.kind]} · ${s.clock}`; }
+function strokeLabel(s){ return `#${String(s.id+1).padStart(2,"0")}${who(s)!=="me"?" "+PN(who(s)):""} ${NAMES[s.kind]} · ${s.clock}`; }  // plain text: innerHTML callers esc() it
 const drillName = s => s.kind!=="FH" ? "" : s.drill==="feed" ? "自己拋球" : s.drill==="rally" ? "對打" : s.drill==="high" ? "高拋" : "";
 
 // ---------- per-stroke series ----------
@@ -773,8 +773,8 @@ let A=null, B=null, cmpCur=0, cmpRate=0.25;
 // from notes.json: a/b are a stroke number in that session, or [session, number] to compare across sessions
 const PRESETS=Object.values(DAYS).flatMap(d=>(d.presets||[]).map(p=>{ const a=Array.isArray(p.a)?p.a:[d.id,p.a], b=Array.isArray(p.b)?p.b:[d.id,p.b]; return {day:a[0]===b[0]&&a[0]===d.id?d.id:"*",a,b,label:p.label}; })).filter(p=>p.a[0] in DAYS&&p.b[0] in DAYS);
 const sKey=s=>s.day+":"+s.id, fromKey=k=>{ const [d,i]=k.split(":"); return DAYS[d].data[+i]; };
-function fillSelect(sel){ sel.innerHTML=Object.entries(DAYS).map(([k,d])=>`<optgroup label="${d.label}">`+d.data.map(s=>`<option value="${sKey(s)}">${d.label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</option>`).join("")+"</optgroup>").join(""); }
-function capFor(s){ const r=Math.round; return `<b>${DAYS[s.day].label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${s.knee==null?"–":r(s.knee)+"°"}${s.knee_warn?"⚠不準":""} · 轉肩 ${s.open_min==null?"–":r(s.open_min)+"%"} · 擊球高度 ${s.contact_h==null?"–":r(hPct(s))}</span>`; }
+function fillSelect(sel){ sel.innerHTML=Object.entries(DAYS).map(([k,d])=>`<optgroup label="${d.label}">`+d.data.map(s=>`<option value="${sKey(s)}">${d.label} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</option>`).join("")+"</optgroup>").join(""); }
+function capFor(s){ const r=Math.round; return `<b>${DAYS[s.day].label} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${s.knee==null?"–":r(s.knee)+"°"}${s.knee_warn?"⚠不準":""} · 轉肩 ${s.open_min==null?"–":r(s.open_min)+"%"} · 擊球高度 ${s.contact_h==null?"–":r(hPct(s))}</span>`; }
 function drawPresets(){
   $("presets").innerHTML="";
   for(const p of PRESETS.filter(p=>p.day===DAY||p.day==="*")){ const b=document.createElement("button"); b.textContent=p.label; b._p=p; b.onclick=()=>cmpLoad(dayNo(...p.a),dayNo(...p.b)); $("presets").append(b); }
