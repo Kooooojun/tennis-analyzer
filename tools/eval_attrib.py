@@ -37,13 +37,14 @@ def setup(s):
 def main():
     s = session(); W = setup(s)
     if sys.argv[2:3] == ["--check"]:
-        C = load(work(s) / "cands.json"); bad = [(i, c["t"], c["track"], who_hit(W[c["v"]][0], W[c["v"]][1], c["t"], W[c["v"]][2])) for i, c in enumerate(C)
-                                                  if who_hit(W[c["v"]][0], W[c["v"]][1], c["t"], W[c["v"]][2]) != c["track"]]
+        C = load(work(s) / "cands.json"); got = [(i, c["t"], c["track"], who_hit(*W[c["v"]][:2], c["t"], W[c["v"]][2])) for i, c in enumerate(C) if c["v"] in W]
+        bad = [g for g in got if g[2] != g[3]]
         sys.exit(f"MISMATCH with candidates.py on {len(bad)} of {len(C)}: {bad[:5]}" if bad else print(f"check OK: same track as candidates.py on all {len(C)} candidates") or 0)
     if len(sys.argv) < 3: sys.exit("usage: eval_attrib.py <session> <labels.csv> | --check")
     rows = [l.split(",") for l in open(sys.argv[2], encoding="utf-8").read().splitlines() if l.strip() and not l.startswith("#")]
     ok, wrong = 0, []
     for v, t, who in rows:
+        if v not in W: sys.exit(f"video {v!r} has no tracked player in this session (videos with every person x are skipped): {sorted(W)}")
         Ps, hands, wh, nm = W[v]; k = who_hit(Ps, hands, float(t), wh)
         if nm[k] == who.strip(): ok += 1
         else: wrong.append((v, float(t), who.strip(), nm[k]))
