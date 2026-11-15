@@ -3,6 +3,7 @@ measure_full() on a whole-video pose.npy (33 landmarks), measure_clip() on the 1
 import numpy as np
 import warnings; warnings.filterwarnings("ignore")
 from common import PORTRAIT, FPS
+from kind import classify
 
 
 def _scale(size):
@@ -165,15 +166,10 @@ CLIP = dict(nose=0, ls=1, rs=2, le=3, re=4, lw=5, rw=6, lh=7, rh=8, lk=9, rk=10,
 
 
 def measure_full(P, t, size, Wd=None, hand="R"):
-    """P: pose.npy (frames,33,3). t: contact time in seconds. size: proxy (w, h). Adds an automatic FH/BH/OH guess.
-    hand "L": the FH/BH rule is applied mirrored (a lefty's forehand side is image-left when the right-hander's is image-right)."""
-    J = _hand(FULL, hand); sg = 1 if hand == "R" else -1
-    xy = P[:, :, :2] * _scale(size); f = int(round(t * 60))
-    hip_x = np.nanmean((xy[f - 8:f + 9, 23, 0] + xy[f - 8:f + 9, 24, 0]) / 2)
-    nose_y = np.nanmean(xy[f - 3:f + 4, 0, 1]); wy = np.nanmin(xy[f - 6:f + 7, J['rw'], 1])
-    dx = sg * (np.nanmean(xy[f + 15:f + 22, J['rw'], 0]) - np.nanmean(xy[f - 12:f - 6, J['rw'], 0])); side = sg * (np.nanmean(xy[f - 2:f + 3, J['rw'], 0]) - hip_x)
-    auto = "OH" if wy < nose_y - 0.02 else "FH" if side > 0.04 else "BH" if side < -0.02 else ("FH" if dx < 0 else "BH")
-    return dict(f=f, auto_kind=auto, **_core(xy, P[:, :, 2], f, FULL, Wd, hand))
+    """P: pose.npy (frames,33,3). t: contact time in seconds. size: proxy (w, h). Adds an automatic stroke kind (tools/kind.py): auto_kind FH/BH/SV/OH or '?', with kind_conf 0-1.
+    hand "L": kind.classify mirrors its racket-side test."""
+    xy = P[:, :, :2] * _scale(size); f = int(round(t * 60)); k = classify(P, f, hand, Wd)
+    return dict(f=f, auto_kind=k["kind"], kind_conf=k["conf"], **_core(xy, P[:, :, 2], f, FULL, Wd, hand))
 
 
 def measure_clip(frames, c, size=None, world=None, hand="R"):
