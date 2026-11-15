@@ -104,6 +104,7 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:10px 0 2px}
 .check li b{font-size:13px}
 .check li .you{display:block;font-size:12px;color:var(--warn);margin-top:2px}
 .check li .you.ok{color:var(--good)}
+.check li .you.na{color:var(--muted)}
 .links{margin:6px 0 0;padding-left:18px}
 .links li{margin:4px 0}
 a{color:var(--accent)}
@@ -238,6 +239,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
       <h2>這場的建議</h2>
       <div id="findings"></div>
       <p class="caveat" id="caveatAdvice"></p>
+      <p class="caveat" id="handAdvice" hidden></p>
     </div>
 
     <div class="card" data-tab="video" id="reelCard" hidden>
@@ -303,7 +305,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
       <p style="margin:0 0 8px">最好的參考是你自己的好球：同樣的身高、球拍和鏡頭角度，最容易對照。下面每一點都附上你這場的實際數字。</p>
       <h3>正拍</h3>
       <ul class="check" id="checkFH"></ul>
-      <h3>單手反拍</h3>
+      <h3 id="bhTitle">反拍</h3>
       <ul class="check" id="checkBH"></ul>
       <h3>自己拋球練習時</h3>
       <ul class="check">
@@ -390,15 +392,21 @@ const ZONE = [0.3, 0.8]; // target contact band, in torso lengths above the hip 
 
 const $ = id => document.getElementById(id);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const median = a => { const s=a.filter(x=>x!=null&&isFinite(x)).sort((x,y)=>x-y); return s.length? s[s.length>>1] : null; };
+const median = a => { const s=a.filter(x=>x!=null&&isFinite(x)).sort((x,y)=>x-y), m=s.length>>1; return !s.length? null : s.length%2? s[m] : (s[m-1]+s[m])/2; };  // even count: mean of the middle two, like numpy in score.py
 const pct = (a,q) => { const s=a.filter(x=>x!=null&&isFinite(x)).sort((x,y)=>x-y); return s[Math.floor((s.length-1)*q)]; };
-const byKind = k => ALL.filter(s=>s.kind===k);
-const feedFH = () => ALL.filter(s=>s.kind==="FH"&&s.drill==="feed");
-const rallyFH = () => ALL.filter(s=>s.kind==="FH"&&s.drill==="rally");
+const mine = () => ALL.filter(s=>pfilter==="ALL"||who(s)===pfilter);  // the player picked in the stroke list
+const byKind = k => mine().filter(s=>s.kind===k);
+const feedFH = () => byKind("FH").filter(s=>s.drill==="feed");
+const rallyFH = () => byKind("FH").filter(s=>s.drill==="rally");
 const kneeColor = a => a==null ? "#fff" : a<=130 ? "#4ade80" : a<=150 ? "#fbbf24" : "#f87171";
 const hPct = s => s.contact_h==null ? null : s.contact_h*100;  // null*100 would be 0
-const stats = g => ({knee:median(g.map(s=>s.knee)), open:median(g.map(s=>s.open_min)), h:median(g.map(hPct)), openC:median(g.map(s=>s.open_contact))});
+const kneeSrc = g => { const ok=g.filter(s=>!s.knee_warn); return ok.filter(s=>s.knee3d!=null&&isFinite(s.knee3d)).length>ok.length/2?"knee3d":"knee"; };  // same source pick as score.py score_group
+const kneeOk = (s,src="knee") => !(s.knee_warn||(src==="knee"&&s.knee2d_ok===false));  // score.py _value gate
+// knee: s.knee is already 3D when there is one (see DAYS), so the 2D source reads knee2d
+const kneeOf = (s,src) => src==="knee3d"?s.knee3d:s.knee3d!=null?s.knee2d:s.knee;
+const stats = g => ({knee:(src=>median(g.map(s=>kneeOk(s,src)?kneeOf(s,src):null)))(kneeSrc(g)), open:median(g.map(s=>s.open_min)), h:median(g.map(s=>s.vis>=0.5?hPct(s):null))  /* score.py vis gate */, openC:median(g.map(s=>s.open_contact))});
 const dayStats = data => { const k=(kind,drill)=>data.filter(s=>s.kind===kind&&(!drill||s.drill===drill)); return {FH:stats(k("FH")), BH:stats(k("BH")), SV:stats(k("SV")), feed:stats(k("FH","feed")), rally:stats(k("FH","rally"))}; };
+let filter="ALL", pfilter="ALL";
 let MED = dayStats(ALL);
 const byNo = n => ALL[n-1];
 const dayNo = (day,n) => DAYS[day].data[n-1];
@@ -422,7 +430,7 @@ const armCheck = s => {  // [headline, detail] or null when no check applies to 
   if(s.bh_elbow_conf!=null) return [T(s.bh_elbow_ok,"手肘沒彎","手肘偏彎"), "單手反拍：手肘"+T(s.bh_elbow_ok,"","")+" · 擊球點在身前"+T(s.bh_front_ok,"","")];
   return null;
 };
-const kneeWarn = s => s.knee_warn ? `這拍角度不準（3D ${Math.round(s.knee3d)}° 與 2D ${Math.round(s.knee2d)}° 差太多）` : "";
+const kneeWarn = s => !s.knee_warn ? "" : s.knee_warn_why==="view" ? "這拍鏡頭在正前或正後方，膝角看不準" : (d=>`這拍角度不準（${[s.knee3d!=null&&`3D ${Math.round(s.knee3d)}°`,d!=null&&`2D ${Math.round(d)}°`].filter(Boolean).join(" 與 ")||"3D 與 2D"} 差太多）`)(s.knee3d!=null?s.knee2d:s.knee);  // the DAYS loader moves the 2D angle to knee2d only when a 3D one replaces it
 const SER = new Map();
 function series(s){
   if(SER.has(s)) return SER.get(s);
@@ -524,10 +532,10 @@ function paint(cv, vid, s, f, opt){
 }
 
 // ---------- session summary ----------
-function typicalFH(){ const fh=feedFH().length?feedFH():byKind("FH").length?byKind("FH"):ALL, d=s=>Math.abs(s.knee-MED.feed.knee)/20+Math.abs(s.contact_h*100-MED.feed.h)/30+Math.abs(s.open_min-MED.feed.open)/15; return [...fh].sort((a,b)=>d(a)-d(b))[0]; }
+function typicalFH(){ const fh=feedFH().length?feedFH():byKind("FH").length?byKind("FH"):mine(), m=feedFH().length?MED.feed:MED.FH, t=(a,b,w)=>a==null||b==null?0:Math.abs(a-b)/w, d=s=>t(s.knee,m.knee,20)+t(hPct(s),m.h,30)+t(s.open_min,m.open,15); return [...fh].sort((a,b)=>d(a)-d(b))[0]; }
 function drawSummary(){
-  const fh=byKind("FH"), bh=byKind("BH"), sv=byKind("SV"), fd=feedFH(), ry=rallyFH();
-  $("sub").textContent = `${DAYS[DAY].label} · ${DAYS[DAY].sub} · 找出 ${ALL.length} 拍（正拍 ${fh.length}、反拍 ${bh.length}${sv.length?`、發球 ${sv.length}`:""}）`;
+  const cnt=k=>ALL.filter(s=>s.kind===k).length, fh=cnt("FH"), bh=cnt("BH"), sv=cnt("SV");  // the whole session, not the picked player
+  $("sub").textContent = `${DAYS[DAY].label} · ${DAYS[DAY].sub} · 找出 ${ALL.length} 拍（正拍 ${fh}、反拍 ${bh}${sv?`、發球 ${sv}`:""}）`;
   const r=Math.round;
   const items = (DAYS[DAY].findings||[]).map(f=>({cls:f.good?"good":f.info?"info":"", t:f.title, p:f.text, j:(f.jump||[]).map(([n,l])=>[byNo(n),l]), c:f.cite||[]}));
   if(!items.length) items.push({cls:"info", t:"這場還沒有寫重點", p:"請 Claude 看完數字後寫進 notes.json 的 findings，再跑 tools/build_site.py。", j:[], c:[]});
@@ -545,9 +553,10 @@ function drawSummary(){
 }
 // charts measure their container, so they are drawn when the 圖表 tab is shown (a hidden tab is 0 px wide)
 function drawCharts(){
-  strip("stripKnee","準備時膝蓋角度","越低越蹲",s=>s.knee,90,180,"°",[90,110,130,150,170]);
+  const ks={FH:kneeSrc(byKind("FH")),BH:kneeSrc(byKind("BH"))};  // dots use the same 2D/3D source as the median line
+  strip("stripKnee","準備時膝蓋角度","越低越蹲",s=>kneeOf(s,ks[s.kind]),90,180,"°",[90,110,130,150,170]);
   strip("stripHeight","擊球高度","髖部 = 0、肩膀 = 100，綠帶是腰到胸口",hPct,-40,100,"",[-40,-20,0,20,40,60,80,100]);
-  $("stripPrep").hidden=!ALL.some(s=>s.prep!=null); $("contactPlot").hidden=$("stripPrep").hidden;  // sessions before prep-contact have neither field
+  $("stripPrep").hidden=!mine().some(s=>s.prep!=null); $("contactPlot").hidden=$("stripPrep").hidden;  // sessions before prep-contact have neither field
   if(!$("stripPrep").hidden){ strip("stripPrep","準備時間","引拍完成到擊球，越高越早拉好",s=>s.prep,0,1,"s",[0,0.2,0.4,0.6,0.8,1],v=>v.toFixed(1)); drawContact(); }
   $("stripOpen").hidden=!DAYS[DAY].showOpen;
   if(DAYS[DAY].showOpen) strip("stripOpen","引拍時轉肩","越低越側身",s=>s.open_min,0,60,"%",[0,10,20,30,40,50,60]);
@@ -565,6 +574,7 @@ function drawOverview(){
   const d=DAYS[DAY], sc=d.scores, r1=x=>x==null?"–":x.toFixed(1), multi=d.players.length>1;
   const counts=["FH","BH","SV","OH"].map(k=>[k,ALL.filter(s=>s.kind===k).length]).filter(([,n])=>n).map(([k,n])=>`${NAMES[k]||k} ${n}`).join("、");
   let h=`<h2>${esc(d.label)} 總覽</h2><p class="hint" style="margin:0 0 10px">${esc(d.camera||"沒寫鏡頭位置")} · 共 ${ALL.length} 拍（${counts}）${multi?` · ${d.players.length} 位玩家`:""}</p>`;
+  const hn=handNote(ALL); if(hn) h+=`<p class="caveat" style="margin:0 0 10px">${esc(hn)}</p>`;
   if(!sc) h+=`<p class="caveat" style="margin:0 0 10px">這場還沒評分。在電腦上跑 <code>tools/score.py ${esc(d.id)}</code>，再跑 <code>tools/build_site.py</code>。</p>`;
   else{
     h+=`<div class="scores">`+sc.groups.map(g=>{
@@ -574,7 +584,7 @@ function drawOverview(){
         return `<span>${ITEM[m]||m}</span><span class="bar"><i style="width:${(s??0)*10}%"></i></span><span class="num" title="中位數 ${x.median??"–"}，${x.n} 拍">${val}</span>`;
       }).join("");
       const flags=(window.TREND||[]).filter(t=>t.player===g.player&&t.kind===g.kind&&t.history.at(-1)?.session===d.id).flatMap(t=>t.flags);
-      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?esc(PN(g.player))+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
+      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?esc(PN(g.player))+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}${g.n<5?`<br><b class="few">拍數少，參考就好</b>`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
     }).join("")+`</div>`;
     const ck=(sc.checks||[]).filter(c=>c.status==="ok");
     if(ck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+ck.map(c=>`<li>${multi?esc(PN(c.player))+" · ":""}${esc(c.name)}：通過 ${c.passed}、不通過 ${c.failed}、看不出來 ${c.unclear}</li>`).join("")+`</ul>`;
@@ -613,11 +623,11 @@ function strip(id,title,hint,get,lo,hi,unit,ticks,fmt=Math.round){  // one metri
   for(const val of yt){ mk("line",{x1:pl,x2:W-pr,y1:y(val),y2:y(val),stroke:"var(--line)","stroke-width":1}); mk("text",{x:pl-4,y:y(val)+3,"text-anchor":"end","font-size":10,fill:"var(--muted)"}).textContent=fmt(val)+unit; }
   for(const i of [0,...[10,20,30,40,50,60,70,80,90].filter(k=>k<ALL.length)]) mk("text",{x:x(i),y:H-3,"text-anchor":"middle","font-size":10,fill:"var(--muted)"}).textContent="#"+String(i+1).padStart(2,"0");
   for(const k of ["FH","BH"]){
-    const g=byKind(k).filter(s=>get(s)!=null&&isFinite(get(s))), m=median(g.map(get)), col=`var(--${k.toLowerCase()})`;
+    const g=byKind(k).filter(s=>get(s)!=null&&isFinite(get(s))), m=id==="stripKnee"?MED[k].knee:median(g.map(get)), col=`var(--${k.toLowerCase()})`;
     if(g.length>1) mk("polyline",{points:g.map(s=>`${x(s.id)},${y(get(s))}`).join(" "),fill:"none",stroke:col,"stroke-opacity":0.35,"stroke-width":1.2});
     if(m!=null) mk("line",{x1:pl,x2:W-pr,y1:y(m),y2:y(m),stroke:col,"stroke-width":1.5,"stroke-dasharray":"5 4"});
   }
-  for(const s of ALL){
+  for(const s of mine()){
     if(!(s.kind==="FH"||s.kind==="BH")) continue;
     const val=get(s); if(val==null||!isFinite(val)) continue;
     const col=`var(--${s.kind.toLowerCase()})`, hollow=s.kind==="FH"&&s.drill==="feed";
@@ -641,7 +651,7 @@ function drawContact(){
   for(const v of [0,100]){ mk("line",{x1:x(X[0]),x2:x(X[1]),y1:y(v),y2:y(v),stroke:"var(--line)"}); mk("text",{x:2,y:y(v)+4,"font-size":10,fill:"var(--muted)"}).textContent=v?"肩":"髖"; }
   mk("line",{x1:x(0),x2:x(0),y1:y(Y[0]),y2:y(Y[1]),stroke:"var(--line)"});
   mk("text",{x:x(0)+4,y:H-6,"font-size":10,fill:"var(--muted)"}).textContent="身體 →（往前）";
-  for(const s of ALL){
+  for(const s of mine()){
     if(!(s.kind==="FH"||s.kind==="BH")||s.contact_fwd==null||s.contact_h==null||!(s.vis>=0.5)) continue;  // same vis gate as score.py
     const c=mk("circle",{cx:x(s.contact_fwd),cy:y(s.contact_h*100),r:4.2,fill:`var(--${s.kind.toLowerCase()})`,"fill-opacity":0.6,stroke:"var(--panel)","stroke-width":1});
     c.dataset.id=s.id; c.dataset.hollow=0;
@@ -655,35 +665,46 @@ function markStrips(){
 }
 
 // ---------- how-to checklist with the user's own numbers ----------
+const one = (list,f) => { const v=[...new Set(list.map(s=>s[f]??null))]; return v.length===1?v[0]:null; };  // null when unknown or players differ
+const handNote = list => list.some(s=>s.hand_guess) ? `慣用手是程式猜的（${[...new Set(list.filter(s=>s.hand_guess).map(s=>PN(who(s))))].join("、")}），可能猜錯；猜錯時正反拍和手臂數字都會反。要改就在電腦上的 work/profiles.json 寫每個人的 hand（R／L）和 backhand（one／two），再重跑分析。` : "";
 function drawChecks(){
-  const r=Math.round, you=(txt,ok)=>`<span class="you ${ok?"ok":""}">${txt}</span>`;
+  const r=Math.round, you=(txt,v,ok)=>v.some(x=>x==null)?"":`<span class="you ${ok?"ok":""}">${txt}</span>`;  // a missing number gets no line and no colour
+  const n=(x,u="")=>x==null?"—":r(x)+u, na=t=>`<span class="you na">${t}</span>`, F=MED.FH, fd=MED.feed, ry=MED.rally;
   const fh=[
-    ["準備","看到球就轉肩側身、拍子往後拉。", you(`你：正拍轉肩中位數 ${r(MED.FH.open)}%`,MED.FH.open<=35)],
-    ["蓄力",`膝蓋彎下去，重心壓在後腳。目標就是你對打時的角度，約 ${r(MED.rally.knee)}°。`, (MED.feed.knee==null?you(`你：對打 ${r(MED.rally.knee)}°`,MED.rally.knee<=140):you(`你：自己拋球時 ${r(MED.feed.knee)}°${MED.feed.knee>150?"，太直":""}`,MED.feed.knee<=140))],
-    ["擊球","在身體前方、腰到胸口的高度擊球（畫面上的綠色區）。低球用膝蓋降下去，不要用手撈。", you(`你：自己拋球時擊球高度 ${r(MED.feed.h)}，對打 ${r(MED.rally.h)}`,(MED.feed.h??MED.rally.h)>=30)],
+    ["準備","看到球就轉肩側身、拍子往後拉。", DAYS[DAY].showOpen?you(`你：正拍轉肩中位數 ${n(F.open,"%")}`,[F.open],F.open<=35):na("這個鏡頭角度看不準轉肩，這場不給數字。")],
+    ["蓄力",`膝蓋彎下去，重心壓在後腳。${ry.knee==null?"":`目標就是你對打時的角度，約 ${r(ry.knee)}°。`}`, fd.knee==null?you(`你：對打 ${n(ry.knee,"°")}`,[ry.knee],ry.knee<=140):you(`你：自己拋球時 ${r(fd.knee)}°${fd.knee>150?"，太直":""}`,[fd.knee],fd.knee<=140)],
+    ["擊球","在身體前方、腰到胸口的高度擊球（畫面上的綠色區）。低球用膝蓋降下去，不要用手撈。", you(`你：${[fd.h!=null&&`自己拋球時擊球高度 ${r(fd.h)}`,ry.h!=null&&`對打 ${r(ry.h)}`].filter(Boolean).join("，")}`,[fd.h??ry.h],(fd.h??ry.h)>=30)],
     ["收拍","從下往上揮，拍子收到非持拍手那側的肩膀上方。",""],
   ];
-  const bh=[
-    ["準備","左手扶拍喉，一起把拍子帶到左後方，背對來球方向。", you(`你：反拍轉肩中位數 ${r(MED.BH.open)}%`,MED.BH.open<=35)],
-    ["蓄力","前腳（右腳）踩出去，膝蓋彎。", you(`你：反拍膝蓋中位數 ${r(MED.BH.knee)}°`,MED.BH.knee<=140)],
-    ["擊球","擊球點在前腳前方，手臂接近伸直。左手往後展開，讓肩膀在擊球時維持側身。", you(`你：擊球時肩膀打開中位數 ${r(MED.BH.openC)}%`,MED.BH.openC<=35)],
+  const B=MED.BH, bs=byKind("BH"), hd=one(bs,"hand"), off=hd==="L"?"右":hd==="R"?"左":"非持拍", side=hd?off:"非持拍手那側", front=hd==="L"?"前腳（左腳）":hd==="R"?"前腳（右腳）":"前腳",  /* unknown hand: no left/right */ type=one(bs,"backhand");
+  const bh=type==="one"?[
+    ["準備",`${off}手扶拍喉，一起把拍子帶到${side}後方，背對來球方向。`, you(`你：反拍轉肩中位數 ${n(B.open,"%")}`,[B.open],DAYS[DAY].showOpen&&B.open<=35)],
+    ["蓄力",`${front}踩出去，膝蓋彎。`, you(`你：反拍膝蓋中位數 ${n(B.knee,"°")}`,[B.knee],B.knee<=140)],
+    ["擊球",`擊球點在前腳前方，手臂接近伸直。${off}手往後展開，讓肩膀在擊球時維持側身。`, you(`你：擊球時肩膀打開中位數 ${n(B.openC,"%")}`,[B.openC],DAYS[DAY].showOpen&&B.openC<=35)],
     ["收拍","持拍手往前上方延伸，胸口最後才轉向球網。",""],
+  ]:[  // two-handed, or unknown: only what both backhands share
+    ["準備",`${type==="two"?"兩手握拍，":""}看到球就轉肩，把拍子帶到${side}後方。`, you(`你：反拍轉肩中位數 ${n(B.open,"%")}`,[B.open],DAYS[DAY].showOpen&&B.open<=35)],
+    ["蓄力",`${front}踩出去，膝蓋彎。`, you(`你：反拍膝蓋中位數 ${n(B.knee,"°")}`,[B.knee],B.knee<=140)],
+    ["擊球","擊球點在身體前方。", ""],
+    ["收拍",`${type==="two"?"兩手一起":"拍子"}往前上方送，收到持拍手那側的肩膀上方。`,""],
   ];
-  if(byKind("BH").length<3) bh.splice(0,bh.length,["這場",`反拍只抓到 ${byKind("BH").length} 拍，數字不夠參考。`,""]);
+  $("bhTitle").textContent=type==="one"?"單手反拍":type==="two"?"雙手反拍":"反拍";
+  if(!DAYS[DAY].showOpen){ bh[0][2]=na("這個鏡頭角度看不準轉肩，這場不給數字。"); if(type==="one") bh[2][2]=""; }
+  if(bs.length<3) bh.splice(0,bh.length,["這場",`反拍只抓到 ${bs.length} 拍，數字不夠參考。`,""]);
   const fill=(id,rows)=>{ $(id).innerHTML=rows.map(([a,b,c])=>`<li><b>${a}</b><span>${b}${c}</span></li>`).join(""); };
+  const hn=handNote(mine()); $("handAdvice").textContent=hn; $("handAdvice").hidden=!hn;
   fill("checkFH",fh); fill("checkBH",bh);
 }
 
 // ---------- stroke picker ----------
-let filter="ALL", pfilter="ALL";
 function drawTabs(){
   $("tabs").innerHTML="";
-  const tabs=[["ALL",`全部 ${ALL.length}`],["FH",`正拍 ${byKind("FH").length}`],["BH",`反拍 ${byKind("BH").length}`]];
+  const tabs=[["ALL",`全部 ${mine().length}`],["FH",`正拍 ${byKind("FH").length}`],["BH",`反拍 ${byKind("BH").length}`]];
   if(byKind("SV").length) tabs.push(["SV",`發球 ${byKind("SV").length}`]);
   for(const [k,label] of tabs){ const b=document.createElement("button"); b.textContent=label; b.classList.toggle("on",filter===k); b.onclick=()=>{ filter=k; drawTabs(); drawList(); }; $("tabs").append(b); }
   const ps=DAYS[DAY].players; if(ps.length<2) return;
   $("tabs").append(Object.assign(document.createElement("span"),{className:"sep"}));
-  for(const p of ["ALL",...ps]){ const b=document.createElement("button"); b.textContent=p==="ALL"?"所有人":`${PN(p)} ${ALL.filter(s=>who(s)===p).length}`; b.classList.toggle("on",pfilter===p); b.onclick=()=>{ pfilter=p; drawTabs(); drawList(); }; $("tabs").append(b); }
+  for(const p of ["ALL",...ps]){ const b=document.createElement("button"); b.textContent=p==="ALL"?"所有人":`${PN(p)} ${ALL.filter(s=>who(s)===p).length}`; b.classList.toggle("on",pfilter===p); b.onclick=()=>{ pfilter=p; MED=dayStats(mine()); drawTabs(); drawList(); drawChecks(); if(TAB==="charts") drawCharts(); }; $("tabs").append(b); }
 }
 function visible(){ return ALL.filter(s=>(filter==="ALL"||s.kind===filter)&&(pfilter==="ALL"||who(s)===pfilter)); }
 function drawList(){
@@ -721,7 +742,8 @@ function load(id, scroll){
   const dn=drillName(S);
   $("nowTitle").textContent=strokeLabel(S)+(dn?" · "+dn:"");
   $("detailTitle").textContent=`這一拍：${strokeLabel(S)}${dn?"（"+dn+"）":""}`;
-  const m=S.kind==="FH"?(S.drill==="feed"?MED.feed:S.drill==="rally"?MED.rally:MED.FH):MED[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
+  const M=dayStats(ALL.filter(s=>who(s)===who(S))),  // the stroke's own player, so switching the list filter never leaves this card stale
+  m=S.kind==="FH"?(S.drill==="feed"?M.feed:S.drill==="rally"?M.rally:M.FH):M[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
   const fmt=(x,u)=>x==null?"–":`${Math.round(x)}<small>${u}</small>`;
   $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${m.knee==null?"–":Math.round(m.knee)+"°"}`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");
   // body-kinematics (docs/scoring.md §11): trunk share, turn and leg load read the same from any horizontal camera angle
@@ -872,7 +894,8 @@ function addNote(){ const t=$("noteIn").value.trim(); if(!t) return; (notes[note
 $("noteAdd").onclick=addNote; $("noteIn").addEventListener("keydown",e=>{ if(e.key==="Enter") addNote(); });
 
 function setDay(k){
-  DAY=k; ALL=DAYS[k].data; MED=dayStats(ALL); filter="ALL"; if(!DAYS[k].players.includes(pfilter)) pfilter="ALL";
+  DAY=k; ALL=DAYS[k].data; filter="ALL"; if(!DAYS[k].players.includes(pfilter)) pfilter="ALL"; MED=dayStats(mine());
+  document.querySelectorAll(".strip").forEach(e=>e.replaceChildren());  // the last session's dots would point at strokes this one lacks
   [...$("days").children].forEach(b=>{ const on=b.dataset.day===k; b.classList.toggle("on",on); b.setAttribute("aria-selected",on); });
   drawSummary(); drawChecks(); drawTabs(); drawList(); drawPresets();
   load(typicalFH().id,false);
@@ -897,7 +920,7 @@ function route(){
   TAB=m[2]||"overview";
   document.querySelectorAll("main [data-tab]").forEach(e=>{ e.hidden=!e.dataset.tab.split(" ").includes(TAB) || (e.id==="reelCard"&&!DAYS[m[1]].reel); });  // before setDay, so clips on hidden tabs wait (whenShown)
   if(m[1]!==DAY||!S) setDay(m[1]);
-  else if(wasHome){ drawSummary(); drawTabs(); drawList(); }  // home overwrote #sub and may have set pfilter
+  else if(wasHome){ MED=dayStats(mine()); drawSummary(); drawChecks(); drawTabs(); drawList(); }  // home overwrote #sub and may have set pfilter
   $("days").querySelector(".on")?.scrollIntoView({block:"nearest",inline:"nearest"});
   $("h1Sub").textContent=" · "+DAYS[DAY].label;
   [...$("tabbar").children].forEach(b=>{ const on=b.dataset.tab===TAB; b.classList.toggle("on",on); b.setAttribute("aria-current",on?"page":"false"); });
@@ -933,9 +956,9 @@ function drawSpark(svg,t){  // total + consistency per session, oldest left
   const mk=(tag,a)=>{ const e=document.createElementNS(NS,tag); for(const k in a) e.setAttribute(k,a[k]); svg.append(e); return e; };
   for(const v of [1,4,7,10]){ mk("line",{x1:pl,x2:W-pr,y1:y(v),y2:y(v),stroke:"var(--line)"}); mk("text",{x:pl-5,y:y(v)+3,"text-anchor":"end","font-size":10,fill:"var(--muted)"}).textContent=v; }
   for(const [key,col,w] of [["consistency","var(--muted)",1.5],["total","var(--accent)",2.5]]){
-    const pts=h.map((r,i)=>[i,r.items[key]]).filter(([,v])=>v!=null);
-    mk("polyline",{points:pts.map(([i,v])=>`${x(i)},${y(v)}`).join(" "),fill:"none",stroke:col,"stroke-width":w});
-    for(const [i,v] of pts){ const c=mk("circle",{cx:x(i),cy:y(v),r:key==="total"?4.5:3,fill:col}); const tt=document.createElementNS(NS,"title"); tt.textContent=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v}`; c.append(tt); }
+    const pts=h.map((r,i)=>[i,r.items[key]]).filter(([,v])=>v!=null), seg=r=>r.camera?r.camera+"|"+r.knee_src+"|"+r.score_version:NaN;  // NaN: an unnamed camera never joins a neighbour
+    for(let a=0,b=1;a<pts.length;a=b++){ while(b<pts.length&&seg(h[pts[b][0]])===seg(h[pts[b-1][0]])) b++; if(b-a>1) mk("polyline",{points:pts.slice(a,b).map(([i,v])=>`${x(i)},${y(v)}`).join(" "),fill:"none",stroke:col,"stroke-width":w}); }  // different camera / knee source / version: not comparable, so not joined
+    for(const [i,v] of pts){ const c=mk("circle",{cx:x(i),cy:y(v),r:key==="total"?4.5:3,fill:col}); const tt=document.createElementNS(NS,"title"); tt.textContent=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v} · 鏡頭：${h[i].camera||"沒寫"}`; c.append(tt); }
   }
   h.forEach((r,i)=>{ const l=DAYS[r.session]?.label||r.session; mk("text",{x:x(i),y:H-18,"text-anchor":n<2?"middle":i===0?"start":i===n-1?"end":"middle","font-size":10,fill:"var(--muted)"}).textContent=l.length>10?l.slice(0,10)+"…":l; });
   mk("text",{x:pl,y:H-3,"font-size":10,fill:"var(--accent)"}).textContent="● 總分";
