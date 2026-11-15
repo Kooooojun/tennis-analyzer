@@ -26,34 +26,38 @@ def table(pairs, label):
         print(f"{k:11s} {len(p):2d} {np.median(d):9.3f} {np.median(np.abs(d)):8.3f} {s:6.3f} {np.median(np.abs(d)) / s:6.2f} {abs(np.median(d)) / s:8.2f}")
 
 
+POSES, MEAS = {}, {}  # npz members decompress on every access, and both vmin passes share the same strokes
+
+
 def main(pdir, ev, vmin):
     rows = list(csv.DictReader(open(ev)))
-    poses = {c: np.load(f"{pdir}/c{c}.npz") for c in (1, 2, 3, 4)}
-    meas = {}
+    for c in (1, 2, 3, 4): POSES.setdefault(c, dict(np.load(f"{pdir}/c{c}.npz")))
+    poses, meas = POSES, MEAS
 
     def m(r):
         key = (r["cam"], r["f"])
         if key not in meas:
             Z = poses[int(r["cam"])]; P = Z["lm"].copy(); P[..., :2] /= SZ
             # hand = faster reference wrist (anatomical); the camera's own labels may be flipped, as in the app
-            meas[key] = measure_full(P, int(r["f"]) / 60, tuple(SZ), Z["world"], r["hand"])
+            meas[key] = measure_full(P, int(r["f"]) / 60, (960, 544), Z["world"], r["hand"])
         return meas[key]
-    pairs = []
+    pairs = []; skipped = 0
     for a, b in ((1, 3), (2, 4)):
         A = [r for r in rows if r["cam"] == str(a) and float(r["speed"]) >= vmin]
         B = [r for r in rows if r["cam"] == str(b) and float(r["speed"]) >= vmin]
         for r in A:
             q = min(B, key=lambda s: abs(float(s["t"]) - float(r["t"])), default=None)
             if q is None or abs(float(q["t"]) - float(r["t"])) > MATCH: continue
+            if q["hand"] != r["hand"]: skipped += 1; continue  # faster wrist differs = two different peaks, not one swing
             pairs.append((m(r) | dict(az=float(r["az_contact"]), hand=r["hand"]), m(q) | dict(az=float(q["az_contact"]), hand=q["hand"])))
-    print(f"\n=== speed >= {vmin} m/s: {len(pairs)} pairs ({sum(x['hand'] != y['hand'] for x, y in pairs)} with different reference hand)")
+    print(f"\n=== speed >= {vmin} m/s: {len(pairs)} pairs ({skipped} dropped: different reference hand)")
     table(pairs, "all pairs")
     # az split: the camera nearer to side-on (|az - 90| smaller) vs the other one of the same stroke
     side = lambda x: abs(abs(x["az"]) - 90)
     table([(x, y) if side(x) <= side(y) else (y, x) for x, y in pairs], "ordered (a = nearer side-on cam)")
-    near = [p for p in pairs if min(side(p[0]), side(p[1])) <= 30]
-    table(near, "one cam within 30 deg of side-on")
-    table([p for p in pairs if p not in near], "both cams > 30 deg from side-on")
+    isnear = [min(side(x), side(y)) <= 30 for x, y in pairs]
+    table([p for p, n in zip(pairs, isnear) if n], "one cam within 30 deg of side-on")
+    table([p for p, n in zip(pairs, isnear) if not n], "both cams > 30 deg from side-on")
     print("\naz pairs (deg):", sorted((round(abs(x["az"])), round(abs(y["az"]))) for x, y in pairs))
 
 
