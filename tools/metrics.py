@@ -23,6 +23,20 @@ def _med(a):
 
 
 KNEE_GAP_MAX = 20.0  # deg; |knee3d - knee| above this = "angle unreliable for this stroke" (checked against multi-view ground truth: docs/research/multiview-angles.md)
+KNEE_VIEW_MIN = 30.0  # deg; camera within this of straight in front / behind = knee angle not shown or scored (CalTennis: 2D median error 19.6 deg front, 34.4 back vs ~2 side; testset/results/eval-caltennis.md)
+
+
+def cam_az(world, J, frames):
+    """Camera azimuth around the player, deg 0-180 (0 = in front of the chest, 90 = side, 180 = behind; same as the CalTennis ct_eval.az).
+    MediaPipe world is camera-aligned (x right, y down, z away), so the camera is at -z. Body right = shoulder + hip lines, median over `frames`.
+    None when the window has no data or the body line is nearly vertical. A left/right label swap turns az into 180 - az; the gate covers both ends."""
+    W = np.asarray(world[[i for i in frames if 0 <= i < len(world)]], float)  # slice first: `world` can be a whole video, do not convert all of it
+    if not len(W): return None
+    r = np.nanmedian(W[:, J['rs']] - W[:, J['ls']] + W[:, J['rh']] - W[:, J['lh']], axis=0)
+    fx, fz = -r[2], r[0]  # forward = up x right, up = -y
+    n = np.hypot(fx, fz)
+    if not np.isfinite(n) or n < 0.05: return None
+    return float(np.degrees(np.arccos(np.clip(-fz / n, -1, 1))))
 
 
 def _knee(xy, J, c):
@@ -140,6 +154,7 @@ def _core(xy, vis, c, J, world=None, hand="R"):
     """J maps names to landmark indices for this array layout. world: optional (frames, n, 3) metres, same layout, for knee3d.
     knee = 2D knee (unchanged definition); knee3d = same window/percentile on 3D angles, None without world data.
     hand: racket hand, "R" or "L" (per-player setting, work/profiles.json); everything with the hitting arm follows it."""
+    az = cam_az(world, J, range(c - 48, c - 5)) if world is not None and c >= 48 else None  # knee window; before _hand, which swaps ls/rs
     J = _hand(J, hand)
     L = np.linalg.norm((xy[:, J['ls']] + xy[:, J['rs']]) / 2 - (xy[:, J['lh']] + xy[:, J['rh']]) / 2, axis=1)
     bh = np.linalg.norm(xy[:, J['nose']] - (xy[:, J['lh']] + xy[:, J['rh']]) / 2, axis=1)
@@ -159,15 +174,18 @@ def _core(xy, vis, c, J, world=None, hand="R"):
     else: fwd = ch = oc = el = vis_c = None
     prep = _prep(xy, J, c, d) if np.isfinite(d) else None
     op = openp[c - 48:c - 5] if pre else np.array([np.nan])
+    a = max(0, c - 90); xk = xy[a:c + 61].copy(); xk[vis[a:c + 61] < FORM_VIS_MIN] = np.nan  # same visibility cut as form_checks; only kinematics' 150-frame window, not the whole video
+    view = az is not None and min(az, 180 - az) < KNEE_VIEW_MIN; gap = ok3 and ok2 and abs(k3 - k2) > KNEE_GAP_MAX
     return dict(knee=r(k2, 1) if ok2 else None, knee3d=round(k3, 1) if ok3 else None,
-                knee_warn=bool(abs(k3 - k2) > KNEE_GAP_MAX) if ok3 and ok2 else None,
+                knee_warn=True if view else bool(gap) if ok3 and ok2 else None,
+                knee_warn_why="view" if view else "gap" if gap else None, cam_az=r(az, 1),
                 open_min=r(np.nanpercentile(op, 10), 1) if np.isfinite(op).any() else None,
                 open_contact=r(oc, 1),
                 contact_h=r(ch, 2),
                 contact_fwd=r(fwd, 2), prep=prep,
                 elbow=r(el, 1),
                 vis=r(vis_c, 2),
-                **kinematics(xy, J, c, "R", None if prep is None else c - round(prep * FPS)))  # J is already remapped for the racket hand
+                **kinematics(xk, J, c - a, "R", None if prep is None else c - a - round(prep * FPS)))  # J is already remapped for the racket hand
 
 
 FULL = dict(nose=0, ls=11, rs=12, le=13, re=14, lw=15, rw=16, lh=23, rh=24, lk=25, rk=26, la=27, ra=28)
@@ -268,7 +286,9 @@ def arm_checks(frames, c, size=None, world=None, kind=None, hand="R", one_hand=F
     *_conf = min(wrist-chain visibility, 1 - arm depth fraction, 1 - 2D/3D gap / 70), 0-1. FH, OH and two-handed BH get None."""
     out = dict(serve_arm_straight=None, serve_arm_conf=None, bh_elbow_ok=None, bh_elbow_conf=None, bh_front_ok=None)
     want_elbow = kind == "SV" or (kind == "BH" and one_hand)
-    if not want_elbow or world is None: return out
+    if not want_elbow: return out
+    miss = {"serve_arm_conf": 0.0} if kind == "SV" else {"bh_elbow_conf": 0.0}; out_miss = {**out, **miss}  # applies but cannot measure = "cannot tell"
+    if world is None: return out_miss
     s, e, w = _ARM.get(hand, _ARM["R"]); sc = _scale(size); e2, e3, vis, dep = [], [], [], []
     for i in range(c - 2, c + 3):
         if i < 0 or i >= len(frames) or frames[i] is None or world[i] is None: continue
@@ -276,9 +296,9 @@ def arm_checks(frames, c, size=None, world=None, kind=None, hand="R", one_hand=F
         xy = P[:, :2] * sc
         e2.append(_angle(xy[None], 0, s, e, w)); e3.append(_angle(W[None], 0, s, e, w)); vis.append(P[[s, e, w], 2].min())
         dep.append(max(abs(W[b, 2] - W[a, 2]) / (np.linalg.norm(W[b] - W[a]) or np.nan) for a, b in ((s, e), (e, w))))
-    if len(e2) < 3 or not (np.isfinite(e2).any() and np.isfinite(e3).any()): return out
+    if len(e2) < 3 or not (np.isfinite(e2).any() and np.isfinite(e3).any()): return out_miss
     a2, a3, v, d = _med(e2), _med(e3), _med(vis), _med(dep)
-    if None in (a2, a3, v, d): return out
+    if None in (a2, a3, v, d): return out_miss
     gap = abs(a3 - a2); conf = round(float(max(0, min(v, 1 - d, 1 - gap / 70))), 2)
     ok = v >= ARM_VIS_MIN and d <= ARM_DEPTH_MAX and gap <= ARM_GAP_MAX
     m = (a2 + a3) / 2; verdict = None if not ok else True if m >= ARM_STRAIGHT else False if m < ARM_BENT else None

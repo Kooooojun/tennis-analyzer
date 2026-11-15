@@ -134,7 +134,7 @@ assert g["metrics"]["contact_fwd"]["n"] == 0 and g["metrics"]["contact_fwd"]["st
 print("prep-contact score tests ok")
 
 # body-kinematics（testset/results/body-kinematics_pred.md）：力量上限、2D 膝縮短閘門
-assert SCORE_VERSION == 5
+assert SCORE_VERSION == 6
 W, T, LL = (METRICS[m]["lin"] for m in ("wrist_speed", "turn", "leg_load"))
 strong = dict(wrist_speed=W[0], turn=T[0], leg_load=LL[0])  # power 10
 weak = dict(wrist_speed=W[1], turn=T[1], leg_load=LL[1])     # power 1: arm-only, upright
@@ -152,3 +152,8 @@ assert g["metrics"]["turn"]["status"] == "資料不足" and g["power"] is None
 g = grp(score_session([st(knee=120, knee2d_ok=False)] * 6, False)); assert g["metrics"]["knee"]["score"] is None
 g = grp(score_session([st(knee=150, knee3d=120, knee2d_ok=False)] * 6, False)); assert g["metrics"]["knee"]["median"] == 120
 print("body-kinematics score tests ok")
+# arm check that applied but could not measure (conf 0.0) counts as "cannot tell", not as "not applicable"
+from score import check_session
+r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] * 3 + [dict(kind="SV", serve_arm_straight=None, serve_arm_conf=0.0)])
+assert r[0]["n"] == 4 and r[0]["unclear"] == 1, r
+print("arm conf tests ok")
