@@ -55,7 +55,9 @@ for az, want in ((90, None), (85, None), (60, 14.0), (180, 14.0), (10, 14.0)):
 mv = {i: dict(lean[i], rw=(0.3 + 0.01 * (i - c), 0.25, 0)) for i in range(150)}
 for az, ok in ((170, False), (10, False), (150, True), (90, True)):
     fr, W = clip(mv, az=az); r = form_checks(fr, c, SIZE, W, "FH"); assert (r["lean"] is None) != ok and (not ok or abs(r["lean"] - 11.3) < 0.7), (az, r)
-    fr, W = clip({c + i: dict(rw=(0.2, -0.6, 0)) for i in range(-3, 4)}, az=az); r = form_checks(fr, c, SIZE, W, "SV"); assert (r["reach"] is None) != ok and (r["lean"] is None) != ok, (az, r)
+    fr, W = clip({c + i: dict(rw=(0.2, -0.6, 0)) for i in range(-3, 4)}, az=az); r = form_checks(fr, c, SIZE, W, "SV"); assert abs(r["reach"] - 1.2) < 0.05 and (r["lean"] is None) != ok, (az, r)  # reach is not view-gated (front view had no evidence)
 fr, W = clip(mv, az=170); r = form_checks(fr, c, SIZE, None, "FH"); assert abs(r["lean"] - 11.3) < 0.7, r
 fr, W = clip({c + i: dict(rw=(0.2, -0.6, 0)) for i in range(-3, 4)}, az=170); r = form_checks(fr, c, SIZE, None, "SV"); assert abs(r["reach"] - 1.2) < 0.05 and r["lean"] is not None, r
+# tilt majority rule counts only frames dropped for overlap: 14 of 26 frames hidden by visibility, no overlap -> value kept (old behaviour)
+fr, W = clip({**{i: sh for i in range(c - 30, c - 4)}, **{i: dict(sh, vis=0.1) for i in range(c - 30, c - 16)}}); r = form_checks(fr, c, SIZE, W, "SV"); assert abs(r["tilt"] - 14.0) < 0.5, r
 print("ok")

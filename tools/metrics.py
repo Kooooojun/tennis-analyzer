@@ -396,14 +396,14 @@ def form_checks(frames, c, size=None, world=None, kind=None, hand="R"):
             sm = _rmed(seg, 1)
             out["finish"] = round(float(np.nanmax(sm)), 2)
     if kind in (None, "SV"):
-        r = None if view else _med(up[c - 2:c + 3]); out["reach"] = None if r is None else round(r, 2)  # straight behind, the raised arm leans along depth and 2D y reads low
+        r = _med(up[c - 2:c + 3]); out["reach"] = None if r is None else round(r, 2)  # not view-gated: low from behind (PR #13) but not from the front, and az cannot tell the two apart
         rs, os_ = (2, 1) if hand != "L" else (1, 2)
         if W is not None and c >= 30:  # 3D only: 2D shoulder tilt swings 45-70 deg on one player's serves (docs/scoring.md §10)
             seg = slice(c - 30, c - 4); dy = W[seg, rs, 1] - W[seg, os_, 1]; ln = np.linalg.norm(W[seg, rs] - W[seg, os_], axis=1)
             ang = np.degrees(np.arcsin(np.clip(dy / ln, -1, 1)))
-            ang[np.abs(W[seg, rs, 0] - W[seg, os_, 0]) / ln < TILT_X_MIN] = np.nan
-            sm = _rmed(ang, 2); sm[~np.isfinite(ang)] = np.nan  # dropped frames stay out of the peak; peak of the 5-frame median = the moment the racket shoulder is lowest (trophy), not the contact-time lift
-            out["tilt"] = round(float(np.nanmax(sm)), 1) if np.isfinite(ang).sum() * 2 >= len(ang) else None
+            drop = np.abs(W[seg, rs, 0] - W[seg, os_, 0]) / ln < TILT_X_MIN; ang[drop] = np.nan
+            sm = _rmed(ang, 2); sm[drop] = np.nan  # overlap frames stay out of the peak; peak of the 5-frame median = the moment the racket shoulder is lowest (trophy), not the contact-time lift
+            out["tilt"] = round(float(np.nanmax(sm)), 1) if np.isfinite(sm).any() and drop.sum() * 2 <= len(ang) else None  # more than half dropped for overlap = side-on throughout; visibility gaps count as before
     v = (sc - hc)[c - 2:c + 3]
     if kind == "SV": ln = _med(np.degrees(np.arctan2(np.abs(v[:, 0]), -v[:, 1])))  # serve direction cannot be read from the wrist x (from behind it flips), so size only
     else:
