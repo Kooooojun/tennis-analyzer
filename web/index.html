@@ -37,7 +37,7 @@ main{max-width:1200px;margin:0 auto;padding-block:8px 40px;display:grid;grid-tem
 .player{position:sticky;top:calc(12px + env(safe-area-inset-top, 0px));width:calc((100vh - 290px) * 9 / 16);max-width:420px;min-width:260px}
 .player:not(.wide) .stage{max-height:max(200px, 100vh - 460px)}  /* portrait: the clip letterboxes rather than push the controls below a short window */
 main.wideplayer{grid-template-columns:minmax(0,1fr)}  /* landscape clip: player on top, cards (compare too) full width below */
-.player.wide{position:static;width:min(100%, (100vh - 400px) * 16 / 9, 900px);max-width:none;min-width:0}
+.player.wide{position:static;width:min(100%, max(360px, (100vh - 400px) * 16 / 9), 900px);max-width:none;min-width:0}
 .stage{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:9/16;width:100%;max-width:100%}
 .stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%}
 .stage video{object-fit:contain}
