@@ -21,11 +21,11 @@ def main():
             ok = sw[0][1] | sw[1][1] if sw else np.zeros(len(fr), bool)
             per_video[f"{key[0]}/t{key[1]}"] = dict(frames=int(ok.sum()), swap_frames=int(((sw[0][0] & sw[0][1]) | (sw[1][0] & sw[1][1]))[ok].sum()) if sw else 0)
         rows.append(dict(video=s["video"], track=key[1], t=s["t"], f=s["f"], player=s.get("player"), **pose_flags(cache[key], FULL, s["f"])))
-    for v in per_video.values(): v["swap_rate"] = round(v["swap_frames"] / max(v["frames"], 1), 4)
+    for v in per_video.values(): v["swap_rate"] = round(v["swap_frames"] / v["frames"], 4) if v["frames"] else None  # nothing measurable: unknown, not 0
     rate = lambda k: (lambda v: round(np.mean(v), 3) if v else None)([r[k] for r in rows if r[k] is not None])  # unknown (null) strokes are not in the denominator
     out = dict(win=FLAG_WIN, per_video=per_video, strokes=len(rows), lr_swap_rate=rate("lr_swap"), pose_jump_rate=rate("pose_jump"), rows=rows)
-    for k, v in per_video.items(): print(f"{k}: swap frames {v['swap_frames']}/{v['frames']} ({v['swap_rate']:.2%})")
     pc = lambda v: "unknown" if v is None else f"{v:.1%}"
+    for k, v in per_video.items(): print(f"{k}: swap frames {v['swap_frames']}/{v['frames']} ({pc(v['swap_rate'])})")
     print(f"{len(rows)} strokes: lr_swap within +-{FLAG_WIN} frames {pc(out['lr_swap_rate'])}, pose_jump {pc(out['pose_jump_rate'])}")
     if len(sys.argv) > 2: write_text(Path(sys.argv[2]), json.dumps(out, ensure_ascii=False, indent=1))
 

@@ -68,7 +68,11 @@
 
 使用者的對牆影片（79 拍）：`pose_jump` 11 拍（13.9%），看縮圖 9 拍真的跳了；`lr_swap` 7 拍（8.9%），20 拍人工核對 18 拍一致。另一場對牆練習（64 拍）：`pose_jump` 2 拍，2 拍都真的跳了。已知漏網：(1) 鏡頭在側面時整個身體左右標籤一起對調，位置幾乎不動，這兩個旗標都抓不到；(2) `lr_swap` 只看「換邊那一格」，在窗外就已對調、整個窗都維持對調的拍抓不到；(3) 連續 2 格以上的跳動，偏離值約只剩一半，可能低於門檻。旗標目前只在 `strokes_all.json`，`export_session.py` 不帶到網頁。
 
-重跑某場次的量測：`python tools/run.py eval_lr_swap.py work/<場次>`（只讀既有 `pose*.npy`，不重算姿態）。
+`pose_flags` 不做可見度遮罩：低可見度關節的亂跳照算，這是刻意的，遮擋造成的亂跳正是要抓的。
+
+`measure_full` 沒有 `size` 時，給 `kind.classify` 的是直式預設 `PORTRAIT`（和 `_scale` 一致）。這會改變「沒有 size 的舊拍」直接呼叫 `measure_full` 時的 `auto_kind`／`kind_conf`；正常流程 `assemble.py` 都傳實際 size，現有場次不變。
+
+量測統計：`python tools/run.py eval_lr_swap.py work/<場次> [out.json]` 只讀既有 `pose*.npy`、只印統計（可選寫 out.json），**不回寫** `strokes_all.json`；拍上的旗標要重跑 `assemble.py` 才會更新。
 
 **反拍（BH）的膝蓋與轉肩只評一致性**（`score_version` 7，`METRICS` 的 `abs_kinds=("FH",)`）：膝蓋 10 分端 125° 只有正拍前膝的出處，轉肩錨點本來就暫定，套到反拍沒有根據。反拍這兩項 `score` 是 `null`、`formula` 寫「只評一致性」，一致性分照算；所以反拍的技術分只剩擊球高度與準備時間。
 

@@ -27,6 +27,9 @@ assert r["pose_jump"] is False and r["lr_swap"] is False, r
 # 1-frame teleport of a hip: flagged, joint named, max reported
 g = body(); g[c + 3, 23] += (0, 1.5); r = pose_flags(g, FULL, c)
 assert r["pose_jump"] is True and "lh" in r["pose_jump_joints"] and r["pose_jump_max"] >= 1.0, r
+# split thresholds: a 0.8-torso one-frame move is a jump for trunk / legs (JUMP_BODY 0.6) but not for elbows / wrists (JUMP_ARM 1.0)
+for j, want in ((23, True), (25, True), (14, False), (16, False)):
+    g = body(); g[c + 3, j] += (0.8, 0); assert pose_flags(g, FULL, c)["pose_jump"] is want, j
 # same glitch outside the +-12 window: not this stroke's problem
 g = body(); g[c + 30, 23] += (0, 1.5); assert pose_flags(g, FULL, c)["pose_jump"] is False
 
@@ -44,9 +47,10 @@ g = body(); g[c, 16] = np.nan; assert pose_flags(g, FULL, c)["pose_jump"] is Fal
 # nothing visible at all -> None (unknown), not False
 r = pose_flags(np.full((n, 33, 2), np.nan), FULL, c); assert r["pose_jump"] is None and r["lr_swap"] is None, r
 
-# left/right labels swap for a stretch around contact: lr_swap True
-g = body(); g[c - 3:c + 8, [13, 14, 15, 16]] = g[c - 3:c + 8, [14, 13, 16, 15]]
-assert pose_flags(g, FULL, c)["lr_swap"] is True
+# left/right labels swap for a stretch around contact: elbows alone and wrists alone each trigger lr_swap
+for a, b in ((13, 14), (15, 16)):
+    g = body(); g[c - 3:c + 8, [a, b]] = g[c - 3:c + 8, [b, a]]
+    assert pose_flags(g, FULL, c)["lr_swap"] is True, (a, b)
 # two-handed backhand: hands close together and crossing -> not a swap
 g = body(); g[:, 15] = (0.05, 0.6); g[:, 16] = (-0.05, 0.6); g[c:, 15] = (-0.05, 0.6); g[c:, 16] = (0.05, 0.6)
 assert pose_flags(g, FULL, c)["lr_swap"] is False
@@ -54,9 +58,12 @@ assert pose_flags(g, FULL, c)["lr_swap"] is False
 # window cut by the clip edge: still works on the frames that exist
 assert pose_flags(body(), FULL, 3)["pose_jump"] is False
 
-# portrait and landscape: the same motion in pixels gives the same answer (displacement / torso length)
-g = body(); g[c + 3, 23] += (0, 1.5)
-assert pose_flags(g * (960 / 540), FULL, c)["pose_jump_max"] == pose_flags(g, FULL, c)["pose_jump_max"]
+# portrait and landscape: the same person at the same pixels, stored as 0-1 normalised coords of a 540x960 vs a 960x540 frame,
+# gets the same flags through measure_full (fails if measure_full forgets _scale(size): x and y would be stretched differently)
+pix = body() * 100 + 300; pix[c + 3, 23] += (70, 0)  # 0.7 torso sideways: a jump only when x and y are in the same unit
+def norm(wh): Q = np.ones((n, 33, 3)); Q[:, :, :2] = pix / np.array(wh, float); return Q
+mp, ml = measure_full(norm((540, 960)), c / 60, (540, 960)), measure_full(norm((960, 540)), c / 60, (960, 540))
+assert mp["pose_jump"] is True and ml["pose_jump"] is True and abs(mp["pose_jump_max"] - ml["pose_jump_max"]) < 1e-9, (mp, ml)
 
 # measure_full on an old stroke without "size": works (kind.classify gets the portrait default)
 P = np.zeros((n, 33, 3)); P[:, :, :2] = (body() + 3) / 10; P[:, :, 2] = 1
@@ -68,4 +75,7 @@ assert seen == [PORTRAIT] and m["pose_jump"] is False and "auto_kind" in m, (see
 Wd = np.zeros((n, 33, 3)); Wd[:, :, :2] = body() / 3
 m2 = measure_full(P, c / 60, (540, 960), Wd[:c - 10], "R")
 assert m2["knee3d"] is None and m2["cam_az"] is None and m2["knee"] == measure_full(P, c / 60, (540, 960))["knee"], m2
+# pose_world longer than pose.npy: same 2D fallback
+Wl = np.concatenate([Wd, Wd]); m3 = measure_full(P, c / 60, (540, 960), Wl, "R")
+assert m3["knee3d"] is None and m3["cam_az"] is None and m3["knee"] == m2["knee"], m3
 print("ok")
