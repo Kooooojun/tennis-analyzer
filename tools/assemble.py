@@ -2,6 +2,7 @@
 import collections, hashlib, json, sys, numpy as np
 from common import session, work, load, save, size, track_file, players, load_profiles, profile_for
 from metrics import measure_full, hand_gate
+from kind import PREFILL_MIN
 
 KINDS = {"FH", "BH", "SV", "OH"}; DRILLS = {"feed", "rally", "high", "unsure", "-"}
 cands_fp = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()[:16]  # candidates.py writes it into labels.txt as '# cands <fp>'
@@ -21,6 +22,18 @@ def read_labels(Wd, C):
     if bad or len(rows) != len(C) or sorted(int(r[0]) for r in rows) != list(range(len(C))):
         sys.exit(f"labels.txt must have one line per candidate 0..{len(C) - 1}: '<idx> <FH|BH|SV|OH|x> <feed|rally|high|unsure|->' (text after that is ignored). bad lines: {bad[:5]}")
     return rows
+
+
+BULK_N = 10      # at least this many lines and
+BULK_X = 0.03    # under this share of x: probably accepted wholesale (the user's wall video A: 79 x FH, ~2 in 7 fake; one stray x must not hide it)
+
+
+def bulk_warning(rows):
+    """A warning when >= BULK_N lines and under BULK_X of them are x, else None. Only a hint: nothing is changed."""
+    nx = sum(r[1] == "x" for r in rows)
+    if len(rows) >= BULK_N and nx < BULK_X * len(rows):
+        return (f"WARNING: {nx} of {len(rows)} lines are x. Hit sounds include bounces, a ball dropped from the hand and shadow swings; "
+                "re-check every sheet and keep a line only where you see the ball on the strings or just leaving them (ignore this if every line really is a hit)")
 
 
 player_of = lambda i, who, C: who[i] or C[i].get("player") or "me"  # '@name' first; null / missing player = me
@@ -69,6 +82,9 @@ def main():
     out.sort(key=lambda x: (x["vn"], x["t"]))
     save(Wd / "strokes_all.json", out)
     print(len(out), "strokes", dict(collections.Counter((x["player"], x["kind"], x["drill"]) for x in out)))
+    if w := bulk_warning(rows): print(w)
+    print(f"FH/BH with kind_conf < {PREFILL_MIN} (weak swing evidence, look again):",  # SV / OH confs sit below it by design (kind.SV_CONF)
+          [x["cand"] for x in out if x["kind"] in ("FH", "BH") and (x["kind_conf"] is None or x["kind_conf"] < PREFILL_MIN)])
     print("auto-kind disagreements (worth a second look):", [x["cand"] for x in out if x["kind"] != x["auto_kind"]])
 
 
