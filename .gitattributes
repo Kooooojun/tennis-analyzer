@@ -12,3 +12,9 @@
 *.f32 binary
 *.pdf binary
 *.woff2 binary
+*.onnx binary
+*.gif binary
+*.webp binary
+*.ttf binary
+*.ttc binary
+*.zip binary

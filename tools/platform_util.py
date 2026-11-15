@@ -13,7 +13,8 @@ def venv_python(root):
 
 def utf8_stdout():
     """Piped stdout on Windows is cp1252/cp950 and Chinese would raise; no-op when stdout is not a reconfigurable text stream."""
-    if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    for f in (sys.stdout, sys.stderr):  # stderr too: read_text / imwrite messages go there
+        if hasattr(f, "reconfigure"): f.reconfigure(encoding="utf-8", errors="replace")
 
 
 def read_text(p):
@@ -63,11 +64,11 @@ def need_ffmpeg():
 @lru_cache(None)
 def _nvenc():
     try:
-        if "h264_nvenc" not in subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout: return False
+        if "h264_nvenc" not in subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=20).stdout: return False
         # listed on machines without an NVIDIA GPU too: only trust a real 1-frame encode
         return subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=256x256", "-frames:v", "1", "-c:v", "h264_nvenc",
-                               "-f", "null", "-"], capture_output=True).returncode == 0
-    except OSError:
+                               "-f", "null", "-"], capture_output=True, timeout=20).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
         return False
 
 

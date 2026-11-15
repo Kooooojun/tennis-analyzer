@@ -106,7 +106,7 @@ if names or any(len(t) > 1 for t in T.values()):
             fs = seen[np.linspace(0, len(seen) - 1, 10).astype(int)] if len(seen) else []
             row = [tile(cap, [P], int(f), f"v{vn} t{k} {int(f / 60 // 60)}:{f / 60 % 60:04.1f}") for f in fs]
             rows.append(np.hstack(row + [np.zeros((200, 200, 3), np.uint8)] * (10 - len(row))))
-        imwrite(Wd / "players.jpg", np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if not imwrite(Wd / "players.jpg", np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 80]): sys.exit(f"could not write {Wd / 'players.jpg'}")
         with open(Wd / "players.txt", "a", encoding="utf-8", newline="\n") as fh:
             if not names: fh.write("# <video no> <track> <name>: who each tracked person is (see players.jpg). Same name across videos; x = not a player\n")
             fh.writelines(f"{vn} {k} ?\n" for vn, k in missing)
@@ -157,7 +157,7 @@ save(Wd / "cands.json", C)
 for old in Wd.glob("sheet*.jpg"):
     try: unlink(old)
     except PermissionError: print(f"warning: cannot delete {old} (open in another program?), left it")
-caps, poses = {}, {}
+caps, poses, failed = {}, {}, []  # failed: sheets that could not be written; the run still ends non-zero
 for c in C:
     for k2 in T[c["v"]]:
         if names[(c["vn"], k2)] != "x" and (c["v"], k2) not in poses: poses[(c["v"], k2)] = np.load(track_file(Wd / c["v"], "pose", k2))
@@ -173,7 +173,7 @@ if LEGACY:
             rows.append(row)
         if len(rows) % 2: rows.append(np.zeros_like(rows[0]))
         sheet_im = np.vstack([np.hstack(rows[i:i + 2]) for i in range(0, len(rows), 2)])
-        imwrite(Wd / f"sheet{k // PER_SHEET}.jpg", sheet_im, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if not imwrite(Wd / f"sheet{k // PER_SHEET}.jpg", sheet_im, [cv2.IMWRITE_JPEG_QUALITY, 80]): failed.append(f"sheet{k // PER_SHEET}.jpg")
 else:
     srcs, low = {}, set()
     for v in dict.fromkeys(c["v"] for c in C):  # original video = the file whose stem is v (a glob "v.*" would also match "v.x.mov"); not openable (codec) -> proxy
@@ -183,7 +183,7 @@ else:
     for i, c in enumerate(C):  # each candidate decodes only ~0.9 s of its video
         v = c["v"]; ks = [k2 for k2 in T[v] if names[(c["vn"], k2)] != "x"]; src = srcs[v]
         im = sheet(c, i, [poses[(v, k2)] for k2 in ks], ks.index(c["track"]), src, v in low)
-        imwrite(Wd / f"sheet{i}.jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if not imwrite(Wd / f"sheet{i}.jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 85]): failed.append(f"sheet{i}.jpg")
     if low: print("no original video for", sorted(low), "- sheets from proxy.mp4 only (about half the resolution, the ball is small)")
 
 def guess(c):
@@ -211,3 +211,4 @@ else:
                    + "".join(f"{i} {g} ?{' @' + c['player'] if multi else ''}\n" for i, (g, c) in enumerate(zip(G, C))))
     print("auto kind pre-filled for", sum(g != "?" for g in G), "of", len(G))
 print(len(C), "candidates,", (len(C) + PER_SHEET - 1) // PER_SHEET if LEGACY else len(C), "sheets in", Wd)
+if failed: sys.exit(f"could not write {len(failed)} sheet(s) in {Wd}: {failed[:5]}")

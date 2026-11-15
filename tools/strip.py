@@ -22,4 +22,4 @@ for n in nos:
         im = cv2.copyMakeBorder(fr[min(max(i, 0), len(fr) - 1)], R, R, R, R, cv2.BORDER_CONSTANT)[cy:cy + 2 * R, cx:cx + 2 * R]
         im = cv2.resize(im, (200, 200)); cv2.putText(im, f"#{n} {i - c:+d}", (4, 18), 0, 0.55, (0, 255, 255), 2); tiles.append(im)
     rows.append(np.hstack(tiles))
-out = work(s) / "strip.jpg"; imwrite(out, np.vstack(rows)); print(out)
+out = work(s) / "strip.jpg"; imwrite(out, np.vstack(rows)) or sys.exit(f"could not write {out}"); print(out)

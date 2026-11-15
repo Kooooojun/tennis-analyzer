@@ -4,7 +4,10 @@
 # Identity is a closed set of N slots: each frame, detections go to slots by hip position + torso colour, so someone who walks
 # away and comes back gets their old slot. Which slot is which friend is decided later by eye (candidates.py -> players.txt).
 import itertools, sys, warnings
+from pathlib import Path
 import numpy as np
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # run with -I: the script's folder is not on sys.path
+from platform_util import unlink
 
 
 class Tracker:
@@ -109,9 +112,6 @@ def main():
         for k in g[1:]: m = np.isnan(p[:, 0, 0]) & S[:, k]; p[m], w[m] = P[m, k], Wl[m, k]
         tr.append((p, w))
     tr = sorted([t for t in tr if (~np.isnan(t[0][:, 0, 0])).any()], key=lambda t: -(~np.isnan(t[0][:, 0, 0])).sum()) or tr[:1]
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).resolve().parent))  # run with -I: the script's folder is not on sys.path
-    from platform_util import unlink
     out = Path(out)
     for old in out.parent.glob("pose*_t*.npy"):  # a re-run may find fewer people: stale extra tracks would be read as people
         if int(old.stem.rsplit("_t", 1)[1]) >= len(tr):
