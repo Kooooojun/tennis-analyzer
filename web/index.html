@@ -459,6 +459,7 @@ function paint(cv, vid, s, f, opt){
     X=q=>bx+q[0]*vw*sc; Y=q=>by+q[1]*vh*sc;
   }
   const small=W<240;
+  const HW=s.hand==="L"?15:16, HE=s.hand==="L"?13:14;  // racket wrist / elbow landmark: the stroke's hand (player profile), right when unknown
   const ser=series(s), P=(i,id)=>{ const fr=s.frames[i]; return fr?fr[K[id]]:null; };
   if(opt.guides){
     // target contact band, measured from the body at contact so it stays put through the swing
@@ -469,18 +470,18 @@ function paint(cv, vid, s, f, opt){
       g.fillStyle="rgba(74,222,128,.18)"; g.fillRect(hx-half,y0,half*2,y1-y0);
       g.strokeStyle="rgba(74,222,128,.85)"; g.lineWidth=1; g.setLineDash([4,3]); g.strokeRect(hx-half,y0,half*2,y1-y0); g.setLineDash([]);
       if(!small){ g.font="600 11px -apple-system,'PingFang TC',sans-serif"; g.fillStyle="rgba(74,222,128,1)"; g.fillText("理想擊球高度",hx-half+4,y0-4); }
-      if(f===s.contact){ const w=P(f,16); if(w){ const inZ=Y(w)>=y0&&Y(w)<=y1; g.strokeStyle=inZ?"#4ade80":"#f87171"; g.lineWidth=3; g.beginPath(); g.arc(X(w),Y(w),11,0,7); g.stroke(); } }
+      if(f===s.contact){ const w=P(f,HW); if(w){ const inZ=Y(w)>=y0&&Y(w)<=y1; g.strokeStyle=inZ?"#4ade80":"#f87171"; g.lineWidth=3; g.beginPath(); g.arc(X(w),Y(w),11,0,7); g.stroke(); } }
     }
   }
   if(opt.trail){ g.lineWidth=2.5;
-    for(let i=Math.max(1,f-24);i<=f;i++){ const a=P(i-1,16), c=P(i,16); if(!a||!c) continue;
+    for(let i=Math.max(1,f-24);i<=f;i++){ const a=P(i-1,HW), c=P(i,HW); if(!a||!c) continue;
       g.strokeStyle=`rgba(255,214,10,${(1-(f-i)/25)*0.9})`; g.beginPath(); g.moveTo(X(a),Y(a)); g.lineTo(X(c),Y(c)); g.stroke(); } }
   const fr=s.frames[f]; if(!fr) return;
   if(opt.skel){
     g.lineCap="round";
-    for(const [a,c] of EDGES){ g.strokeStyle=(a%2===0&&c%2===0)?"rgba(255,120,60,.95)":"rgba(90,180,255,.95)"; g.lineWidth=(a===14||c===14)?4:3;
+    for(const [a,c] of EDGES){ g.strokeStyle=(a%2===0&&c%2===0)?"rgba(255,120,60,.95)":"rgba(90,180,255,.95)"; g.lineWidth=(a===HE||c===HE)?4:3;
       const A=fr[K[a]], C=fr[K[c]]; g.beginPath(); g.moveTo(X(A),Y(A)); g.lineTo(X(C),Y(C)); g.stroke(); }
-    for(const id of [0,11,12,13,14,15,16,23,24,25,26,27,28]){ const q=fr[K[id]]; g.fillStyle=q[2]<0.4?"rgba(255,255,255,.35)":"#fff"; g.beginPath(); g.arc(X(q),Y(q),id===16?5:3.2,0,7); g.fill(); }
+    for(const id of [0,11,12,13,14,15,16,23,24,25,26,27,28]){ const q=fr[K[id]]; g.fillStyle=q[2]<0.4?"rgba(255,255,255,.35)":"#fff"; g.beginPath(); g.arc(X(q),Y(q),id===HW?5:3.2,0,7); g.fill(); }
   }
   const label=(t,x,y,col)=>{ g.font=`600 ${small?11:13}px ui-monospace,Menlo,monospace`; g.lineWidth=3; g.strokeStyle="rgba(0,0,0,.75)"; g.fillStyle=col||"#fff"; g.strokeText(t,x,y); g.fillText(t,x,y); };
   if(opt.guides){
@@ -567,13 +568,13 @@ function flagList(flags){
   return flags.length?`<ul class="flags">`+flags.map(f=>`<li class="${f.diff>0?"up":"down"}">${f.flag}：${ITEM[f.item]||f.item} ${f.base} → ${f.now}</li>`).join("")+`</ul>`:"";
 }
 function drawTrend(){
-  const keys=Object.keys(DAYS), st=Object.fromEntries(keys.map(k=>[k,dayStats(DAYS[k].data)])), r=x=>x==null?"–":Math.round(x);
+  const keys=Object.keys(DAYS), st=Object.fromEntries(keys.map(k=>[k,dayStats(DAYS[k].data)])), r=x=>x==null?"–":Math.round(x), dg=x=>x==null?"–":Math.round(x)+"°";
   $("trendTitle").textContent=keys.length>1?`${keys.length} 場比較`:"這場數字";
   const rows=[
     ["鏡頭",k=>DAYS[k].camera||"–"],
-    ["自拋正拍・準備時膝蓋",k=>r(st[k].feed.knee)+"°"],
-    ["對打正拍・準備時膝蓋",k=>r(st[k].rally.knee)+"°"],
-    ["<b>膝蓋差距（自拋 − 對打）</b>",k=>`<b>${r(st[k].feed.knee-st[k].rally.knee)}°</b>`],
+    ["自拋正拍・準備時膝蓋",k=>dg(st[k].feed.knee)],
+    ["對打正拍・準備時膝蓋",k=>dg(st[k].rally.knee)],
+    ["<b>膝蓋差距（自拋 − 對打）</b>",k=>`<b>${st[k].feed.knee==null||st[k].rally.knee==null?"–":dg(st[k].feed.knee-st[k].rally.knee)}</b>`],
     ["自拋正拍・擊球高度",k=>r(st[k].feed.h)],
     ["對打正拍・擊球高度",k=>r(st[k].rally.h)],
     ["拍數（自拋 / 對打）",k=>`${DAYS[k].data.filter(s=>s.kind==="FH"&&s.drill==="feed").length} / ${DAYS[k].data.filter(s=>s.kind==="FH"&&s.drill==="rally").length}`],
