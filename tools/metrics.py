@@ -30,7 +30,7 @@ def cam_az(world, J, frames):
     """Camera azimuth around the player, deg 0-180 (0 = in front of the chest, 90 = side, 180 = behind; same as the CalTennis ct_eval.az).
     MediaPipe world is camera-aligned (x right, y down, z away), so the camera is at -z. Body right = shoulder + hip lines, median over `frames`.
     None when the window has no data or the body line is nearly vertical. A left/right label swap turns az into 180 - az; the gate covers both ends."""
-    W = np.asarray(world, float)[[i for i in frames if 0 <= i < len(world)]]
+    W = np.asarray(world[[i for i in frames if 0 <= i < len(world)]], float)  # slice first: `world` can be a whole video, do not convert all of it
     if not len(W): return None
     r = np.nanmedian(W[:, J['rs']] - W[:, J['ls']] + W[:, J['rh']] - W[:, J['lh']], axis=0)
     fx, fz = -r[2], r[0]  # forward = up x right, up = -y
@@ -174,7 +174,7 @@ def _core(xy, vis, c, J, world=None, hand="R"):
     else: fwd = ch = oc = el = vis_c = None
     prep = _prep(xy, J, c, d) if np.isfinite(d) else None
     op = openp[c - 48:c - 5] if pre else np.array([np.nan])
-    xk = xy.copy(); xk[vis < FORM_VIS_MIN] = np.nan  # same visibility cut as form_checks; hidden joints must not feed the kinematics
+    a = max(0, c - 90); xk = xy[a:c + 61].copy(); xk[vis[a:c + 61] < FORM_VIS_MIN] = np.nan  # same visibility cut as form_checks; only kinematics' 150-frame window, not the whole video
     view = az is not None and min(az, 180 - az) < KNEE_VIEW_MIN; gap = ok3 and ok2 and abs(k3 - k2) > KNEE_GAP_MAX
     return dict(knee=r(k2, 1) if ok2 else None, knee3d=round(k3, 1) if ok3 else None,
                 knee_warn=True if view else bool(gap) if ok3 and ok2 else None,
@@ -185,7 +185,7 @@ def _core(xy, vis, c, J, world=None, hand="R"):
                 contact_fwd=r(fwd, 2), prep=prep,
                 elbow=r(el, 1),
                 vis=r(vis_c, 2),
-                **kinematics(xk, J, c, "R", None if prep is None else c - round(prep * FPS)))  # J is already remapped for the racket hand
+                **kinematics(xk, J, c - a, "R", None if prep is None else c - a - round(prep * FPS)))  # J is already remapped for the racket hand
 
 
 FULL = dict(nose=0, ls=11, rs=12, le=13, re=14, lw=15, rw=16, lh=23, rh=24, lk=25, rk=26, la=27, ra=28)
