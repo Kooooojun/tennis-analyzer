@@ -10,6 +10,7 @@ from common import session, work, videos, save, tracks, track_file, players, siz
 from kind import classify, CONF_MIN
 from match import match, WRIST
 from assemble import cands_fp
+from metrics import hand_gate
 
 OFF = [-45, -25, -8, 0, 12]
 PER_SHEET = 24
@@ -53,7 +54,17 @@ if names or any(len(t) > 1 for t in T.values()):
 multi = bool(names)
 names = names or {(vn, 0): "me" for vn in range(1, len(V) + 1)}
 PROF = load_profiles()
-hand = lambda name: (profile_for(PROF, name) or {"hand": "R"})["hand"]  # racket hand; no profile = R (assemble.py guesses and flags it)
+hand = lambda name: (profile_for(PROF, name) or {"hand": None})["hand"]  # racket hand; None = no profile yet: look at both wrists (assemble.py guesses it later)
+
+
+def matched(P, E, wh, hand):
+    """match() rows by hit time for the racket wrist; unknown hand: the wrist that swung more (bigger arc) at each hit,
+    so a left-hander without a profile does not lose hits (default-R missed 6 of 45 on a left-handed test video)."""
+    M = {}
+    for h in ([hand] if hand else "RL"):
+        for r in match(P, E, wh, h):
+            if r[0] not in M or r[4] > M[r[0]][4]: M[r[0]] = r
+    return M
 
 
 def swing(P, f, wh, wi=16):
@@ -70,9 +81,11 @@ for vi, v in enumerate(V):
     if not ks: continue
     Ps = {k: np.load(track_file(Wd / v, "pose", k)).astype(float) for k in ks}; Hd = {k: hand(names[(vi + 1, k)]) for k in ks}
     wh = np.array(size(Wd / v / "proxy.mp4"), float) / 540; E = np.load(Wd / v / "events.npy")
-    M = {k: {r[0]: r for r in match(Ps[k], E, wh, Hd[k])} for k in ks}
+    for k in ks:  # no profile: the hand this track swings with around the hit events, when speed and height agree (else None = both wrists)
+        if Hd[k] is None and len(E): Hd[k] = hand_gate([Ps[k]], size(Wd / v / "proxy.mp4"), [list(E[:, 0])])[0]
+    M = {k: matched(Ps[k], E, wh, Hd[k]) for k in ks}
     for t in sorted({t for m in M.values() for t in m}):
-        k = max(ks, key=lambda k: swing(Ps[k], int(round(t * 60)), wh, WRIST[Hd[k]])) if len(ks) > 1 else ks[0]  # who hit it, then: is it a stroke for them
+        k = max(ks, key=lambda k: max(swing(Ps[k], int(round(t * 60)), wh, WRIST[h]) for h in ([Hd[k]] if Hd[k] else "RL"))) if len(ks) > 1 else ks[0]  # who hit it, then: is it a stroke for them
         if t not in M[k]: continue
         _, pk, on, sp, arc = M[k][t]
         if sp >= 0.05 and arc >= 0.7:
@@ -98,6 +111,7 @@ for k in range(0, len(C), PER_SHEET):
 
 def guess(c):
     """Pre-fill for labels.txt: the automatic stroke kind when confident, else '?' (you still confirm it and add the drill)."""
+    if not c["hand"]: return "?"  # FH/BH flip with the hand: no profile, no guess
     v, key = c["v"], (c["v"], c["track"]); wp = track_file(Wd / v, "pose_world", c["track"])
     if key not in poses: poses[key] = np.load(track_file(Wd / v, "pose", c["track"]))
     if key not in worlds: worlds[key] = np.load(wp) if wp.exists() else None
