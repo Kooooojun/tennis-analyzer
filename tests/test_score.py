@@ -190,13 +190,14 @@ for kind in ("BH", "FH"):
 g = grp(score_session([st(knee=120, turn=0, **strong)] * 7, False))
 assert "turn" not in g["metrics"] and g["power"] == 10 and not g["capped"] and g["power_n"] == 7
 assert grp(score_session([st(knee=120)] * 6, False))["power_n"] == 0
+assert grp(score_session([st(knee=120, **strong)] * 2 + [st(knee=120)] * 4, False))["power_n"] == 0  # gated out like power itself
 # 5: Codex PR #3 — only-consistency metrics differ (stance spread vs stance None): total / consistency not comparable
 A = grp(score_session([st(knee=130, stance=x) for x in (0.8, 1.0, 1.2, 1.4, 1.6, 0.9, 1.1, 1.3, 1.5, 1.7)], False))
 B = grp(score_session([st(knee=130, stance=None)] * 10, False))
-run = lambda name: dict(session=name, date=name, camera="c")
+run = lambda name: dict(session=name, date="2026-11-0" + str(len(name)), camera="c")
 assert compare([_entry(run("a"), A), _entry(run("b"), B)]) == []
 # 6: comparable / series_key
 e = _entry(run("a"), A); assert e["comparable"] and e["series_key"] == ["c", A["knee_src"], 7]
-assert not _entry(dict(run("a"), camera=""), A)["comparable"]
+assert not _entry(dict(run("a"), camera=""), A)["comparable"] and not _entry(dict(run("a"), date="wall-1"), A)["comparable"]
 assert not _entry(run("a"), grp(score_session([st()] * 6, False)))["comparable"]
 print("score-groups-consistency tests ok")

@@ -110,7 +110,7 @@ def score_group(strokes, show_open, kind="FH"):
     power = _mean([x["score"] for m, x in out.items() if METRICS[m].get("power")])
     raw = None if form is None else form if cons is None else 0.75 * form + 0.25 * cons
     total = raw if raw is None or power is None else min(raw, power + POWER_MARGIN)  # no power data -> no cap (old sessions keep their scale)
-    power_n = sum(any(_num(s.get(m)) for m, c in METRICS.items() if c.get("power")) for s in strokes)  # cap is per group (docs/scoring.md §11); the web can show how many strokes fed it
+    power_n = sum(any(_num(s.get(m)) for m, x in out.items() if METRICS[m].get("power") and x["status"] == "ok") for s in strokes)  # cap is per group (docs/scoring.md §11); the web can show how many strokes fed it
     return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), power=_r(power), power_n=power_n if kind in BASE_KINDS else None, uncapped=_r(raw),
                 capped=raw is not None and total < raw, metrics=out, knee_src=knee_src, score_version=SCORE_VERSION)
 

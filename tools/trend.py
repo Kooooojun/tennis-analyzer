@@ -40,7 +40,7 @@ def _entry(r, g):
     cam = r.get("camera") or ""
     return dict(session=r["session"], date=r.get("date"), camera=cam, n=g["n"], knee_src=g.get("knee_src"), score_version=g.get("score_version"), items=_items(g),
                 cons_set=sorted(m for m, x in g["metrics"].items() if x["cons"] is not None),
-                comparable=g["n"] >= MIN_N and bool(cam), series_key=[cam, g.get("knee_src"), g.get("score_version")])
+                comparable=g["n"] >= MIN_N and bool(cam) and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(r.get("date")))), series_key=[cam, g.get("knee_src"), g.get("score_version")])
 
 
 if __name__ == "__main__":
