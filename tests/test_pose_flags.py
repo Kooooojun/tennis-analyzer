@@ -63,4 +63,9 @@ P = np.zeros((n, 33, 3)); P[:, :, :2] = (body() + 3) / 10; P[:, :, 2] = 1
 seen = []; metrics.classify = lambda *a: seen.append(a[4]) or classify(*a)  # record the size kind.classify gets
 m = measure_full(P, c / 60, None)
 assert seen == [PORTRAIT] and m["pose_jump"] is False and "auto_kind" in m, (seen, m)
+
+# pose_world shorter than pose.npy (different run): 3D fields are null and the 2D ones are kept, no IndexError
+Wd = np.zeros((n, 33, 3)); Wd[:, :, :2] = body() / 3
+m2 = measure_full(P, c / 60, (540, 960), Wd[:c - 10], "R")
+assert m2["knee3d"] is None and m2["cam_az"] is None and m2["knee"] == measure_full(P, c / 60, (540, 960))["knee"], m2
 print("ok")

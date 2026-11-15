@@ -264,6 +264,7 @@ def pose_flags(xy, J, c):
 def measure_full(P, t, size, Wd=None, hand="R", prev_t=None):
     """P: pose.npy (frames,33,3). t: contact time in seconds. size: proxy (w, h). Adds an automatic stroke kind (tools/kind.py): auto_kind FH/BH/SV/OH or '?', with kind_conf 0-1.
     hand "L": kind.classify mirrors its racket-side test. prev_t: the same player's previous hit in this video (s), bounds the prep search."""
+    if Wd is not None and len(Wd) != len(P): Wd = None  # pose_world from another run: frames do not line up, use 2D only
     xy = P[:, :, :2] * _scale(size); f = int(round(t * 60)); k = classify(P, f, hand, Wd, size or PORTRAIT)
     return dict(f=f, auto_kind=k["kind"], kind_conf=k["conf"], **_core(xy, P[:, :, 2], f, FULL, Wd, hand, None if prev_t is None else int(round(prev_t * 60))),
                 **pose_flags(xy, FULL, f))
