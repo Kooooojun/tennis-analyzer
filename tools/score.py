@@ -27,7 +27,7 @@ BASE_KINDS = ("FH", "BH")  # metrics without `kinds` apply here (knee etc. are n
 KINDS = ("FH", "BH", "SV")  # SV group exists only when the session has SV strokes
 MIN_N, MIN_N_CONS = 3, 5
 MIN_COVER = 0.5  # usable strokes / strokes in the group; below it the metric says 資料不足 (docs/scoring.md §1)
-SCORE_VERSION = 5  # 5: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate (body-kinematics). 4: + finish, reach, tilt, lean, stance and the SV group (serve-finish). 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
+SCORE_VERSION = 6  # 6: knee view gate (camera within 30 deg of front/back -> knee_warn) + kinematics get visibility-masked xy (knee-view-gate). 5: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate (body-kinematics). 4: + finish, reach, tilt, lean, stance and the SV group (serve-finish). 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
 
 
 def _num(v):
