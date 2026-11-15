@@ -6,7 +6,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from hits import SR, envelope, candidates
 from events import hand_speed, hands, pick, estimate_lag, LAG
-from match import match
+from match import match, edge_skipped
 
 rng = np.random.default_rng(0)
 
@@ -103,4 +103,14 @@ hand = np.zeros(300); hand[[60, 102]] = 10
 rows = np.array([[1.0, -20, 12, 12], [1.7, -20, 12, 9]])
 assert [r[0] for r in pick(rows, hand, lag=0, who=np.r_[np.zeros(80), np.ones(220)])] == [1.0, 1.7]
 assert [r[0] for r in pick(rows, hand, lag=0, who=np.zeros(300))] == [1.0]
+# T15: head/tail skips are counted: f=44 skipped, f=45 kept; f=N-30 kept, f=N-29 skipped; short clip; no events
+N = 200
+assert edge_skipped(np.array([[44 / 60, -20, 12]]), N) == 1 and edge_skipped(np.array([[45 / 60, -20, 12]]), N) == 0
+assert edge_skipped(np.array([[(N - 30) / 60, -20, 12]]), N) == 0 and edge_skipped(np.array([[(N - 29) / 60, -20, 12]]), N) == 1
+assert edge_skipped(np.array([[1.0, -20, 12], [1.5, -20, 12]]), 60) == 2        # N < 75: every hit skipped
+assert edge_skipped(np.zeros((0, 3)), N) == 0
+# the count agrees with match(): rows kept + skipped-by-edge never exceeds events
+p = body(N); p[:, 0, 1] = 0.2; p[:, [27, 28], 1] = 0.9
+ev = np.array([[44 / 60, -20, 12], [100 / 60, -20, 12], [(N - 29) / 60, -20, 12]])
+assert edge_skipped(ev, N) == 2 and len(match(p, ev, A)) <= 1
 print("ok")

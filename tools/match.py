@@ -10,6 +10,12 @@ SEEN = 0.3     # share of the 31 frames around the hit with the person tall enou
 NAN_MAX = 0.8  # share of the 25 wrist speeds around the hit allowed missing (at least 5 left)
 
 
+def edge_skipped(O, N):
+    """How many hit events match() drops for being in the first 45 or last 30 frames of an N-frame clip."""
+    f = np.round(np.asarray(O, dtype=np.float64).reshape(-1, O.shape[-1] if len(O) else 3)[:, 0] * 60).astype(int)
+    return int(((f < 45) | (f > N - 30)).sum())
+
+
 def match(P, O, A, hand="R"):
     """P pose (N,33,3) normalized, O events (t, pk, on), A = (W, H) / 540 -> (M,5) rows for events with the person in frame."""
     wi = WRIST[hand]; P = P.astype(np.float64); N = len(P)
@@ -40,5 +46,7 @@ if __name__ == "__main__":
     c = cv2.VideoCapture(str(Path(sys.argv[1]).parent / "proxy.mp4")); A = np.array([c.get(cv2.CAP_PROP_FRAME_WIDTH), c.get(cv2.CAP_PROP_FRAME_HEIGHT)]) / 540; c.release()
     if not A.all(): sys.exit(f"cannot read {Path(sys.argv[1]).parent / 'proxy.mp4'}")
     out = match(np.load(sys.argv[1]), np.load(sys.argv[2]), A, sys.argv[4] if len(sys.argv) > 4 else "R")
+    n = edge_skipped(np.load(sys.argv[2]), len(np.load(sys.argv[1], mmap_mode="r")))  # CLI only: candidates.py calls match() per person and hand, it would repeat
+    if n: print(f"頭 0.75 秒／尾 0.5 秒內有 {n} 個擊球沒算（影片太靠近邊界" + ("，影片太短" if len(np.load(sys.argv[1], mmap_mode="r")) < 75 else "") + "）", file=sys.stderr)
     print(len(out), "events with player in frame;", " ".join(f"arc>{q}: {(out[:, 4] > q).sum()}" for q in (0.5, 1, 1.5, 2, 2.5, 3)))
     np.save(sys.argv[3], out)
