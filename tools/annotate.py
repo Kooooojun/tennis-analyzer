@@ -79,7 +79,7 @@ def active(S, n):
 
 def annotate(s, name, src):
     Wd = work(s) / name
-    if not (Wd / "pose.npy").exists(): sys.exit(f"missing work/{s}/{name}/pose.npy; run python tools/prep.py {s}")
+    if not (Wd / "pose.npy").exists(): sys.exit(f"missing work/{s}/{name}/pose.npy; run tools/prep.sh {s}")
     ks = tracks(Wd)  # every tracked person is drawn; a stroke's tag sits on the body of the track that swung (strokes.json "track")
     poses = {k: np.load(track_file(Wd, "pose", k)) for k in ks}; pose = poses[0]
     worlds = {k: np.load(w) if (w := track_file(Wd, "pose_world", k)).exists() else None for k in ks}

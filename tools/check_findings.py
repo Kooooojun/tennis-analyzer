@@ -4,8 +4,9 @@ import math
 import sys
 import re
 import numpy as np
+from platform_util import utf8_stdout
 
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # piped stdout on Windows is not UTF-8: Chinese would raise
+utf8_stdout()
 
 STATS = dict(median=np.median, mean=np.mean, min=np.min, max=np.max, n=len)
 SCORE_STATS = ("median", "spread", "n", "score", "cons")

@@ -11,6 +11,11 @@ def venv_python(root):
     return Path(root) / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
+def utf8_stdout():
+    """Piped stdout on Windows is cp1252/cp950 and Chinese would raise; no-op when stdout is not a reconfigurable text stream."""
+    if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
 def read_text(p):
     """UTF-8 text, BOM tolerated. A UTF-16 / ANSI file (PowerShell `>`, Set-Content) stops with a message naming it."""
     try:
@@ -68,7 +73,7 @@ def _nvenc():
 
 def h264_args(mac_bitrate, crf):
     if sys.platform == "darwin": return ["-c:v", "h264_videotoolbox", "-b:v", mac_bitrate]
-    if _nvenc(): return ["-c:v", "h264_nvenc", "-cq", str(crf)]
+    if _nvenc(): return ["-c:v", "h264_nvenc", "-rc", "vbr", "-cq", str(crf), "-b:v", "0"]  # without -b:v 0 the 2 Mbit/s default caps -cq
     return ["-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf)]
 
 

@@ -1,8 +1,8 @@
 import json, sys
 from pathlib import Path
-from platform_util import read_text, write_text
+from platform_util import read_text, utf8_stdout, write_text
 
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # piped stdout on Windows is cp1252/cp950: Chinese would raise
+utf8_stdout()
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS = ROOT / "tools"
