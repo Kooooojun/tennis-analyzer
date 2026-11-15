@@ -86,7 +86,7 @@ def kinematics(xy, J, c, hand="R", start=None):
     hip = (X[:, J['lh']] + X[:, J['rh']]) / 2
     L = np.nanmedian(np.linalg.norm((X[:, J['ls']] + X[:, J['rs']]) / 2 - hip, axis=1))
     out = dict(leg_load=None, leg_drive=None, wrist_speed=None, trunk_share=None, turn=None, knee2d_ok=None)
-    if not np.isfinite(L) or L <= 0: return out
+    if not np.isfinite(L) or L <= 0 or c0 < 48: return out  # c0 < 48: stroke in the first 0.8 s, the windows would wrap to the clip end
     # legs: hip height above the lower (grounded) ankle, as a share of the standing height in the clip
     with np.errstate(all="ignore"):
         h = np.nanmax(X[:, [J['la'], J['ra']], 1], axis=1) - hip[:, 1]
@@ -115,13 +115,15 @@ def kinematics(xy, J, c, hand="R", start=None):
             out["turn"] = round(float(np.abs(np.diff(th))[big].sum()), 1)
     # 2D knee gate: on the leg that gives the smaller angle, thigh and shin both near full length (leg side-on to the camera)
     seglen = lambda p, q: np.linalg.norm(X[:, p] - X[:, q], axis=1)
+    legs = [(J['rh'], J['rk'], J['ra']), (J['lh'], J['lk'], J['la'])]
+    thigh, shin = [seglen(g[0], g[1]) for g in legs], [seglen(g[1], g[2]) for g in legs]
+    full = [(np.nanmax(t) if np.isfinite(t).any() else np.nan, np.nanmax(u) if np.isfinite(u).any() else np.nan) for t, u in zip(thigh, shin)]
     ok = []
-    for i in range(c0 - 48, c0 - 5):
-        legs = [(J['rh'], J['rk'], J['ra']), (J['lh'], J['lk'], J['la'])]
+    for i in range(max(0, c0 - 48), c0 - 5):  # max(): a negative start would wrap to the end of the clip
         ang = [_angle(X, i, *g) for g in legs]
         if not np.isfinite(ang).any(): continue
-        hh, kk, aa = legs[int(np.nanargmin(ang))]
-        ok.append(seglen(hh, kk)[i] >= LIMB_FULL * np.nanmax(seglen(hh, kk)) and seglen(kk, aa)[i] >= LIMB_FULL * np.nanmax(seglen(kk, aa)))
+        k = int(np.nanargmin(ang))
+        ok.append(thigh[k][i] >= LIMB_FULL * full[k][0] and shin[k][i] >= LIMB_FULL * full[k][1])
     if ok: out["knee2d_ok"] = bool(np.mean(ok) >= 0.5)
     return out
 

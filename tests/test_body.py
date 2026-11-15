@@ -90,4 +90,6 @@ assert near(kinematics(turn_body(phi), J, c)["turn"], 135, 8)
 assert kinematics(body(hy), J, c)["knee2d_ok"] is True
 b = body(hy); b[c - 48:c - 5, 9:11, 1] = b[c - 48:c - 5, 7:9, 1] + 0.12  # thigh shortened to ~48% during the window (leg points at camera)
 assert kinematics(b, J, c)["knee2d_ok"] is False
+# stroke in the first 0.8 s of the video: windows would wrap to the clip end -> all None, no crash
+r = kinematics(body(hy)[40:], J, 30); assert all(v is None for v in r.values()), r
 print("ok")

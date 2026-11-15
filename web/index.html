@@ -375,7 +375,7 @@ if(!DAY_KEYS.length){ document.querySelector("main").innerHTML='<p style="paddin
 let DAY = DAY_KEYS[DAY_KEYS.length-1], ALL = DAYS[DAY].data;
 const who = s => s.player||"me";  // "player": null or missing = the single-player "me", same as score.py
 const PN = p => p==="me" ? "我" : p;
-const ITEM = {total:"總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球高度", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜", lean:"軀幹前傾", stance:"站姿寬度"};
+const ITEM = {total:"總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球高度", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜", lean:"軀幹前傾", stance:"站姿寬度", wrist_speed:"手速", turn:"轉肩幅度", leg_load:"下蹲", power:"力量"};
 const STAT = {median:"中位數", mean:"平均", min:"最小", max:"最大", n:"拍數", score:"分數", cons:"一致性分", spread:"散佈"};
 const esc = x => String(x).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // landmark id → index in the trimmed per-frame arrays
@@ -552,7 +552,7 @@ function drawOverview(){
         return `<span>${ITEM[m]||m}</span><span class="bar"><i style="width:${(s??0)*10}%"></i></span><span class="num" title="中位數 ${x.median??"–"}，${x.n} 拍">${val}</span>`;
       }).join("");
       const flags=(window.TREND||[]).filter(t=>t.player===g.player&&t.kind===g.kind&&t.history.at(-1)?.session===d.id).flatMap(t=>t.flags);
-      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?PN(g.player)+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
+      return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?PN(g.player)+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
     }).join("")+`</div>`;
     const ck=(sc.checks||[]).filter(c=>c.status==="ok");
     if(ck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+ck.map(c=>`<li>${multi?PN(c.player)+" · ":""}${esc(c.name)}：通過 ${c.passed}、不通過 ${c.failed}、看不出來 ${c.unclear}</li>`).join("")+`</ul>`;
