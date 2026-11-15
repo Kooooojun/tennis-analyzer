@@ -550,7 +550,7 @@ function drawSummary(){
   $("findings").innerHTML="";
   for(const it of items){
     const d=document.createElement("div"); d.className="find "+it.cls;
-    d.innerHTML=`<b>${it.cls==="good"?"✓ ":"△ "}${esc(it.t)}</b><p>${esc(it.p)}</p>`+(it.c.length?`<div class="cite" title="${DAYS[DAY].checked?"這條建議引用的數據（已用 check_findings.py 核對）":"這條建議引用的數據（未核對：這場沒有 scores.json）"}">${DAYS[DAY].checked?"":"<span>未核對</span>"}${it.c.map(c=>`<span>${esc(citeText(c))}</span>`).join("")}</div>`:"");
+    d.innerHTML=`<b>${it.cls==="good"?"✓ ":"△ "}${esc(it.t)}</b><p>${esc(it.p)}</p>`+(it.c.length?`<div class="cite" title="${{true:"這條建議引用的數據（已用 check_findings.py 核對）",false:"這條建議引用的數據（未核對：這場沒有 scores.json）"}[DAYS[DAY].checked]??"這條建議引用的數據"}">${DAYS[DAY].checked===false?"<span>未核對</span>":""}${it.c.map(c=>`<span>${esc(citeText(c))}</span>`).join("")}</div>`:"");
     for(const [s,label] of it.j.filter(([s])=>s)){ const b=document.createElement("button"); b.className="jump"; b.textContent=label; b.onclick=()=>load(s.id,true); d.append(b); }
     $("findings").append(d);
   }
@@ -759,14 +759,14 @@ function watchStall(vid){
   const reload=(tap=false)=>{ tries++; since=Date.now(); const url=vid.currentSrc;
     const [t,play,rate]=keep&&!vid.readyState?keep:[vid.readyState?vid.currentTime:null,!vid.paused,vid.playbackRate]; keep=[t,play,rate];  // a reload that never got metadata keeps the first target; never loaded: load()'s own handler seeks
     if(restore) vid.removeEventListener("loadedmetadata",restore);
-    restore=()=>{ restore=keep=null; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t; if(!play) vid.pause(); };
+    restore=()=>{ restore=keep=null; vid._reloading=false; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t; if(!play) vid.pause(); else if(vid===vA){ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); } };  // vA's play handler skips a play fired before metadata
     vid.addEventListener("loadedmetadata",restore,{once:true});
-    vid.src=url; vid.playbackRate=rate; if(play||tap) playSafe(vid,vid.parentElement.querySelector(".badge")); else vid.load(); };
+    vid._reloading=true; vid.src=url; vid.playbackRate=rate; if(play||tap) playSafe(vid,vid.parentElement.querySelector(".badge")); };
   const fail=()=>{ m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; };
   m.onclick=()=>{ delete m.dataset.fail; tries=0; m.textContent="影片下載中…"; reload(true); };
   setInterval(()=>{
     if(!vid.currentSrc||!vid.offsetParent) return;
-    if(vid.currentSrc!==src){ src=vid.currentSrc; if(restore){ vid.removeEventListener("loadedmetadata",restore); restore=null; } keep=null; tries=0; wait=0; delete m.dataset.fail; m.hidden=true; }
+    if(vid.currentSrc!==src){ src=vid.currentSrc; if(restore){ vid.removeEventListener("loadedmetadata",restore); restore=null; } keep=null; vid._reloading=false; tries=0; wait=0; delete m.dataset.fail; m.hidden=true; }
     const now=Date.now();
     if(vid.error){ if(m.dataset.fail) return; if(tries<1&&now-since>=2000) reload(); else if(tries>=1) fail(); return; }
     const need=!(vid._blocked&&!vid.readyState)&&(vid.readyState<1||vid.seeking||!vid.paused&&vid.readyState<3);  // metadata only and idle is fine: preload=metadata, and a compare clip waits for its partner to scroll into view
@@ -901,7 +901,7 @@ function cmpTick(){
 vA.loop=vB.loop=true;
 for(const x of [v,vA,vB]) x.addEventListener("loadedmetadata",()=>{ x._blocked=false; });  // a tap lifted Low Power Mode's block; later loads show times again
 vA.addEventListener("play",()=>{ if(!vA.readyState) return; $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
-vA.addEventListener("pause",()=>{ $("cmpPlay").textContent="▶ 同步播放"; hold(vB); });
+vA.addEventListener("pause",()=>{ if(vA._reloading) return; $("cmpPlay").textContent="▶ 同步播放"; hold(vB); });
 for(const vid of [vA,vB]) vid.addEventListener("seeked",()=>{ if(vA.paused) cmpRender(Math.floor(vA.currentTime*FPS+1e-3)); });
 $("cmpPlay").onclick=()=>{ if(vA.paused||!vA.readyState){ vB.currentTime=cmpBt(); vA.playbackRate=vB.playbackRate=cmpRate; playSafe(vA,$("badgeA")); playSafe(vB,$("badgeB")); } else vA.pause(); };
 $("cmpPrev").onclick=()=>cmpGoto(cmpCur-1); $("cmpNext").onclick=()=>cmpGoto(cmpCur+1); $("cmpContact").onclick=()=>cmpGoto(A.contact);

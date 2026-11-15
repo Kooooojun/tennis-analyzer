@@ -94,4 +94,11 @@ assert errs(f(c1, "膝蓋 120°-130°"))  # 130 has no cite
 assert errs(f(c1, "膝蓋 110–120°"))   # lower end checked too
 assert errs(f(c1, "目標 75%-85%")) == []
 assert errs(f(c1, "在 1:04.8 那拍，共 1,234.5 次")) == []
+# ASCII '-' with a space before it is a minus sign, not a range; ',' is a thousands separator only before 3 digits
+S7 = [st(contact_fwd=-0.2, contact_h=0.5)]
+e7 = lambda *fs: check(dict(findings=list(fs)), S7, dict(groups=score_session(S7, False)))
+c7 = [dict(stroke=1, field="contact_h", value=0.5), dict(stroke=1, field="contact_fwd", value=-0.2)]
+assert e7(f(c7, "高度 0.5 -0.20")) == []
+assert e7(f(c7[:1], "高度 0.5 -0.20"))  # -0.20 needs its cite
+assert errs(f(c1, "手速 7.6,9.0"))  # 9.0 is checked
 print("ok")
