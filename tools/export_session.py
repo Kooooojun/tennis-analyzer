@@ -18,7 +18,7 @@ for i, x in enumerate(r):
     world = [None if np.isnan(fr[0, 0]) else [[round(float(c), 3) for c in p] for p in fr] for fr in WP[key][a:a + n][:, KEEP]] if key in WP else None
     t = x["t"]
     out.append(dict(id=i, kind=x["kind"], t=t, video=x["vn"], clock=f"{x['vn']}·{int(t // 60)}:{t % 60:04.1f}", src=f"clips/{name}", contact=x["f"] - a,
-                    knee=x["knee"], knee3d=x.get("knee3d"), knee_warn=x.get("knee_warn"), knee_warn_why=x.get("knee_warn_why"), cam_az=x.get("cam_az"), open_min=x["open_min"], open_contact=x["open_contact"], contact_h=x["contact_h"], contact_fwd=x.get("contact_fwd"), prep=x.get("prep"), elbow=x["elbow"], vis=x["vis"],
+                    knee=x["knee"], knee3d=x.get("knee3d"), knee_warn=x.get("knee_warn"), knee_warn_why=x.get("knee_warn_why"), cam_az=x.get("cam_az"), open_min=x["open_min"], open_contact=x["open_contact"], contact_h=x["contact_h"], contact_fwd=x.get("contact_fwd"), prep=x.get("prep"), prep_trunc=x.get("prep_trunc"), elbow=x["elbow"], vis=x["vis"],
                     drill=x["drill"], player=x.get("player") or "me", track=x.get("track", 0), **{k: x[k] for k in ("hand", "hand_guess", "backhand") if k in x}, size=x.get("size", PORTRAIT), frames=frames, **({"world": world} if world else {})))
 save(D / "strokes_raw.json", out, compact=True)
 for x in out: print(x["id"] + 1, x["kind"], x["drill"], x["clock"], x["knee"], None if x["contact_h"] is None else round(x["contact_h"] * 100))

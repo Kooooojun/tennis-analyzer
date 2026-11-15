@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from metrics import _swing_dir, _prep, PREP_WIN
+from metrics import _swing_dir, _swing_vec, _prep, PREP_WIN
 
 J = dict(rw=0, lh=1, rh=2)
 
@@ -13,6 +13,11 @@ def clip(wx, hip=0.0):
     xy = np.zeros((len(wx), 3, 2)); xy[:, 0, 0] = wx; xy[:, 1, 0] = hip; xy[:, 2, 0] = hip; return xy
 
 
+def P(*a):
+    """_prep seconds only (it returns (seconds, truncated) or None)."""
+    r = _prep(*a); return None if r is None else r[0]
+
+
 c = 90; f = np.arange(150)
 # wrist goes back to its furthest point 20 frames before contact, then swings forward through contact
 wx = np.where(f < c - 20, -(f - (c - 60)) / 40, -1 + (f - (c - 20)) / 10)
@@ -20,17 +25,46 @@ wx[f < c - 60] = 0
 xy = clip(wx)
 near = lambda v: v is not None and abs(v - 20 / 60) <= 2.5 / 60  # the 5-frame median flattens a sharp tip, ties go to the earliest frame (<= 2 frames)
 assert _swing_dir(xy, J, c) == 1
-assert near(_prep(xy, J, c, 1))
+assert near(P(xy, J, c, 1))
 # 3: mirrored camera (swing toward -x) gives the same answer
-m = clip(-wx); assert _swing_dir(m, J, c) == -1 and near(_prep(m, J, c, -1))
+m = clip(-wx); assert _swing_dir(m, J, c) == -1 and near(P(m, J, c, -1))
 # 16: walking (hips and wrist drift together) does not move the backswing end
-drift = 0.01 * f; assert near(_prep(clip(wx + drift, drift), J, c, 1))
+drift = 0.01 * f; assert near(P(clip(wx + drift, drift), J, c, 1))
 # 4: one-frame pose glitch further back than the real backswing end is ignored by the 5-frame median
-g = wx.copy(); g[c - 45] = -5; assert near(_prep(clip(g), J, c, 1))
+g = wx.copy(); g[c - 45] = -5; assert near(P(clip(g), J, c, 1))
 # 1: window is PREP_WIN frames; a backswing end before it is not reported as earlier than the window
-assert _prep(xy, J, c, 1) <= PREP_WIN / 60
+assert P(xy, J, c, 1) <= PREP_WIN / 60
 # no wrist data -> None, not a crash
-assert _prep(clip(np.full(150, np.nan)), J, c, 1) is None and np.isnan(_swing_dir(clip(np.full(150, np.nan)), J, c))
+assert P(clip(np.full(150, np.nan)), J, c, 1) is None and np.isnan(_swing_dir(clip(np.full(150, np.nan)), J, c))
+
+# prep-window-direction: a backswing end on the window's first frame is followed back; the walk stops where the wrist moves forward (previous stroke)
+f2 = np.arange(200); c2 = 120
+long = np.where(f2 < c2 - 80, -(f2 - (c2 - 100)) / 20, -1 + (f2 - (c2 - 80)) / 80.0); long[f2 < c2 - 100] = 0  # back at c-80, 1.33 s before contact
+r = _prep(clip(long), J, c2, 1); assert abs(r[0] - 80 / 60) <= 2.5 / 60 and r[1] is False, r  # c-80: past the 1.0 s window, before PREP_MAX
+assert _prep(clip(np.zeros(200)), J, c2, 1) == (1.5, True)  # still back at the walk limit (c-90): lower bound
+assert _prep(clip(np.zeros(200)), J, 50, 1)[1] is True  # clip starts inside the window
+# 3D axis: swing along depth (z), image x carries nothing
+Jw = dict(rw=0, lh=1, rh=2)
+W = np.zeros((200, 3, 3)); W[:, 0, 2] = np.where(f2 < c2 - 20, -(f2 - (c2 - 60)) / 40, -1 + (f2 - (c2 - 20)) / 10); W[f2 < c2 - 60, 0, 2] = 0
+u = _swing_vec(W, Jw, c2); assert u is not None and abs(u[2] - 1) < 1e-9 and u[1] == 0
+r = _prep(W, Jw, c2, u); assert r is not None and abs(r[0] - 20 / 60) <= 2.5 / 60 and r[1] is False
+assert _swing_vec(np.full((200, 3, 3), np.nan), Jw, c2) is None and _swing_vec(W, Jw, 10) is None
+# 7: camera in front instead of behind: the swing runs along -z; the 3D axis follows the motion, so the answer is the same
+Wm = W.copy(); Wm[:, 0, 2] *= -1
+u = _swing_vec(Wm, Jw, c2); assert u is not None and abs(u[2] + 1) < 1e-9
+r = _prep(Wm, Jw, c2, u); assert r is not None and abs(r[0] - 20 / 60) <= 2.5 / 60 and r[1] is False, r
+# 1: two quick strokes 0.7 s apart, the wrist never moves forward past tol in between (e.g. the last stroke was the other side):
+#    the walk stops after the previous hit instead of running into it
+flat = np.zeros(200); flat[c2 - 25:] = np.arange(200 - (c2 - 25)) / 20.0  # back (0) until c-25, then forward
+r = _prep(clip(flat), J, c2, 1, prev=c2 - 42); assert r is not None and r[0] <= (42 - 3) / 60 + 1e-9 and r[1] is False, r
+assert _prep(clip(flat), J, c2, 1) == (1.5, True)  # no previous hit known: the clip limit
+# 3: noise on a long backswing plateau does not stop the walk on a single spike
+rng = np.random.default_rng(0); noisy = np.where(f2 < c2 - 25, -1.0, -1 + (f2 - (c2 - 25)) / 10.0); noisy[: c2 - 85] = 1.0
+noisy[c2 - 85:c2 - 25] += rng.normal(0, 0.04, 60)
+r = _prep(clip(noisy), J, c2, 1); assert r is not None and r[0] >= 75 / 60, r
+# 5: contact in the first frames -> None, not a negative-index window
+assert _prep(clip(np.zeros(200)), J, 5, 1) is None
+print("prep-window tests ok")
 
 # --- knee view gate (testset/results/knee-view-gate_pred.md) ---
 from metrics import cam_az, measure_clip, arm_checks, KNEE_VIEW_MIN

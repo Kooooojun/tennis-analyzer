@@ -64,4 +64,12 @@ assert e2(False, f([dict(kind="FH", field="open_min", stat="median", value=20)])
 assert e2(True, f([dict(kind="FH", field="open_min", stat="median", value=20)])) == []
 assert e2(False, f([dict(stroke=1, field="open_min", value=20)]))
 assert e2(True, f([dict(stroke=1, field="open_min", value=20)])) == []
+# prep_trunc (lower bound) is dropped like score.py: median of 0.3, 0.5 = 0.4, not 0.5 with the 1.5 lower bound
+S3 = [st(prep=0.3), st(prep=0.5), st(prep=1.5, prep_trunc=True)]
+e3 = lambda *fs: check(dict(findings=list(fs)), S3, dict(groups=score_session(S3, False)))
+assert e3(f([dict(kind="FH", field="prep", stat="median", value=0.4)])) == []
+assert e3(f([dict(kind="FH", field="prep", stat="median", value=0.5)]))
+assert e3(f([dict(stroke=3, field="prep", value=1.5)]))
+S4 = [st(prep=0.3), st(prep=0.5), st(prep=1.0, prep_trunc=None)]  # null = old stroke via export_session  # old session: no prep_trunc field, 1.0 = the old window edge
+assert check(dict(findings=[f([dict(stroke=3, field="prep", value=1.0)])]), S4, dict(groups=score_session(S4, False)))
 print("ok")

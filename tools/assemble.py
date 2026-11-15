@@ -58,10 +58,12 @@ def main():
     if unsure:
         sys.exit("cannot tell the racket hand of " + "; ".join(f"{nm} ({why})" for nm, why in unsure.items()) + ". Ask the user, then write work/profiles.json, e.g. "
                  + json.dumps({nm: {"hand": "R", "backhand": "two"} for nm in unsure}) + " and re-run")
+    kept = [(C[int(r[0])]["v"], name(int(r[0])), C[int(r[0])]["t"]) for r in rows if r[1] != "x"]  # prep stops at the same player's previous hit
     for r in sorted(rows, key=lambda r: int(r[0])):
         if r[1] == "x": continue
         i = int(r[0]); c = C[i]; key = pose(c); h = H[name(i)]
-        m = measure_full(P[key], c["t"], SZ[c["v"]], WD[key], h["hand"])
+        pt = [t for v, nm, t in kept if v == c["v"] and nm == name(i) and t < c["t"] - 1e-6]
+        m = measure_full(P[key], c["t"], SZ[c["v"]], WD[key], h["hand"], max(pt) if pt else None)
         out.append(dict(t=round(c["t"], 3), video=c["v"], vn=c["vn"], cand=i, arc=round(c["arc"], 2), track=key[1], player=name(i),
                         size=SZ[c["v"]], **h, kind=r[1], drill=None if r[1] == "SV" or r[2] == "-" else r[2], **m))
     out.sort(key=lambda x: (x["vn"], x["t"]))
