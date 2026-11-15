@@ -119,6 +119,13 @@ def distinct(cands, n, keep=(), aspect=1.0):
     return out
 
 
+def real(a, vmin=0.3):
+    """Normalized (33, 3) landmarks -> is it a person: trunk (shoulders, hips) visibility >= vmin. A square crop scaled up
+    finds skeletons in floodlights and fences with trunk visibility ~0.1 (players 0.4-0.95 on the far-camera dataset); one
+    such skeleton keeps its crop box on the light and the player is never searched for again."""
+    return float(np.mean(a[[11, 12, 23, 24], 2])) >= vmin
+
+
 def use_crop(found):
     """found: people seen per sampled full frame. Crop when the full frame misses everyone in most of them (far camera).
     Measured on 1 frame/s samples: a far-camera dataset (people 150-300 px of 1088) 0.05-0.31, wall practice and web clips
@@ -189,7 +196,7 @@ def main():
         def look(img, b, det):  # skeletons in a crop, as full-frame normalized landmarks
             r = det.detect(img_of(cv2.resize(img[b[1]:b[1] + b[2], b[0]:b[0] + b[2]], (CROP_SIDE, CROP_SIDE))))
             return [(np.c_[crop_to_full([[q.x, q.y] for q in a], b, SW, SH), [q.visibility for q in a]], [[q.x, q.y, q.z] for q in w])
-                    for a, w in zip(r.pose_landmarks, r.pose_world_landmarks)]
+                    for a, w in zip(r.pose_landmarks, r.pose_world_landmarks) if real(np.array([[q.x, q.y, q.visibility] for q in a]))]
         for img in frames(["-i", source] + ["-vf", f"fps={60 if fps >= 50 else repr(fps)}"], SW, SH):
             got = [x for b in box if b for x in look(img, b, one)]
             if (None in box and n % TILE_EVERY == 0) or not got:

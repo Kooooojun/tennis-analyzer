@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from pose_full import to60, crop_box, crop_to_full, distinct
+from pose_full import to60, crop_box, crop_to_full, distinct, real
 import numpy as np
 
 # --- to60: source-fps rows -> 60 fps rows (failure 5, 6) ---
@@ -65,5 +65,10 @@ big, big2, small = sk(0.3, 0.5, 0.3), sk(0.301, 0.502, 0.29), sk(0.7, 0.4, 0.1)
 assert [x[0][0, 0] for x in distinct([big, big2, small], 2, aspect=16 / 9)] == [0.3, 0.7]
 assert [x[0][0, 0] for x in distinct([big2, small], 2, keep=[big], aspect=16 / 9)] == [0.7]  # already found by a crop
 assert len(distinct([big, small, sk(0.1, 0.5, 0.2)], 2, aspect=1)) == 2
+
+# --- real: a crop on a floodlight returns a skeleton with trunk visibility ~0.1; a player is 0.4-0.95 (far-camera dataset) ---
+p = sk(0.5, 0.6, 0.2)[0]; p[:, 2] = 0.9; assert real(p)
+p[[11, 12, 23, 24], 2] = 0.1; assert not real(p)
+p[[11, 12, 23, 24], 2] = 0.4; assert real(p)
 
 print("ok")
