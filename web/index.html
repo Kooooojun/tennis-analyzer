@@ -35,7 +35,8 @@ h1{font-size:22px;margin:0 0 2px;text-wrap:balance}
 header p{margin:0;color:var(--muted);font-size:13px}
 main{max-width:1200px;margin:0 auto;padding-block:8px 40px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:20px;align-items:start}
 .player{position:sticky;top:calc(12px + env(safe-area-inset-top, 0px));width:calc((100vh - 290px) * 9 / 16);max-width:420px;min-width:260px}
-.player:not(.wide) .stage{max-height:max(200px, 100vh - 460px)}  /* portrait: the clip letterboxes rather than push the controls below a short window */
+@media (min-width:821px){.player:not(.wide) .stage{width:max(200px, (100vh - 460px) * 9 / 16);max-width:100%;margin:0 auto}}  /* portrait: the clip's own width follows the height left for it, never under 200×356 */
+@media (min-width:821px) and (max-height:820px){.player:not(.wide){position:static}}  /* too short for a sticky 200×356 clip plus its controls: let it scroll */
 main.wideplayer{grid-template-columns:minmax(0,1fr)}  /* landscape clip: player on top, cards (compare too) full width below */
 .player.wide{position:static;width:min(100%, max(360px, (100vh - 400px) * 16 / 9), 900px);max-width:none;min-width:0}
 .stage{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:9/16;width:100%;max-width:100%}
@@ -386,18 +387,18 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
 document.body.classList.add("ready");  // data.js scripts above have run; before route() so canvases get their real size
 const FPS = 60, NAMES = {FH:"正拍", BH:"反拍", SV:"發球"};
 // one entry per practice session (built by tools/build_site.py); strokes carry their day so compare can mix sessions
-const isoDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d.date||"") ? d.date : null;  // build_site falls back to the slug when notes.json has no date
+const isoDate = d => { const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d.date||""); return m&&new Date(Date.UTC(+m[1],m[2]-1,+m[3])).toISOString().slice(0,10)===d.date ? d.date : null; };  // a real calendar date; build_site falls back to the slug when notes.json has no date
 const YEARS = new Set((window.SESSIONS||[]).map(isoDate).filter(Boolean).map(x=>x.slice(0,4))), THIS_YEAR = String(new Date().getFullYear());
 const mdOf = iso => (YEARS.size>1||!YEARS.has(THIS_YEAR) ? [iso.slice(0,4)] : []).concat(iso.slice(5).split("-")).map(Number).join("/");  // string slicing, never Date: no timezone shift; the year only when sessions span years or are not this year
 const sameDay = d => (window.SESSIONS||[]).filter(x=>isoDate(x)===isoDate(d)).length>1;  // two sessions on one day: M/D alone can't tell them apart
-const dateLabel = d => !(d.label===d.id&&isoDate(d)) ? d.label : isoDate(d)===d.id||!sameDay(d) ? mdOf(isoDate(d)) : `${mdOf(isoDate(d))} ${d.id}`;
+const dateLabel = d => !(isoDate(d)&&(d.label===d.id||d.label===d.id.slice(5).replace("-","/"))) ? d.label :  /* build_site's own labels: the slug, or MM/DD of a date-named folder */ isoDate(d)===d.id||!sameDay(d) ? mdOf(isoDate(d)) : `${mdOf(isoDate(d))} ${d.id}`;
 const DAYS = Object.fromEntries((window.SESSIONS||[]).map(d=>[d.id,{...d,players:d.players||["me"],data:d.strokes,
   label:dateLabel(d), slug:d.label===d.id&&isoDate(d)&&isoDate(d)!==d.id&&!sameDay(d)?d.id:""}]));  // a slug-only label gives way to the date; the slug stays as small print
 for(const [k,d] of Object.entries(DAYS)) d.data.forEach(s=>{ s.day=k; if(s.knee3d!=null){ s.knee2d=s.knee; s.knee=s.knee3d; } });  // knee = 3D when the session has world data (else the old 2D value)
-const DAY_KEYS = [...(window.SESSIONS||[])].sort((a,b)=>(isoDate(a)||"").localeCompare(isoDate(b)||"")).map(d=>d.id);  // an array: object keys put all-digit names first
+const DAY_KEYS = [...(window.SESSIONS||[])].sort((a,b)=>!isoDate(a)-!isoDate(b)||(isoDate(a)||"").localeCompare(isoDate(b)||"")||(isoDate(a)?a.id.localeCompare(b.id):0)).map(d=>d.id);  // dated by date then id; undated after them in manifest order, so the newest is still last  // an array: object keys put all-digit names first
 if(LOAD_FAIL.length){ const p=document.createElement("p"); p.style.padding="24px"; p.textContent=`載入失敗，重新整理再試（沒載到：${LOAD_FAIL.join("、")}）`; document.querySelector("main").before(p); if(!DAY_KEYS.length){ document.querySelector("main").hidden=true; throw new Error("load failed"); } }  // a dropped connection is not "no sessions"
 if(!DAY_KEYS.length){ document.querySelector("main").innerHTML='<p style="padding:24px">還沒有分析好的練習。在這個資料夾開 Claude Code，說「幫我分析 videos/ 裡的新練習」。</p>'; throw new Error("no sessions"); }
-let DAY = DAY_KEYS[DAY_KEYS.length-1], ALL = DAYS[DAY].data;
+let DAY = DAY_KEYS.findLast(k=>isoDate(DAYS[k]))??DAY_KEYS.at(-1), ALL = DAYS[DAY].data;
 const who = s => s.player||"me";  // "player": null or missing = the single-player "me", same as score.py
 const PN = p => p==="me" ? "我" : p;
 const ITEM = {total:"總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球高度", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜", lean:"軀幹前傾", stance:"站姿寬度", wrist_speed:"手速", turn:"轉肩幅度", leg_load:"重心降低", power:"力量"};
@@ -615,7 +616,7 @@ function drawOverview(){
     const ck=(sc.checks||[]).filter(c=>(c.passed||0)+(c.failed||0)+(c.unclear||0)>0), vck=ck.filter(c=>c.verified===true), rck=ck.filter(c=>c.verified!==true);  // no verified field (older scores.json) = reference
     const words=c=>(c.field?c.field==="bh_front_ok":/身前/.test(c.name))?["判在身前","判不在身前"]:c.field||/伸直|彎/.test(c.name)?["判伸直","判彎"]:["判通過","判沒通過"];
     const ckLine=(c,w)=>`${multi?esc(PN(c.player))+" · ":""}${esc(c.name)}：${w}、看不出來 ${c.unclear||0}${(c.unclear||0)>((c.passed||0)+(c.failed||0)+(c.unclear||0))/2?"，一半以上看不出來":""}`;
-    if(vck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+vck.map(c=>`<li class="${c.failed?"down":"up"}">${ckLine(c,`✓ 通過 ${c.passed||0}、✗ 沒通過 ${c.failed||0}`)}</li>`).join("")+`</ul>`;
+    if(vck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+vck.map(c=>(c.passed||0)+(c.failed||0)?`<li class="${c.failed?"down":"up"}">${ckLine(c,`✓ 通過 ${c.passed||0}、✗ 沒通過 ${c.failed||0}`)}</li>`:`<li>${ckLine(c,"每一拍都判斷不了")}</li>`).join("")+`</ul>`;
     if(rck.length) h+=`<h3>姿勢檢查・參考（未驗證）</h3><ul class="flags armref">`+rck.map(c=>`<li>${ckLine(c,(w=>`${w[0]} ${c.passed||0}、${w[1]} ${c.failed||0}`)(words(c)))}</li>`).join("")+`</ul><p class="caveat">這幾項沒有足夠驗證（彎手臂在測試資料裡一拍都沒抓到），看不出來的拍可能有問題，不要當成沒問題。</p>`;
     h+=`<p class="caveat">1–10 分，怎麼算見 docs/scoring.md。灰色「資料不足」= 能用的拍不到一半，不打分。</p>`;
   }
@@ -746,7 +747,7 @@ function drawList(){
     const dn=drillName(s);
     b.innerHTML=`<span class="row"><span class="tag ${esc(s.kind)}">${esc(NAMES[s.kind]||s.kind)}</span><span class="clock">${esc(s.clock)}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":kSrcOf(s)+" "+Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
     b.title=strokeLabel(s);
-    b.onclick=()=>load(s.id,document.querySelector("main").classList.contains("wideplayer")); box.append(b);  // the landscape player is not sticky, so bring it back into view
+    b.onclick=()=>load(s.id,"list"); box.append(b);  // load() scrolls to a non-sticky (landscape) player once it knows the clip's shape
   }
   markList();
 }
@@ -781,7 +782,7 @@ function watchStall(vid){
     restore=()=>{ restore=keep=null; vid._reloading=false; if(vid.currentSrc!==url) return; if(t!=null) vid.currentTime=t; if(!play) vid.pause(); else if(vid===vA){ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); } };  // vA's play handler skips a play fired before metadata
     vid.addEventListener("loadedmetadata",restore,{once:true});
     vid._reloading=url; vid.src=url; vid.playbackRate=rate; if(play||tap) playSafe(vid,vid.parentElement.querySelector(".badge")); };
-  const fail=()=>{ m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; };
+  const fail=()=>{ vid._reloading=false; m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; };
   m.onclick=()=>{ delete m.dataset.fail; tries=0; m.textContent="影片下載中…"; reload(true); };
   setInterval(()=>{
     if(!vid.currentSrc||!vid.offsetParent) return;
@@ -839,7 +840,7 @@ function load(id, scroll){
   render(Math.max(0,Math.min(N-1,S.contact-48)));  // the new stroke's frame now (its skeleton fetch starts here), not the last stroke's until the clip loads
   markList(); markStrips(); drawNotes();
   if(scroll && !PLAYER_TABS.includes(TAB)) go(DAY,"stroke");
-  if(scroll && (matchMedia("(max-width:820px)").matches||document.querySelector("main").classList.contains("wideplayer"))) scrollTo({top:0,behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});
+  if(scroll && (scroll!=="list"&&matchMedia("(max-width:820px)").matches||getComputedStyle($("stage").parentElement).position==="static")) scrollTo({top:0,behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});
 }
 const frameOf=t=>Math.max(0,Math.min(N-1,Math.floor(t*FPS+1e-3)));
 const relLabel=f=>{ const dt=(f-S.contact)/FPS; return dt===0?"擊球":(dt>0?"+":"")+dt.toFixed(2)+"s"; };
@@ -880,7 +881,7 @@ function speedButtons(box,get,set){ for(const s of [0.1,0.25,0.5,1]){ const b=do
 speedButtons($("speeds"),()=>rate,s=>{rate=s;v.playbackRate=s;});
 const tg=(id,key)=>{ $(id).setAttribute("aria-pressed",OPT[key]); $(id).onclick=()=>{ $(id).classList.toggle("on"); OPT[key]=$(id).classList.contains("on"); $(id).setAttribute("aria-pressed",OPT[key]); render(cur); cmpRender(cmpCur); };};
 tg("skel","skel"); tg("guides","guides"); tg("trail","trail");
-$("theme").onclick=()=>{ const r=document.documentElement, dark=matchMedia("(prefers-color-scheme: dark)").matches; const now=r.dataset.theme||(dark?"dark":"light"); r.dataset.theme=now==="dark"?"light":"dark"; render(cur); };
+$("theme").onclick=()=>{ const r=document.documentElement, dark=matchMedia("(prefers-color-scheme: dark)").matches; const now=r.dataset.theme||(dark?"dark":"light"); r.dataset.theme=now==="dark"?"light":"dark"; document.querySelectorAll('meta[name="theme-color"]').forEach(m=>m.content=css("--bg")); render(cur); };
 $("chart").addEventListener("click",e=>{ const r=e.currentTarget.getBoundingClientRect(); goto(e.currentTarget._map(e.clientX-r.left)); });
 let drag=null;
 cv.addEventListener("pointerdown",e=>{ drag={x:e.clientX,f:cur,moved:false}; try{ cv.setPointerCapture(e.pointerId); }catch{} });
@@ -1031,7 +1032,7 @@ function drawSpark(svg,t){  // total + consistency per session, oldest left
     for(const [i,v] of pts){ const c=mk("circle",{cx:x(i),cy:y(v),r:key==="total"?4.5:3,fill:col}); const tt=document.createElementNS(NS,"title"); tt.textContent=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v} · 鏡頭：${h[i].camera||"沒寫"}`; c.append(tt); }
   }
   let lx=-1e9;  // dates are spaced by time, so close sessions would print over each other: skip a label unless it clears the last one and the final label
-  h.forEach((r,i)=>{ if(byDate&&i<n-1&&(x(i)-lx<40||x(n-1)-x(i)<40)) return; lx=x(i); const l=isoDate(r)?mdOf(r.date):DAYS[r.session]?.label||r.session; mk("text",{x:x(i),y:H-18,"text-anchor":n<2?"middle":i===0?"start":i===n-1?"end":"middle","font-size":10,fill:"var(--muted)"}).textContent=l.length>10?l.slice(0,10)+"…":l; });
+  h.forEach((r,i)=>{ if(byDate&&i<n-1&&(x(i)-lx<40||x(n-1)-x(i)<40)) return; lx=x(i); const l=DAYS[r.session]?.label||(isoDate(r)?mdOf(r.date):r.session); mk("text",{x:x(i),y:H-18,"text-anchor":n<2?"middle":i===0?"start":i===n-1?"end":"middle","font-size":10,fill:"var(--muted)"}).textContent=l.length>10?l.slice(0,10)+"…":l; });
   mk("text",{x:pl,y:H-3,"font-size":10,fill:"var(--accent)"}).textContent="● 總分";
   mk("text",{x:pl+52,y:H-3,"font-size":10,fill:"var(--muted)"}).textContent="● 一致性";
 }
