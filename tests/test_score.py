@@ -210,7 +210,7 @@ print("score-groups-consistency tests ok")
 
 # --- prep-window-direction: a truncated prep is only a lower bound -> left out of the prep median / spread; SCORE_VERSION 8
 from score import _value
-assert SCORE_VERSION == 8
+assert SCORE_VERSION == 9  # 9 = serve-form-view-gates (8 = prep-window-direction)
 assert _value(dict(prep=1.5, prep_trunc=True), "prep") is None and _value(dict(prep=0.4, prep_trunc=False), "prep") == 0.4 and _value(dict(prep=0.4), "prep") == 0.4
 G = score_session([dict(kind="FH", prep=0.4)] * 5 + [dict(kind="FH", prep=1.5, prep_trunc=True)], False)[0]["metrics"]["prep"]
 assert G["n"] == 5 and G["median"] == 0.4, G
@@ -219,3 +219,21 @@ assert _value(dict(prep=1.0), "prep") is None and _value(dict(prep=0.999), "prep
 assert _value(dict(prep=1.0, prep_trunc=False), "prep") == 1.0
 assert _value(dict(prep=1.0, prep_trunc=None), "prep") is None  # export_session writes null for old strokes  # new sessions: a real 1.0 s
 print("prep-trunc tests ok")
+# --- serve-form-view-gates: a front / back camera makes lean None; half the strokes usable = coverage 0.5 still scores
+G = score_session([dict(kind="FH", lean=5.0 + i) for i in range(6)] + [dict(kind="FH", lean=None)] * 6, False)[0]["metrics"]["lean"]
+assert G["status"] == "ok" and G["coverage"] == 0.5 and G["n"] == 6, G
+G = score_session([dict(kind="FH", lean=5.0 + i) for i in range(6)] + [dict(kind="FH", lean=None)] * 7, False)[0]["metrics"]["lean"]
+assert G["status"] == "資料不足", G
+print("form view-gate score tests ok")
+
+# arm-bent-detect: checks[] rows carry verified; only a serve-arm row with no "fail" is backed by eye labels (docs/scoring.md §9)
+bh = lambda ok, front: dict(kind="BH", bh_elbow_ok=ok, bh_elbow_conf=0.8, bh_front_ok=front)
+r = {x["field"]: x for x in check_session([bh(True, True)] * 4)}
+assert r["bh_front_ok"]["verified"] is False and r["bh_elbow_ok"]["verified"] is False, r
+r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] * 4)[0]; assert r["verified"] is True, r
+r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] * 4 + [dict(kind="SV", serve_arm_straight=False, serve_arm_conf=0.9)])[0]; assert r["verified"] is False, r
+r = check_session([dict(kind="SV", serve_arm_straight=None, serve_arm_conf=0.9)] * 4)[0]; assert r["verified"] is False, r  # nothing decided, nothing verified
+print("verified tests ok")
+r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] + [dict(kind="SV", serve_arm_straight=None, serve_arm_conf=0.0)] * 5)[0]
+assert r["status"] == "資料不足" and r["verified"] is False, r  # 1 pass + 5 unclear: not enough to call anything verified
+print("verified status tests ok")

@@ -28,7 +28,7 @@ BASE_KINDS = ("FH", "BH")  # metrics without `kinds` apply here (knee etc. are n
 KINDS = ("FH", "BH", "SV")  # SV group exists only when the session has SV strokes
 MIN_N, MIN_N_CONS = 3, 5
 MIN_COVER = 0.5  # usable strokes / strokes in the group; below it the metric says 資料不足 (docs/scoring.md §1)
-SCORE_VERSION = 8  # 8: prep followed back past 1.0 s when the window start is the minimum; prep_trunc (lower bound) strokes left out of prep; prep along the 3D swing axis for a front / back camera (prep-window-direction). 7: BH knee / open_min consistency only, turn out of the power cap, consistency spread centred per (video, drill) (score-groups-consistency). 6: knee view gate (camera within 30 deg of front/back -> knee_warn) + kinematics get visibility-masked xy (knee-view-gate). 5: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate (body-kinematics). 4: + finish, reach, tilt, lean, stance and the SV group (serve-finish). 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
+SCORE_VERSION = 9  # 9: lean None for a camera within 30 deg of front/back (a whole front/back session can turn lean into 資料不足), tilt drops frames whose 3D shoulders overlap along the camera axis; old sessions need refine.py re-run for the new values (serve-form-view-gates). 8: prep followed back past 1.0 s when the window start is the minimum; prep_trunc (lower bound) strokes left out of prep; prep along the 3D swing axis for a front / back camera (prep-window-direction). 7: BH knee / open_min consistency only, turn out of the power cap, consistency spread centred per (video, drill) (score-groups-consistency). 6: knee view gate (camera within 30 deg of front/back -> knee_warn) + kinematics get visibility-masked xy (knee-view-gate). 5: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate (body-kinematics). 4: + finish, reach, tilt, lean, stance and the SV group (serve-finish). 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
 
 
 def _num(v):
@@ -129,6 +129,7 @@ CHECKS = [("SV", "serve_arm_straight", "serve_arm_conf", "發球擊球時手臂�
           ("BH", "bh_elbow_ok", "bh_elbow_conf", "單手反拍擊球時手肘不明顯彎曲", "同上"),
           ("BH", "bh_front_ok", "bh_elbow_conf", "單手反拍擊球點在身體前方", "手腕在持拍側肩膀之前 ≥ 0.1 m（3D，沿肩線）")]
 MIN_DECIDED = 3
+VERIFIED = {"serve_arm_straight"}  # only check with eye labels behind its passes (THETIS 12/12); no truth yet for bent serves, one-hand BH elbow (1/2) or BH contact-in-front
 
 
 def check_session(strokes):
@@ -138,8 +139,10 @@ def check_session(strokes):
         for p in sorted({who(s) for s in strokes if s.get("kind") == kind and _num(s.get(conf))}):
             g = [s for s in strokes if who(s) == p and s.get("kind") == kind and _num(s.get(conf))]
             ps, fl = sum(s.get(field) is True for s in g), sum(s.get(field) is False for s in g); n = len(g)
+            ok = ps + fl >= MIN_DECIDED and (ps + fl) / n >= MIN_COVER
             out.append(dict(player=p, kind=kind, field=field, name=name, n=n, passed=ps, failed=fl, unclear=n - ps - fl, coverage=_r((ps + fl) / n, 2),
-                            status="ok" if ps + fl >= MIN_DECIDED and (ps + fl) / n >= MIN_COVER else "資料不足", formula=rule))
+                            status="ok" if ok else "資料不足", formula=rule,
+                            verified=field in VERIFIED and ok and ps > 0 and fl == 0))  # needs status ok and >= 1 pass; False verdicts were never checked against truth. The web does not read this yet (greys every row)
     return out
 
 
