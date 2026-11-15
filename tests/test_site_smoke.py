@@ -126,3 +126,6 @@ for(const engine of [chromium,webkit]){
   }finally{await browser.close();}
 }
 ''', text=True)
+
+if os.environ.get("SITE_E2E_URL"):
+    subprocess.run(["node", str(R / "tests" / "site_cache_regressions.mjs")], check=True)
