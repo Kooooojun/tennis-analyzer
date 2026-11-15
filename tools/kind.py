@@ -7,10 +7,20 @@ HIGH = 0.25      # racket wrist above the nose by this many torso lengths (lowes
 FH_MIN = 0.9     # backswing side (racket wrist along the hip line, hip widths, + = racket side) at or above this = FH
 BH_MAX = 0.3     # at or below this = BH; between = '?'  (the 0.2-0.4 s before contact: at contact the turning body flips the sign)
 VIS_MIN = 0.5
-CONF_MIN = 0.5   # callers pre-fill / trust a kind only at or above this
+CONF_MIN = 0.5   # callers trust a kind only at or above this (auto_kind disagreements, scoring)
+# candidates.py pre-fills labels.txt only at or above this. kind_conf measures "the backswing looks like FH/BH", not "the ball was hit",
+# but fake hits (ball dropped, shadow swings) score lower: on the user's wall video A (all 79 candidates, IN-SAMPLE, picked after
+# looking) conf >= 0.58 kept precision 0.81 / recall 0.94 for real hits. Fixed before the held-out check; docs/research/hit-evidence.md.
+PREFILL_MIN = 0.58
 HANG = -0.4      # SV cue: racket wrist this many torso lengths below the shoulder (arm hanging) 1.7-1.0 s before contact
 HIPW_MIN = 0.02  # 2D path: hip width must exceed this fraction of the frame width (kept from the normalised-x version: fewer FH errors)
 SV_CONF = 0.45   # below CONF_MIN: the hanging-arm cue does not separate serves from smashes (THETIS: median -0.77 vs -0.71)
+
+
+def prefill(kind, conf, line=None):
+    """labels.txt pre-fill: the kind when conf >= line (default PREFILL_MIN), else '?' (no conf = no hand profile = no guess)."""
+    line = PREFILL_MIN if line is None else line
+    return kind if kind != "?" and conf is not None and conf >= line else "?"
 
 
 def _m(a): return np.nanmedian(a, axis=0) if np.isfinite(a).any() else np.full(a.shape[1:], np.nan)

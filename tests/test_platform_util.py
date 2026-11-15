@@ -53,4 +53,10 @@ assert pu.venv_python(r) == (r / ".venv/Scripts/python.exe" if os.name == "nt" e
 a = pu.h264_args("2500k", 23)
 if sys.platform == "darwin": assert a == ["-c:v", "h264_videotoolbox", "-b:v", "2500k"], a
 else: assert a[1] in ("h264_nvenc", "libx264"), a
+# imwrite: Chinese path (cv2.imwrite fails silently there on Windows) and a write that cannot succeed
+import numpy as np
+img = np.full((8, 8, 3), 200, np.uint8); q = T / "中文" / "圖.jpg"; q.parent.mkdir()
+assert pu.imwrite(q, img, [1, 95]) and q.stat().st_size > 0
+import cv2; back = cv2.imdecode(np.fromfile(q, np.uint8), cv2.IMREAD_COLOR); assert back.shape == img.shape and abs(int(back.mean()) - 200) < 3
+assert pu.imwrite(T / "沒有這個資料夾" / "x.jpg", img) is False
 print("ok")

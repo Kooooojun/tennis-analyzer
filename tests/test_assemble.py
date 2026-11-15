@@ -3,7 +3,7 @@
 import sys, json, tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from assemble import cands_fp, read_labels, player_of
+from assemble import cands_fp, read_labels, player_of, bulk_warning, BULK_N
 
 d = Path(tempfile.mkdtemp()); C = [dict(v="a", t=1.0, player="black"), dict(v="a", t=2.0, player="black")]
 (d / "cands.json").write_text(json.dumps(C), encoding="utf-8", newline="\n")
@@ -21,4 +21,13 @@ assert len(read_labels(d, C2)) == 2
 
 who = {0: "white", 1: None}  # 0 用 '@white' 改名
 assert player_of(0, who, C2) == "white" and player_of(1, who, C2) == "black"
+# 整批照收警告：>= BULK_N 行且 x 不到 3% 才警告（隨手寫一行 x 繞不過）；少於 BULK_N 行或 x 夠多就不警告；文字註明全是真擊球時可忽略
+row = lambda i, k: [str(i), k, "rally"]
+assert BULK_N == 10
+w = bulk_warning([row(i, "FH") for i in range(10)]); assert w and "ignore" in w, w
+assert bulk_warning([row(i, "FH") for i in range(9)]) is None  # 太少行
+assert bulk_warning([row(i, "FH") for i in range(40)] + [["40", "x"]])  # 1/41 = 2.4% < 3%：仍警告
+assert bulk_warning([row(i, "FH") for i in range(20)] + [["20", "x"]]) is None  # 1/21 = 4.8%
+assert bulk_warning([row(i, "FH") for i in range(5)] + [row(i, "BH") for i in range(5, 10)])  # 混合拍種也算
+assert bulk_warning(rows) is None  # 上面的舊 labels（2 行，有 x）
 print("assemble labels OK")

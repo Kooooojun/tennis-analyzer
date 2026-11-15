@@ -3,6 +3,7 @@
 # -> work/<s>/strip.jpg
 import sys, cv2, numpy as np
 from common import session, work, web, load
+from platform_util import imwrite
 
 s = session(); which = sys.argv[2]; nos = [int(x) for x in sys.argv[3].split(",")]
 f0, f1, st = (int(x) for x in sys.argv[4:7]) if len(sys.argv) > 6 else (-8, 4, 1)
@@ -21,4 +22,4 @@ for n in nos:
         im = cv2.copyMakeBorder(fr[min(max(i, 0), len(fr) - 1)], R, R, R, R, cv2.BORDER_CONSTANT)[cy:cy + 2 * R, cx:cx + 2 * R]
         im = cv2.resize(im, (200, 200)); cv2.putText(im, f"#{n} {i - c:+d}", (4, 18), 0, 0.55, (0, 255, 255), 2); tiles.append(im)
     rows.append(np.hstack(tiles))
-out = work(s) / "strip.jpg"; cv2.imwrite(str(out), np.vstack(rows)); print(out)
+out = work(s) / "strip.jpg"; imwrite(out, np.vstack(rows)); print(out)

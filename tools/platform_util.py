@@ -70,3 +70,16 @@ def h264_args(mac_bitrate, crf):
     if sys.platform == "darwin": return ["-c:v", "h264_videotoolbox", "-b:v", mac_bitrate]
     if _nvenc(): return ["-c:v", "h264_nvenc", "-cq", str(crf)]
     return ["-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf)]
+
+
+def imwrite(p, img, params=()):
+    """cv2.imwrite that works on non-ASCII paths (it fails silently there on Windows): encode in memory, write the bytes.
+    Returns False and prints the path when it fails."""
+    import cv2
+    try:
+        ok, buf = cv2.imencode(Path(p).suffix, img, list(params))
+        if ok: buf.tofile(str(p))
+    except (OSError, cv2.error):
+        ok = False
+    if not ok: print(f"warning: could not write {p}", file=sys.stderr)
+    return bool(ok)

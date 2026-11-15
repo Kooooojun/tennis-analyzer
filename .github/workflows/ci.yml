@@ -88,6 +88,8 @@ jobs:
           img = np.zeros((8, 8, 3), np.uint8)
           probe("cv2.imwrite", lambda: cv2.imwrite(str(w / "圖.jpg"), img))
           probe("cv2.imread", lambda: cv2.imread(str(w / "圖.jpg")) is not None)
+          sys.path.insert(0, "tools"); from platform_util import imwrite
+          probe("platform_util.imwrite + imdecode", lambda: imwrite(w / "圖2.jpg", img) and cv2.imdecode(np.fromfile(w / "圖2.jpg", np.uint8), 1) is not None)
           probe("np.save/load", lambda: (np.save(w / "姿態.npy", img), np.array_equal(np.load(w / "姿態.npy"), img))[1])
           PY
       - name: pose + ball on a synthetic clip (real models, no people or ball -> all NaN is valid)
