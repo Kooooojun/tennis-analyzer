@@ -4,6 +4,7 @@
 import cv2, numpy as np
 import warnings; warnings.filterwarnings("ignore")
 from common import session, work, videos, save
+from kind import classify, CONF_MIN
 
 OFF = [-45, -25, -8, 0, 12]
 PER_SHEET = 24
@@ -43,10 +44,22 @@ for k in range(0, len(C), PER_SHEET):
     sheet = np.vstack([np.hstack(rows[i:i + 2]) for i in range(0, len(rows), 2)])
     cv2.imwrite(str(Wd / f"sheet{k // PER_SHEET}.jpg"), sheet, [cv2.IMWRITE_JPEG_QUALITY, 80])
 
+def guess(c):
+    """Pre-fill for labels.txt: the automatic stroke kind when confident, else '?' (you still confirm it and add the drill)."""
+    v = c["v"]; wp = Wd / v / "pose_world.npy"
+    if v not in poses: poses[v] = np.load(Wd / v / "pose.npy")
+    if v not in worlds: worlds[v] = np.load(wp) if wp.exists() else None
+    k = classify(poses[v], int(round(c["t"] * 60)), "R", worlds[v])
+    return k["kind"] if k["conf"] >= CONF_MIN else "?"
+
+
+worlds = {}
 lab = Wd / "labels.txt"
 if lab.exists():
     print("labels.txt exists, left untouched")
 else:
-    lab.write_text("# idx kind drill   kind: FH BH SV OH, or x = not you / not a stroke.  drill: feed rally high unsure (SV takes none). Anything after is a comment\n"
-                   + "".join(f"{i} ? ?\n" for i in range(len(C))))
+    G = [guess(c) for c in C]
+    lab.write_text("# idx kind drill   kind: FH BH SV OH, or x = not you / not a stroke (a kind already filled in is the automatic guess: confirm or change it).  drill: feed rally high unsure (SV takes none). Anything after is a comment\n"
+                   + "".join(f"{i} {g} ?\n" for i, g in enumerate(G)))
+    print("auto kind pre-filled for", sum(g != "?" for g in G), "of", len(G))
 print(len(C), "candidates,", (len(C) + PER_SHEET - 1) // PER_SHEET, "sheets in", Wd)

@@ -1,0 +1,57 @@
+# Run: .venv/bin/python tests/test_kind.py   (plain asserts; failure list in testset/results/stroke-classify_pred.md)
+import sys
+from pathlib import Path
+import numpy as np
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+from kind import classify
+
+N, F = 200, 120
+
+
+def body(yaw, rw, lw, mirror=False, vis=0.9):
+    """Synthetic world + image pose, constant over N frames. Body frame: a = toward the player's right shoulder, h = height above hip, b = forward.
+    rw / lw = (a, h, b) metres of the right / left wrist. yaw rotates the body about the vertical axis (0 = back to camera, pi = facing it).
+    mirror = a left-hander drawn as the mirror image (swap right/left body parts)."""
+    ca, sa = np.cos(yaw), np.sin(yaw)
+    def w(a, h, b): return [a * ca + b * sa, -h, -a * sa + b * ca]  # MediaPipe world: y points down
+    pts = {0: (0, 0.62, 0.05), 11: (-0.19, 0.5, 0), 12: (0.19, 0.5, 0), 23: (-0.1, 0, 0), 24: (0.1, 0, 0), 15: lw, 16: rw}
+    if mirror: pts = {{15: 16, 16: 15, 11: 12, 12: 11, 23: 24, 24: 23}.get(k, k): (-a, h, b) for k, (a, h, b) in pts.items()}  # mirror image, left <-> right labels
+    W = np.full((N, 33, 3), np.nan); P = np.full((N, 33, 3), np.nan)
+    for k, v in pts.items():
+        x, y, z = w(*v); W[:, k] = [x, y, z]; P[:, k] = [0.5 + 0.5 * x, 0.5 + 0.5 * y, vis]
+    return P, W
+
+
+def go(rw, lw, yaw=0.0, hand="R", **kw):
+    P, W = body(yaw, rw, lw, mirror=(hand == "L"))
+    return classify(P, F, hand, W, **kw)
+
+
+# 1: racket wrist on the racket side -> FH from every viewing angle; on the other side -> BH
+for yaw in (0, 0.8, np.pi / 2, 2.4, np.pi):
+    assert go((0.45, 0.1, 0.3), (-0.2, 0.1, 0.2), yaw)["kind"] == "FH", yaw
+    assert go((-0.4, 0.1, 0.3), (-0.25, 0.1, 0.3), yaw)["kind"] == "BH", yaw
+# 2: two hands close together on the off side = two-handed BH; hands far apart = one-handed
+assert go((-0.4, 0.1, 0.3), (-0.3, 0.12, 0.3))["two_hand"] is True
+assert go((-0.5, 0.1, 0.3), (0.5, 0.2, 0.0))["two_hand"] is False
+# 3: wrist on the body midline = cannot tell, not a coin flip
+r = go((0.0, 0.1, 0.4), (-0.3, 0.1, 0.2)); assert r["kind"] == "?" and r["conf"] < 0.5, r
+# 4: left-hander drawn mirrored gives the same answer with hand="L" and is mirrored
+assert go((0.45, 0.1, 0.3), (-0.2, 0.1, 0.2), 0.5, "L")["kind"] == "FH"
+assert go((-0.4, 0.1, 0.3), (-0.25, 0.1, 0.3), 0.5, "L")["kind"] == "BH"
+# 5: wrist above the head -> SV or OH, never FH / BH
+r = go((0.2, 0.95, 0.1), (-0.2, 0.3, 0.1)); assert r["kind"] in ("SV", "OH"), r
+# 6: serve = racket arm went down (wrist below hip) before the trophy position; overhead = racket stayed up
+def high(kind):
+    P, W = body(0.0, (0.2, 0.95, 0.1), (-0.2, 0.3, 0.1)); pre = slice(F - 70, F - 15)
+    if kind == "SV": P[pre, 16, 1] = 0.5 + 0.5 * 0.25; W[pre, 16, 1] = 0.25  # wrist 0.25 m below the hip, y down
+    return classify(P, F, "R", W)["kind"]
+assert high("SV") == "SV" and high("OH") == "OH"
+# 7: no data / low visibility -> "?"
+P, W = body(0.0, (0.45, 0.1, 0.3), (-0.2, 0.1, 0.2)); P[:] = np.nan; W[:] = np.nan; assert classify(P, F, "R", W)["kind"] == "?"
+P, W = body(0.0, (0.45, 0.1, 0.3), (-0.2, 0.1, 0.2)); P[:, 16, 2] = 0.1; assert classify(P, F, "R", W)["kind"] == "?"
+# 8: window near the start of the video (f < 70) does not crash; serve context just falls back to OH-or-SV default
+P, W = body(0.0, (0.2, 0.95, 0.1), (-0.2, 0.3, 0.1)); assert classify(P, 10, "R", W)["kind"] in ("SV", "OH", "?")
+# 9: without world data (2D only) a front-on FH still works
+P, W = body(0.0, (0.45, 0.1, 0.3), (-0.2, 0.1, 0.2)); assert classify(P, F, "R", None)["kind"] == "FH"
+print("kind tests ok")
