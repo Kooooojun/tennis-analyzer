@@ -24,7 +24,7 @@ python tools/run.py prep.py <s> [people]
 
 Portrait and landscape 16:9 video both work (proxy is 540x960 or 960x540; each stroke stores its `size`). Ask for 60 fps video: a source under 50 fps makes prep print a warning (the proxy duplicates frames to 60 fps, so speed numbers such as wrist speed and prep time are unvalidated) and the page shows 「來源 30 fps」. Each tracked person gets a track per video (`pose.npy` is track 0, the person seen most; `pose_t1.npy` track 1, and so on). The tracker keeps identities by position and shirt colour. It works well for 2 people near the camera (wall practice). Far-away doubles players are often not detected at all, and people in the same colour can swap tracks.
 
-擊球手速門檻目前仍是 `HAND=6`、`HAND_LO=3.5` torso/s，低手層另需 `BB_LO=6` 與鄰近擊球節奏。跨幀率量測尚未找到通過逐片留出驗證的替代設定；低 fps 漏拍也可能在聲音候選去重階段發生，不能只乘手速或降門檻就宣稱已校準。需要調整偵測時先讀 [手速門檻量測](../../../docs/research/events-hand-gate.md)，並在既有姿態上重算 events、用留出影片驗證。
+擊球手速門檻目前仍是 `HAND=6`、`HAND_LO=3.5` torso/s，低手層另需 `BB_LO=6` 與鄰近擊球節奏。跨幀率量測尚未找到通過逐片留出驗證的替代設定；以 PR #49 改後姿態量測的 30 fps 對牆片，多數漏拍在聲音候選去重階段發生（24 fps 片的主要限制不同），不能只乘手速或降門檻就宣稱已校準。需要調整偵測時先讀 [手速門檻量測](../../../docs/research/events-hand-gate.md)，並在既有姿態上重算 events、用留出影片驗證。
 
 ## 1b. Who is who (judgment, only when more than one person was tracked)
 
