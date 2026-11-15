@@ -6,6 +6,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from metrics import measure_full, measure_clip, guess_hand
 from common import ROOT, load_profiles, profile_for
 
+NEED = [ROOT / "testset/archive/prep-contact/web/sessions/wall-1/strokes.json", ROOT / "work/wall-1/IMG_8460/pose_t1.npy", ROOT / "testset/labels/hits_IMG_8460.csv"]
+if not all(p.exists() for p in NEED):  # private footage-derived data, only on the owner's machine
+    print("skip: test_hand needs local wall-1 data"); sys.exit(0)
+
 # MediaPipe 33 點、web 用的 17 點（common.KEEP 順序）裡的左右對換表
 SW33 = list(range(33)); SW17 = list(range(17))
 for a in range(1, 33, 2): SW33[a], SW33[a + 1] = a + 1, a
