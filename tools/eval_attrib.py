@@ -20,6 +20,7 @@ def swing(P, f, wh, wi=16):
 def who_hit(Ps, hands, t, wh):
     """Track key (of Ps) of the person whose racket wrist swung most into a hit at time t; hand None = best of both wrists. One person = that one."""
     f = int(round(t * FPS))
+    if f < 30: raise ValueError(f"hit at {t}s is too early for the 0.5 s torso window (candidates.py has the same limit)")
     return max(Ps, key=lambda k: max(swing(Ps[k], f, wh, WRIST[h]) for h in ([hands[k]] if hands[k] else "RL"))) if len(Ps) > 1 else next(iter(Ps))
 
 
@@ -38,6 +39,7 @@ def main():
     s = session(); W = setup(s)
     if sys.argv[2:3] == ["--check"]:
         C = load(work(s) / "cands.json"); got = [(i, c["t"], c["track"], who_hit(*W[c["v"]][:2], c["t"], W[c["v"]][2])) for i, c in enumerate(C) if c["v"] in W]
+        if len(got) != len(C): sys.exit(f"cannot check {len(C) - len(got)} candidates: their video has every person x in players.txt now (re-run candidates.py)")
         bad = [g for g in got if g[2] != g[3]]
         sys.exit(f"MISMATCH with candidates.py on {len(bad)} of {len(C)}: {bad[:5]}" if bad else print(f"check OK: same track as candidates.py on all {len(C)} candidates") or 0)
     if len(sys.argv) < 3: sys.exit("usage: eval_attrib.py <session> <labels.csv> | --check")
