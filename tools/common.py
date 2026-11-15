@@ -63,6 +63,6 @@ def profile_for(profiles, name):
     """Validated profile of one player, or None when not set (then the hand is guessed and flagged). Bad values raise, never default to R."""
     p = profiles.get(name)
     if p is None: return None
-    if not isinstance(p, dict) or p.get("hand") not in ("R", "L") or p.get("backhand", "two") not in ("one", "two"):
+    if not isinstance(p, dict) or p.get("hand") not in ("R", "L") or p.get("backhand") not in (None, "one", "two"):
         raise ValueError(f"profiles.json['{name}'] must look like {{'hand': 'R'|'L', 'backhand': 'one'|'two'}}, got {p!r}")
-    return {"hand": p["hand"], "backhand": p.get("backhand", "two")}
+    return {"hand": p["hand"], "backhand": p.get("backhand")}  # None = not said: no one-hand checks unless refine.json says so

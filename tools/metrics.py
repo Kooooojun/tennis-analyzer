@@ -114,9 +114,9 @@ def guess_hand(poses, size=None, times=None):
     because a hand-held phone moved close to the legs and the skeleton jumped); None = whole video.
     Returns (hand, ratio), ratio = faster / slower percentile (close to 1 = unsure), or (None, None) with too few visible frames.
     Still a guess: a two-hander's helper hand or a mirrored phone video can fool it."""
-    sp = {15: [], 16: []}; sc = _scale(size)
+    sp = {15: [], 16: []}; sizes = size if isinstance(size, list) else [size] * len(poses)  # one proxy size per pose array
     for i, P in enumerate(poses):
-        P = np.asarray(P, float); xy = P[:, :, :2] * sc; vis = P[:, :, 2]
+        P = np.asarray(P, float); xy = P[:, :, :2] * _scale(sizes[i]); vis = P[:, :, 2]
         L = np.linalg.norm((xy[:, 11] + xy[:, 12]) / 2 - (xy[:, 23] + xy[:, 24]) / 2, axis=1)[1:]
         sel = np.ones(len(P) - 1, bool)
         if times is not None:
@@ -127,7 +127,7 @@ def guess_hand(poses, size=None, times=None):
             m = np.median(np.lib.stride_tricks.sliding_window_view(q, 5, axis=0), axis=2)  # 5-frame median: pose jitter is not a swing
             good = np.convolve(fin & (vis[:, w] >= GUESS_VIS), np.ones(5), "same") == 5  # whole window finite and sharp
             v = np.linalg.norm(np.diff(m, axis=0), axis=1) / np.maximum(L, 1e-3)
-            sp[w].append(v[sel & good[1:] & good[:-1]])
+            sp[w].append(v[sel & good[1:] & good[:-1] & np.isfinite(v)])  # a NaN torso length would turn the percentile into NaN and silently pick R
     q = {w: np.concatenate(a) for w, a in sp.items()}
     if min(len(a) for a in q.values()) < GUESS_MIN: return None, None
     l, r = (float(np.percentile(q[w], 98)) for w in (15, 16))

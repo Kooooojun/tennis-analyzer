@@ -21,7 +21,7 @@ for name, cs in vids.items():
     p = profile_for(PROF, name)
     if p: H[name] = dict(hand=p["hand"], hand_guess=False, backhand=p["backhand"]); print(f"player {name}: hand {p['hand']}, backhand {p['backhand']} (work/profiles.json)")
     else:
-        g, ratio = guess_hand([P[v] for v in cs], SZ[next(iter(cs))], list(cs.values())); H[name] = dict(hand=g or "R", hand_guess=True, backhand=None)
+        g, ratio = guess_hand([P[v] for v in cs], [SZ[v] for v in cs], list(cs.values())); H[name] = dict(hand=g or "R", hand_guess=True, backhand=None)
         print(f"player {name}: hand {g or 'R'} GUESSED ({'wrist speed ratio %s' % ratio if g else 'too little video, defaulted to R'}{', UNSURE' if ratio and ratio < 1.15 else ''}). Ask the user for the hand and backhand type, then write work/profiles.json: " + json.dumps({name: {"hand": g or "R", "backhand": "two"}}))
 for r in sorted(rows, key=lambda r: int(r[0])):
     if r[1] == "x": continue

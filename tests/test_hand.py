@@ -22,7 +22,7 @@ def close(a, b, tol, tag):
         assert abs(x - y) <= tol.get(k, 0.011), (tag, k, x, y)
 
 # 1. clip 版：35 拍 wall-1（含 3D world）
-S = json.load(open(ROOT / "testset/archive/prep-contact/web/sessions/wall-1/strokes.json"))
+S = json.load(open(ROOT / "testset/archive/prep-contact/web/sessions/wall-1/strokes.json")); off = 0
 for s in S:
     fr = s["frames"]; wd = s.get("world")
     a = measure_clip(fr, s["contact"], s.get("size"), wd)  # 預設右手
@@ -31,7 +31,9 @@ for s in S:
     assert measure_clip(fr, s["contact"], s.get("size"), wd, hand="R") == a  # 明確寫 R = 沒寫
     close(a, measure_clip(mf, s["contact"], s.get("size"), mw, hand="L"), {}, f"clip#{s['id']}")
     wrong = measure_clip(mf, s["contact"], s.get("size"), mw)  # 對照組：左手資料卻當右手 → 手肘一定偏掉
-print("clip 鏡像 OK", len(S))
+    off += abs(wrong["elbow"] - a["elbow"]) > 1
+assert off > 0, "對照組沒有任何一拍手肘偏掉：鏡像測試沒有鑑別力"
+print("clip 鏡像 OK", len(S), "拍；左手資料當右手時手肘偏掉", off)
 
 # 2. full 版：整支 pose.npy（auto_kind 也要鏡像）
 n = bad = 0
@@ -57,7 +59,6 @@ assert guess_hand([P[:30]], (960, 540))[0] is None
 print("猜慣用手 OK", h, ratio)
 
 # 4. 設定檔：打錯的值要報錯，沒設定回 None
-import tempfile, os
 assert profile_for({}, "x") is None and profile_for({"a": {"hand": "L", "backhand": "one"}}, "a") == {"hand": "L", "backhand": "one"}
 for bad_cfg in ({"a": {"hand": "left"}}, {"a": {"hand": "R", "backhand": "3"}}, {"a": "R"}):
     try: profile_for(bad_cfg, "a"); raise SystemExit(f"應該報錯：{bad_cfg}")
