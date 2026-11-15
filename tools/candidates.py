@@ -3,7 +3,7 @@
 # and labels.txt with one "<idx> ? ?" line per candidate for you to fill in.
 import cv2, numpy as np
 import warnings; warnings.filterwarnings("ignore")
-from common import session, work, videos, save
+from common import session, work, videos, save, FPS, load_profiles, profile_for
 from kind import classify, CONF_MIN
 
 OFF = [-45, -25, -8, 0, 12]
@@ -49,11 +49,12 @@ def guess(c):
     v = c["v"]; wp = Wd / v / "pose_world.npy"
     if v not in poses: poses[v] = np.load(Wd / v / "pose.npy")
     if v not in worlds: worlds[v] = np.load(wp) if wp.exists() else None
-    k = classify(poses[v], int(round(c["t"] * 60)), "R", worlds[v])
+    p = profile_for(PROF, c.get("player", "me"))  # a left-hander's backswing side mirrors; no profile = R (assemble.py guesses and flags it)
+    k = classify(poses[v], int(round(c["t"] * FPS)), p["hand"] if p else "R", worlds[v])
     return k["kind"] if k["conf"] >= CONF_MIN else "?"
 
 
-worlds = {}
+worlds = {}; PROF = load_profiles()
 lab = Wd / "labels.txt"
 if lab.exists():
     print("labels.txt exists, left untouched")

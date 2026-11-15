@@ -39,7 +39,7 @@ def classify(P, f, hand="R", Wd=None):
     wy = A[:, rw, 1]
     hi = float(np.nanmax((nose[1] - wy) / L)) if np.isfinite(wy).any() else -9.0
     if hi >= HIGH:
-        out.update(kind=_high(P, f, rw, L), conf=0.6 if _high(P, f, rw, L) == "SV" else 0.4); return out
+        k = _high(P, f, rw, L); out.update(kind=k, conf=0.6 if k == "SV" else 0.4); return out
     side = _side(P, Wd, f, rw, rs, os_, lh, rh)
     if not np.isfinite(side): return out
     out["side"] = round(side, 2)
