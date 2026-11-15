@@ -591,7 +591,7 @@ function drawOverview(){
       return `<div class="score"><div class="top"><span class="total">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?esc(PN(g.player))+" · ":""}${NAMES[g.kind]||g.kind} ${g.n} 拍<br>技術 ${r1(g.form)} · 一致性 ${r1(g.consistency)}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（未壓前 ${r1(g.uncapped)}）`:""}${g.n<5?`<br><b class="few">拍數少，參考就好</b>`:""}</span></div><div class="bars">${rows}</div>${flagList(flags)}</div>`;
     }).join("")+`</div>`;
     const ck=(sc.checks||[]).filter(c=>c.status==="ok");
-    if(ck.length) h+=`<h3>姿勢檢查・參考（未驗證）</h3><ul class="flags armref">`+ck.map(c=>`<li>${multi?esc(PN(c.player))+" · ":""}${esc(c.name)}：判伸直 ${c.passed}、判彎 ${c.failed}、看不出來 ${c.unclear}${c.unclear>(c.passed+c.failed+c.unclear)/2?"，一半以上看不出來":""}</li>`).join("")+`</ul><p class="caveat">這幾項沒有足夠驗證（彎手臂在測試資料裡一拍都沒抓到），看不出來的拍可能有問題，不要當成沒問題。</p>`;
+    if(ck.length) h+=`<h3>姿勢檢查・參考（未驗證）</h3><ul class="flags armref">`+ck.map(c=>`<li>${multi?esc(PN(c.player))+" · ":""}${esc(c.name)}：${c.field==="bh_front_ok"?"判在身前":"判伸直"} ${c.passed}、${c.field==="bh_front_ok"?"判不在身前":"判彎"} ${c.failed}、看不出來 ${c.unclear}${c.unclear>(c.passed+c.failed+c.unclear)/2?"，一半以上看不出來":""}</li>`).join("")+`</ul><p class="caveat">這幾項沒有足夠驗證（彎手臂在測試資料裡一拍都沒抓到），看不出來的拍可能有問題，不要當成沒問題。</p>`;
     h+=`<p class="caveat">1–10 分，怎麼算見 docs/scoring.md。灰色「資料不足」= 能用的拍不到一半，不打分。</p>`;
   }
   const fs=[...(d.findings||[])].sort((a,b)=>(!!a.info-!!b.info)).slice(0,3);
