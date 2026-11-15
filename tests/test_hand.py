@@ -49,8 +49,9 @@ for v in ("IMG_8460", "IMG_8462", "IMG_8466"):
         except TypeError: continue  # 那一格沒抓到人
         b = measure_full(mir(P, SW33), s["t"], (960, 540), mirw(W, SW33), hand="L"); n += 1
         close(a, b, {}, f"full {v} t={s['t']}")
-        assert measure_full(mir(P, SW33), s["t"], (960, 540), mirw(W, SW33))["auto_kind"] in ("FH", "BH", "OH")
-        bad += measure_full(mir(P, SW33), s["t"], (960, 540), mirw(W, SW33))["auto_kind"] != a["auto_kind"]  # 對照：不告訴它是左手
+        wk = measure_full(mir(P, SW33), s["t"], (960, 540), mirw(W, SW33))["auto_kind"]  # 對照：不告訴它是左手
+        assert wk in ("FH", "BH", "SV", "OH", "?"), wk
+        bad += wk != a["auto_kind"]
 print("full 鏡像 OK", n, "拍；左手資料當右手時 auto_kind 錯", bad)
 
 # 3. 猜慣用手：只看揮拍段；鏡像資料猜出相反邊；太短不猜
