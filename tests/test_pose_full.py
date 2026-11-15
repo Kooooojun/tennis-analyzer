@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from pose_full import to60, crop_box, crop_to_full, distinct, real
+from pose_full import to60, crop_box, crop_to_full, distinct, real, keep, jumps, frames
 import numpy as np
 
 # --- to60: source-fps rows -> 60 fps rows (failure 5, 6) ---
@@ -70,5 +70,32 @@ assert len(distinct([big, small, sk(0.1, 0.5, 0.2)], 2, aspect=1)) == 2
 p = sk(0.5, 0.6, 0.2)[0]; p[:, 2] = 0.9; assert real(p)
 p[[25, 26, 27, 28], 2] = 0.02; assert not real(p)
 p[[11, 12, 23, 24], 2] = 0.1; p[[25, 26, 27, 28], 2] = 0.5; assert real(p)
+
+# --- keep: a crop that follows a slot may lose the legs (net, frame edge, crouch); a tile find must look like a person ---
+prev = sk(0.5, 0.6, 0.2)[0]
+legs_hidden = sk(0.51, 0.605, 0.2)[0]; legs_hidden[[25, 26, 27, 28], 2] = 0.1
+assert keep(legs_hidden, prev, aspect=16 / 9)        # same place as last frame: same person, legs hidden
+far = sk(0.8, 0.2, 0.2)[0]; far[[25, 26, 27, 28], 2] = 0.1
+assert not keep(far, prev, aspect=16 / 9)             # legs ~0 somewhere else: a floodlight
+assert not keep(legs_hidden, None, aspect=16 / 9)     # tile search (no previous skeleton): must pass real()
+assert keep(sk(0.8, 0.2, 0.2)[0], prev, aspect=16 / 9)  # legs seen: a person wherever it is
+
+# --- jumps + to60(cut): a slot that switches person between two source frames must not interpolate a mix of the two ---
+J = np.stack([sk(0.2, 0.6, 0.2)[0], sk(0.2, 0.6, 0.2)[0], sk(0.7, 0.5, 0.2)[0], sk(0.7, 0.5, 0.2)[0]]).astype(np.float32)
+cut = jumps(J, aspect=16 / 9); assert cut.tolist() == [False, True, False]
+M = to60(J, 30, 7, cut)
+assert np.isnan(M[3]).all() and np.allclose(M[2], J[1]) and np.allclose(M[4], J[2])  # 60-fps frame 3 sits between source 1 and 2
+assert np.allclose(M[1], J[0])  # small moves still interpolate
+assert not jumps(np.stack([J[0], np.full_like(J[0], np.nan), J[2]]), 1).any()  # a NaN side is not a jump (to60 leaves it NaN anyway)
+
+# --- frames: ffmpeg failing must stop the run, never look like a clip with fewer (or no) frames ---
+import tempfile, os
+for bad in (b"", b"not a video at all" * 1000):
+    fd, fn = tempfile.mkstemp(suffix=".mp4"); os.write(fd, bad); os.close(fd)
+    try: list(frames(["-i", fn], 64, 36)); raise AssertionError("no error for a broken file")
+    except SystemExit as e: assert "ffmpeg" in str(e), e
+    finally: os.unlink(fn)
+try: list(frames(["-i", "/nonexistent/x.mp4"], 64, 36)); raise AssertionError("no error for a missing file")
+except SystemExit: pass
 
 print("ok")

@@ -49,6 +49,13 @@ def delete(p):
 
 def probe(v):
     """(width, height) after rotation, and source fps (int, or None when unreadable)."""
+    w, h, r = probe_rate(v)
+    return w, h, int(r + 0.5) if r else None
+
+
+def probe_rate(v):
+    """(width, height) after rotation, and the exact average fps (float, or None when unreadable). pose_full uses it too:
+    ffmpeg is the decoder, so its view of the source is the one that counts."""
     r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
                         "stream=width,height,avg_frame_rate:stream_side_data=rotation:stream_tags=rotate", "-of", "json", str(v)],
                        capture_output=True, text=True, encoding="utf-8")
@@ -63,7 +70,7 @@ def probe(v):
         sys.exit(f"ffprobe gave an unreadable rotation for {v}: {rot!r}")
     n, _, d = s.get("avg_frame_rate", "0/0").partition("/")  # avg handles variable frame rate
     try:
-        fps = int(float(n) / float(d or 1) + 0.5) if float(n) > 0 and float(d or 1) > 0 else None
+        fps = float(n) / float(d or 1) if float(n) > 0 and float(d or 1) > 0 else None
     except ValueError:
         fps = None
     return w, h, fps

@@ -73,13 +73,14 @@ def describe(lm, img):
     return dict(pos=(hp[0] / H, hp[1] / H), scale=L / H, color=lab)
 
 
-METHOD = "2"  # bump when the pose algorithm changes: prep.py re-runs pose when work/<video>/pose_method.txt differs
+METHOD = "3"  # bump when the pose algorithm changes: prep.py re-runs pose when work/<video>/pose_method.txt differs
 CROP_SIDE, CROP_MIN, TILE, TILE_EVERY = 640, 360, 600, 5  # crop scaled to 640 px; box >= 360 px; 600 px search tiles, searched every 5th frame
 
 
-def to60(A, fps, n60):
+def to60(A, fps, n60, cut=None):
     """Rows at source frames i/fps -> rows at 60 fps frames j/60, n60 of them. Linear in time, both neighbours must be
-    finite (a NaN side gives NaN, never half a skeleton); nothing past the last source frame (NaN). fps >= 50 = as is."""
+    finite (a NaN side gives NaN, never half a skeleton); nothing past the last source frame (NaN). fps >= 50 = as is.
+    cut (len(A) - 1 bools): no interpolating between source frames i and i + 1 (a track that jumped to another person)."""
     if fps >= 50:  # already on the 60 fps grid; a decoder that came up a frame short is padded, never shifted
         return A[:n60] if len(A) >= n60 else np.concatenate([A, np.full((n60 - len(A), *A.shape[1:]), np.nan, A.dtype)])
     x = np.arange(n60) * fps / 60; i = np.floor(x).astype(int); w = (x - i).reshape(-1, *[1] * (A.ndim - 1))
@@ -89,6 +90,8 @@ def to60(A, fps, n60):
     exact = (w == 0).reshape(-1)
     v = np.where(w == 0, lo, lo * (1 - w) + hi * w)
     v[~exact & (i + 1 >= len(A))] = np.nan  # needs a right neighbour that does not exist
+    if cut is not None and len(A) > 1:
+        v[~exact & np.asarray(cut)[np.minimum(i, len(A) - 2)]] = np.nan
     out[ok] = v[ok]
     return out
 
@@ -126,19 +129,47 @@ def real(a, vmin=0.3):
     return float(np.mean(a[[25, 26, 27, 28], 2])) >= vmin
 
 
+def hip_torso(a, aspect):
+    """Normalized (..., 33, 3) -> hip centre (..., 2) with x in frame heights, torso length (shoulders to hips)."""
+    h = a[..., [23, 24], :2].mean(-2) * (aspect, 1)
+    return h, np.hypot(*np.moveaxis(a[..., [11, 12], :2].mean(-2) * (aspect, 1) - h, -1, 0))
+
+
+def keep(a, prev, aspect):
+    """A skeleton found in the crop around a slot's last one (prev, None for a tile search) -> keep it. Legs hidden by the net,
+    the frame edge or a crouch fail real(); hips within half a torso of where that slot stood a frame ago are the same person
+    (a floodlight is never there). A new find, or one that jumped away with no legs, must pass real()."""
+    if real(a): return True
+    if prev is None: return False
+    (h, L), (q, M) = hip_torso(a, aspect), hip_torso(prev, aspect)
+    return bool(np.hypot(*(h - q)) < 0.5 * max(L, M))
+
+
+def jumps(P, aspect, k=0.8):
+    """Rows (n, 33, 3) of one track -> (n - 1) bools: hips moved more than k torsos between frame i and i + 1, i.e. the
+    track switched person. A NaN side is False (to60 leaves it NaN anyway)."""
+    h, L = hip_torso(np.asarray(P, float), aspect)
+    with np.errstate(invalid="ignore"):
+        return np.hypot(*(h[1:] - h[:-1]).T) > k * np.fmax(L[1:], L[:-1])
+
+
 def use_crop(found):
     """found: people seen per sampled full frame. Crop when the full frame misses everyone in most of them (far camera).
-    Measured on 1 frame/s samples: a far-camera dataset (people 150-300 px of 1088) 0.05-0.31, wall practice and web clips
+    Measured on ~60 frames spread over each clip: a far-camera dataset (people 150-300 px of 1088) 0.05-0.31, wall practice and web clips
     >= 0.83. Person height cannot split them (far camera 0.18-0.23 of the frame when found, wall practice from 0.25)."""
     return np.mean(np.asarray(found) > 0) < 0.6
 
 
 def frames(cmd, W, H):
-    import subprocess
-    p = subprocess.Popen(["ffmpeg", "-v", "error", *cmd, "-an", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
-    while len(b := p.stdout.read(W * H * 3)) == W * H * 3:  # one frame at a time: a 1080p clip never sits in memory
-        yield np.frombuffer(b, np.uint8).reshape(H, W, 3)
-    p.stdout.close(); p.wait()
+    """Decoded RGB frames; ffmpeg failing (missing, broken or cut-off file) stops the run instead of a shorter clip."""
+    import subprocess, tempfile
+    with tempfile.TemporaryFile() as err:  # a file, not a pipe: ffmpeg cannot block on a full stderr while we read stdout
+        p = subprocess.Popen(["ffmpeg", "-v", "error", *cmd, "-an", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE, stderr=err)
+        while len(b := p.stdout.read(W * H * 3)) == W * H * 3:  # one frame at a time: a 1080p clip never sits in memory
+            yield np.frombuffer(b, np.uint8).reshape(H, W, 3)
+        p.stdout.close()
+        if p.wait():
+            err.seek(0); sys.exit(f"ffmpeg failed ({p.returncode}) on {' '.join(cmd)}: {err.read().decode(errors='replace').strip()[-500:]}")
 
 
 def main():
@@ -153,24 +184,23 @@ def main():
         running_mode=getattr(vision.RunningMode, mode), num_poses=n, min_pose_detection_confidence=0.3, min_tracking_confidence=0.3))
     img_of = lambda a: mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(a))
     fps, crop, SW, SH = 60, False, W, H
-    ft = Path(out).parent / "src_fps.txt"  # written by prep.py (whole fps); the exact rate comes from the source itself
-    if source and ft.is_file():
-        c = cv2.VideoCapture(source); r = c.get(cv2.CAP_PROP_FPS); SW, SH = int(c.get(cv2.CAP_PROP_FRAME_WIDTH)), int(c.get(cv2.CAP_PROP_FRAME_HEIGHT)); c.release()
-        if not (SW and SH and r > 0): SW, SH, source = W, H, None  # OpenCV cannot open it (ffmpeg could): proxy path, as before
-        if (SW > SH) != (W > H): SW, SH = SH, SW  # rotation metadata: ffmpeg outputs it upright, like the proxy
-        sf = ft.read_text(encoding="utf-8").strip()
-        if source and sf.isdigit() and int(sf) < 50: fps = r
-    if source and ft.is_file():
+    if source:
+        from prep import probe_rate  # ffprobe, as prep.py read it: size after rotation, exact average fps
+        SW, SH, r = probe_rate(source)
+        if not r: print(f"warning: no frame rate for {source}; pose runs on the 60 fps proxy (repeated frames for a low-fps source)", file=sys.stderr)
+        elif r < 50: fps = r
         probe = mk(N, "IMAGE"); step = max(1, n60 // 60)
-        crop = use_crop([len(probe.detect(img_of(f)).pose_landmarks) for f in frames(["-i", src, "-vf", f"select=not(mod(n\\,{step}))", "-vsync", "0"], W, H)])
+        found = [len(probe.detect(img_of(f)).pose_landmarks) for f in frames(["-i", src, "-vf", f"select=not(mod(n\\,{step}))", "-vsync", "0"], W, H)]
         probe.close()
+        if not found: sys.exit(f"no frames decoded from {src}")
+        crop = use_crop(found)
     # below 50 fps every decoded frame is taken as n / fps: the ffmpeg fps filter puts a variable-rate phone video on that
     # constant grid by its real timestamps (a no-op for constant-rate sources), as the proxy's fps=60 does
     print(f"mode: {'crop' if crop else 'full frame'}, {fps:.3f} fps", flush=True)
     T = Tracker(N); rows = []; wrows = []; crows = []; n = 0
     if not crop:
         lm = mk(N)
-        # num_poses > 1 re-detects every frame while fewer people than N are in view, and its landmarks are coarser: on wall-1 the
+        # num_poses > 1 re-detects every frame while fewer people than N are in view, and its landmarks are coarser: on the user's wall practice video the
         # wrist speed at contact dropped (hit recall 88% -> 79%). A second, single-person landmarker keeps frame-to-frame tracking;
         # its skeleton replaces the slot standing in the same place. Costs a second model pass (about 2x time).
         one = mk(1) if N > 1 else None
@@ -193,24 +223,25 @@ def main():
         one, many = mk(1, "IMAGE"), mk(N, "IMAGE"); box = [None] * N
         ts_ = min(TILE, SW, SH)  # a source smaller than a tile (negative offsets would wrap) is searched as one tile
         tiles = [(x, y) for y in sorted({*range(0, SH - ts_, ts_ // 2), SH - ts_}) for x in sorted({*range(0, SW - ts_, ts_ // 2), SW - ts_})]
-        def look(img, b, det):  # skeletons in a crop, as full-frame normalized landmarks
+        last = [None] * N  # each slot's skeleton last frame: a crop that loses the legs near it is still that person
+        def look(img, b, det, prev=None):  # skeletons in a crop, as full-frame normalized landmarks; keep() drops floodlights
             r = det.detect(img_of(cv2.resize(img[b[1]:b[1] + b[2], b[0]:b[0] + b[2]], (CROP_SIDE, CROP_SIDE))))
-            return [(np.c_[crop_to_full([[q.x, q.y] for q in a], b, SW, SH), [q.visibility for q in a]], [[q.x, q.y, q.z] for q in w])
-                    for a, w in zip(r.pose_landmarks, r.pose_world_landmarks) if real(np.array([[q.x, q.y, q.visibility] for q in a]))]
+            got = [(np.c_[crop_to_full([[q.x, q.y] for q in a], b, SW, SH), [q.visibility for q in a]], [[q.x, q.y, q.z] for q in w])
+                   for a, w in zip(r.pose_landmarks, r.pose_world_landmarks)]
+            return [x for x in got if keep(x[0], prev, SW / SH)]
         for img in frames(["-i", source] + ["-vf", f"fps={60 if fps >= 50 else repr(fps)}"], SW, SH):
-            got = [x for b in box if b for x in look(img, b, one)]
+            got = [x for b, p in zip(box, last) if b for x in look(img, b, one, p)]
             if (None in box and n % TILE_EVERY == 0) or not got:
                 found = [x for t in tiles for x in look(img, (*t, ts_), many)]  # tallest first: crowd and far background lose; tile overlaps and crops already found are dropped
                 got += distinct(found, N - len(got), keep=got, aspect=SW / SH)
             lms = [[types.SimpleNamespace(x=v[0], y=v[1], visibility=v[2]) for v in a] for a, _ in got]
             ds = [describe(a, img) for a in lms]
-            fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy(); fc = np.full((N, 3), np.nan); box = [None] * N
+            fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy(); fc = np.full((N, 3), np.nan); box = [None] * N; last = [None] * N
             for k, d, (a, w) in zip(T.step(ds), ds, got):
-                if k >= 0: fr[k] = a; fw[k] = w; fc[k] = d["color"]; box[k] = crop_box(a[:, :2] * (SW, SH), SW, SH)
+                if k >= 0: fr[k] = a; fw[k] = w; fc[k] = d["color"]; box[k] = crop_box(a[:, :2] * (SW, SH), SW, SH); last[k] = a
             rows.append(fr); wrows.append(fw); crows.append(fc); n += 1
             if n % 6000 == 0: print(n, flush=True)
-    if fps < 50 or crop:  # back on the proxy's 60 fps frame numbers, which every later step indexes by
-        rows, wrows, crows = (list(to60(np.array(x), fps, n60)) for x in (rows, wrows, crows)); n = n60
+    if not n: sys.exit(f"no frames decoded from {source if crop or fps < 50 else src}")
     P, Wl = np.array(rows).reshape(n, N, 33, 3), np.array(wrows).reshape(n, N, 33, 3)
     S = ~np.isnan(P[:, :, 0, 0]); C = np.array(crows).reshape(n, N, 3)
     with warnings.catch_warnings():
@@ -220,6 +251,9 @@ def main():
         p, w = P[:, g[0]].copy(), Wl[:, g[0]].copy()
         for k in g[1:]: m = np.isnan(p[:, 0, 0]) & S[:, k]; p[m], w[m] = P[m, k], Wl[m, k]
         tr.append((p, w))
+    if fps < 50 or crop:  # back on the proxy's 60 fps frame numbers, which every later step indexes by; after merge(), so one
+        # person moving between slots is joined first, and never across a frame where the track jumped to someone else
+        tr = [(to60(p, fps, n60, c), to60(w, fps, n60, c)) for p, w in tr for c in [jumps(p, SW / SH)]]; n = n60
     tr = sorted([t for t in tr if (~np.isnan(t[0][:, 0, 0])).any()], key=lambda t: -(~np.isnan(t[0][:, 0, 0])).sum()) or tr[:1]
     out = Path(out)
     for old in out.parent.glob("pose*_t*.npy"):  # a re-run may find fewer people: stale extra tracks would be read as people
