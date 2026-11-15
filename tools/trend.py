@@ -20,7 +20,8 @@ def compare(history):
     out = []
     for item, v in last["items"].items():
         # total / consistency average over whichever metrics were scored, so only compare sessions that scored the same set
-        same = [h for h in prev if item not in ("total", "consistency") or _scored(h["items"]) == _scored(last["items"])]
+        # consistency-only metrics (score always None) still feed them, so the set of metrics with a cons must match too (Codex PR #3)
+        same = [h for h in prev if item not in ("total", "consistency") or (_scored(h["items"]) == _scored(last["items"]) and set(h.get("cons_set") or []) == set(last.get("cons_set") or []))]
         olds = [h["items"].get(item) for h in same][-BASE_N:]; olds = [x for x in olds if x is not None]
         if v is None or not olds: continue
         base = round(float(np.mean(olds)), 2); d = round(v - base, 2)
@@ -34,6 +35,14 @@ def _items(g):
     return {"total": g["total"], "consistency": g["consistency"], **{m: x["score"] for m, x in g["metrics"].items()}}
 
 
+def _entry(r, g):
+    """One history row. Every session is kept; comparable / series_key let the web split or mark lines (same n / camera rules as compare(); the date filter there lives in dated())."""
+    cam = r.get("camera") or ""
+    return dict(session=r["session"], date=r.get("date"), camera=cam, n=g["n"], knee_src=g.get("knee_src"), score_version=g.get("score_version"), items=_items(g),
+                cons_set=sorted(m for m, x in g["metrics"].items() if x["cons"] is not None),
+                comparable=g["n"] >= MIN_N and bool(cam) and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(r.get("date")))), series_key=[cam, g.get("knee_src"), g.get("score_version")])
+
+
 if __name__ == "__main__":
     from common import ROOT, load, save
     from score import SCORE_VERSION
@@ -42,7 +51,7 @@ if __name__ == "__main__":
     H = {}
     for r in runs:
         for g in r["groups"]:
-            H.setdefault((g["player"], g["kind"]), []).append(dict(session=r["session"], date=r.get("date"), camera=r.get("camera") or "", n=g["n"], knee_src=g.get("knee_src"), score_version=g.get("score_version"), items=_items(g)))
+            H.setdefault((g["player"], g["kind"]), []).append(_entry(r, g))
     # only YYYY-MM-DD dates sort correctly as text; undated sessions are listed but never compared
     dated = lambda h: [x for x in h if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(x["date"]))]
     old = sorted({r["session"] for r in runs if r.get("score_version") != SCORE_VERSION})
