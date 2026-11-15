@@ -1,5 +1,5 @@
 # refine.py <session> — strokes_raw.json + work/<s>/refine.json -> web/sessions/<s>/strokes.json
-# Audio onsets land 1-3 frames after the ball meets the strings; refine.json moves each contact to the right frame
+# Hit times in strokes_raw.json already have the per-video sound lag taken out (events.py estimate_lag); refine.json moves each contact to the right frame
 # (picked by eye from strip.py), relabels, and drops false strokes. Numbers in refine.json are raw stroke numbers (#1 = s00).
 #   {"default_off": -2, "off": {"5": -21}, "set": {"65": {"drill": "rally"}}, "drop": [39, 50]}
 # Always starts from strokes_raw.json, so re-running with an edited refine.json is safe.
