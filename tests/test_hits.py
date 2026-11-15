@@ -67,7 +67,7 @@ near_hit[:85] = np.nan; near_hit[110:] = np.nan; before[np.r_[:55, 85:200]] = np
 A, ev = np.array([16 / 9, 1.0]), np.array([[100 / 60, -20, 12]])
 assert len(match(near_hit, ev, A)) == 1, match(near_hit, ev, A)
 assert len(match(before, ev, A)) == 0
-assert len(match(p, np.array([[20 / 60, -20, 12]]), A)) == 0               # window would start before frame 0
+assert len(match(p, np.array([[10 / 60, -20, 12]]), A)) == 0               # window would start before frame 0
 
 # T9: the near track's pose hops to another body for a few frames at a sound (hip 45 torso lengths/s): its wrist is not
 # trusted, so no hit from it. A far person swinging then confirms it.
@@ -95,4 +95,12 @@ assert [r[0] for r in pick(np.array([[1.0, -20, 10, 12], [1.75, -20, 14, 5]]), h
 
 # T12: a clip shorter than the hip-jump window (21 frames) still gives one value per frame
 assert hand_speed(body(10), 1.0).shape == (10,)
+
+# T13: one frame of pose -> unknown, no crash
+assert np.isnan(hand_speed(body(1), 1.0)).all() and len(hand_speed(body(0), 1.0)) == 0
+# T14: two people hit 0.7 s apart (net exchange): both kept; the same person 0.7 s apart: one kept
+hand = np.zeros(300); hand[[60, 102]] = 10
+rows = np.array([[1.0, -20, 12, 12], [1.7, -20, 12, 9]])
+assert [r[0] for r in pick(rows, hand, lag=0, who=np.r_[np.zeros(80), np.ones(220)])] == [1.0, 1.7]
+assert [r[0] for r in pick(rows, hand, lag=0, who=np.zeros(300))] == [1.0]
 print("ok")
