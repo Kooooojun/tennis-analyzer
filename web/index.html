@@ -694,14 +694,14 @@ function load(id, scroll){
   $("detailTitle").textContent=`這一拍：${strokeLabel(S)}${dn?"（"+dn+"）":""}`;
   const m=S.kind==="FH"?(S.drill==="feed"?MED.feed:S.drill==="rally"?MED.rally:MED.FH):MED[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
   const fmt=(x,u)=>x==null?"–":`${Math.round(x)}<small>${u}</small>`;
-  $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${Math.round(m.knee)}°`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");
+  $("mKnee").innerHTML=fmt(S.knee,"°"); $("cKnee").textContent=`${grp}中位數 ${m.knee==null?"–":Math.round(m.knee)+"°"}`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");
   // body-kinematics (docs/scoring.md §11): trunk share, turn and leg load read the same from any horizontal camera angle
   $("bodyCard").hidden=S.trunk_share==null&&S.turn==null&&S.leg_load==null;  // sessions before body-kinematics have none
   const pc=x=>x==null?"–":Math.round(x*100)+"%";
   $("mBody").innerHTML=S.trunk_share==null?"–":`${Math.round(S.trunk_share*100)}<small>%</small>`;
   $("cBody").textContent=`肩膀速度占手腕 ${pc(S.trunk_share)} · 轉肩 ${S.turn==null?"–":Math.round(S.turn)+"°"} · 下蹲 ${pc(S.leg_load)} · 手速 ${S.wrist_speed==null?"–":S.wrist_speed.toFixed(1)}；只用手臂打時這幾個都偏低`;
-  $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${Math.round(m.open)}%`:"這場鏡頭角度不適合看轉肩，參考就好";
-  $("mHeight").innerHTML=fmt(hPct(S),""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
+  $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${m.open==null?"–":Math.round(m.open)+"%"}`:"這場鏡頭角度不適合看轉肩，參考就好";
+  $("mHeight").innerHTML=fmt(hPct(S),""); $("cHeight").textContent=`中位數 ${m.h==null?"–":Math.round(m.h)}`;
   $("mPrep").innerHTML=S.prep==null?"–":`${S.prep.toFixed(2)}<small>s</small>`; $("cPrep").textContent=S.prep==null?"":`${grp}中位數 ${median(ALL.filter(x=>x.kind===S.kind&&(!(S.kind==="FH"&&dn)||x.drill===S.drill)).map(x=>x.prep))?.toFixed(2)??"–"}s`;  // same group as the cards beside it
   const sv=S.kind==="SV", f1=sv?S.reach:S.finish, num=(x,u,d=1)=>x==null?"–":`${x.toFixed(d)}<small>${u}</small>`;  // form_checks fields (docs/scoring.md §10); null = gate failed
   const med=(f,g=S.kind)=>median(ALL.filter(x=>x.kind===g).map(x=>x[f]));
@@ -774,7 +774,7 @@ let A=null, B=null, cmpCur=0, cmpRate=0.25;
 const PRESETS=Object.values(DAYS).flatMap(d=>(d.presets||[]).map(p=>{ const a=Array.isArray(p.a)?p.a:[d.id,p.a], b=Array.isArray(p.b)?p.b:[d.id,p.b]; return {day:a[0]===b[0]&&a[0]===d.id?d.id:"*",a,b,label:p.label}; })).filter(p=>p.a[0] in DAYS&&p.b[0] in DAYS);
 const sKey=s=>s.day+":"+s.id, fromKey=k=>{ const [d,i]=k.split(":"); return DAYS[d].data[+i]; };
 function fillSelect(sel){ sel.innerHTML=Object.entries(DAYS).map(([k,d])=>`<optgroup label="${d.label}">`+d.data.map(s=>`<option value="${sKey(s)}">${d.label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</option>`).join("")+"</optgroup>").join(""); }
-function capFor(s){ const r=Math.round; return `<b>${DAYS[s.day].label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${s.knee==null?"–":r(s.knee)+"°"}${s.knee_warn?"⚠不準":""} · 轉肩 ${r(s.open_min)}% · 擊球高度 ${s.contact_h==null?"–":r(hPct(s))}</span>`; }
+function capFor(s){ const r=Math.round; return `<b>${DAYS[s.day].label} ${strokeLabel(s)}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${s.knee==null?"–":r(s.knee)+"°"}${s.knee_warn?"⚠不準":""} · 轉肩 ${s.open_min==null?"–":r(s.open_min)+"%"} · 擊球高度 ${s.contact_h==null?"–":r(hPct(s))}</span>`; }
 function drawPresets(){
   $("presets").innerHTML="";
   for(const p of PRESETS.filter(p=>p.day===DAY||p.day==="*")){ const b=document.createElement("button"); b.textContent=p.label; b._p=p; b.onclick=()=>cmpLoad(dayNo(...p.a),dayNo(...p.b)); $("presets").append(b); }
@@ -843,7 +843,7 @@ function setDay(k){
   load(typicalFH().id,false);
   const p=PRESETS.find(p=>p.day===k);
   if(p) cmpLoad(dayNo(...p.a),dayNo(...p.b));
-  else { const fh=ALL.filter(s=>s.kind==="FH").sort((x,y)=>x.knee-y.knee); cmpLoad(fh[0]||ALL[0], typicalFH()); }
+  else { const fh=ALL.filter(s=>s.kind==="FH"&&s.knee!=null).sort((x,y)=>x.knee-y.knee); cmpLoad(fh[0]||ALL[0], typicalFH()); }
 }
 for(const [k,d] of Object.entries(DAYS)){ const b=document.createElement("button"); b.dataset.day=k; b.setAttribute("role","tab"); b.textContent=`${d.label} · ${d.data.length} 拍`; b.onclick=()=>go(k,TAB); $("days").append(b); }
 
