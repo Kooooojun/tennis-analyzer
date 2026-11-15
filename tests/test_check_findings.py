@@ -70,6 +70,6 @@ e3 = lambda *fs: check(dict(findings=list(fs)), S3, dict(groups=score_session(S3
 assert e3(f([dict(kind="FH", field="prep", stat="median", value=0.4)])) == []
 assert e3(f([dict(kind="FH", field="prep", stat="median", value=0.5)]))
 assert e3(f([dict(stroke=3, field="prep", value=1.5)]))
-S4 = [st(prep=0.3), st(prep=0.5), st(prep=1.0)]  # old session: no prep_trunc field, 1.0 = the old window edge
+S4 = [st(prep=0.3), st(prep=0.5), st(prep=1.0, prep_trunc=None)]  # null = old stroke via export_session  # old session: no prep_trunc field, 1.0 = the old window edge
 assert check(dict(findings=[f([dict(stroke=3, field="prep", value=1.0)])]), S4, dict(groups=score_session(S4, False)))
 print("ok")
