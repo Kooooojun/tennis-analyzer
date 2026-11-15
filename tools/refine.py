@@ -4,7 +4,7 @@
 #   {"default_off": -2, "off": {"5": -21}, "set": {"65": {"drill": "rally"}}, "drop": [39, 50]}
 # Always starts from strokes_raw.json, so re-running with an edited refine.json is safe.
 from common import session, work, web, load, save
-from metrics import measure_clip, arm_checks
+from metrics import measure_clip, arm_checks, form_checks
 
 s = session(); D = web(s); C = load(work(s) / "refine.json", {})
 d = load(D / "strokes_raw.json")
@@ -18,6 +18,7 @@ for r in d:
     r.update(C.get("set", {}).get(str(no), {}))
     old = r["contact_h"]; r.update(measure_clip(r["frames"], c, r.get("size"), r.get("world"))); r["contact"] = c
     r.update(arm_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], C.get("hand", "R"), C.get("one_hand_bh") is True))  # refine.json: "hand": "L" for lefties, "one_hand_bh": true for one-handed backhands
+    r.update(form_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], C.get("hand", "R")))
     r["t"] = round(r["t"] + df / 60, 3)
     m, sec = divmod(r["t"], 60); r["clock"] = f"{r['video']}·{int(m)}:{sec:04.1f}"
     if df != C.get("default_off", 0) or str(no) in C.get("set", {}):

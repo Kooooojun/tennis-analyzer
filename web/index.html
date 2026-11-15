@@ -271,6 +271,10 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
         <div class="metric"><div class="k">引拍轉肩</div><div class="v" id="mOpen">–</div><div class="cmp" id="cOpen"></div></div>
         <div class="metric"><div class="k">擊球高度</div><div class="v" id="mHeight">–</div><div class="cmp" id="cHeight"></div></div>
         <div class="metric"><div class="k">準備時間</div><div class="v" id="mPrep">–</div><div class="cmp" id="cPrep"></div></div>
+        <div class="metric"><div class="k" id="kForm1">收拍</div><div class="v" id="mForm1">–</div><div class="cmp" id="cForm1"></div></div>
+        <div class="metric" id="boxTilt"><div class="k">肩膀傾斜</div><div class="v" id="mTilt">–</div><div class="cmp" id="cTilt"></div></div>
+        <div class="metric"><div class="k">軀幹前傾</div><div class="v" id="mLean">–</div><div class="cmp" id="cLean"></div></div>
+        <div class="metric"><div class="k">站姿寬度</div><div class="v" id="mStance">–</div><div class="cmp" id="cStance"></div></div>
         <div class="metric"><div class="k">手臂姿勢檢查</div><div class="v" id="mElbow">–</div><div class="cmp" id="cElbow"></div></div>
       </div>
       <div style="margin-top:12px"><canvas id="chart"></canvas></div>
@@ -575,6 +579,12 @@ function load(id, scroll){
   $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${Math.round(m.open)}%`:"這場鏡頭角度不適合看轉肩，參考就好";
   $("mHeight").innerHTML=fmt(S.contact_h*100,""); $("cHeight").textContent=`中位數 ${Math.round(m.h)}`;
   $("mPrep").innerHTML=S.prep==null?"–":`${S.prep.toFixed(2)}<small>s</small>`; $("cPrep").textContent=S.prep==null?"":`${grp}中位數 ${median(ALL.filter(x=>x.kind===S.kind&&(!(S.kind==="FH"&&dn)||x.drill===S.drill)).map(x=>x.prep))?.toFixed(2)??"–"}s`;  // same group as the cards beside it
+  const sv=S.kind==="SV", f1=sv?S.reach:S.finish, num=(x,u,d=1)=>x==null?"–":`${x.toFixed(d)}<small>${u}</small>`;  // form_checks fields (docs/scoring.md §10); null = gate failed
+  const med=(f,g=S.kind)=>median(ALL.filter(x=>x.kind===g).map(x=>x[f]));
+  $("kForm1").textContent=sv?"擊球伸展":"收拍"; $("mForm1").innerHTML=num(f1,"軀幹長",2); $("cForm1").textContent=sv?"擊球瞬間較高的手高於肩膀多少；中位數 "+(med("reach")?.toFixed(2)??"–"):"擊球後 0.5 秒手最高點高於肩膀多少；中位數 "+(med("finish")?.toFixed(2)??"–");
+  $("boxTilt").hidden=!sv; $("mTilt").innerHTML=num(S.tilt,"°"); $("cTilt").textContent="擊球前持拍側肩比另一側低幾度（負＝較高）";
+  $("mLean").innerHTML=num(S.lean,"°"); $("cLean").textContent="往揮拍前進方向傾為正；單機位只看得到側面那一半，換視角不能比";
+  $("mStance").innerHTML=num(S.stance,"×",2); $("cStance").textContent=S.stance==null?"看不出來（髖寬被視角壓縮或腳被擋）":"兩踝距離 ÷ 兩髖距離";
   const arm=armCheck(S);  // pass/fail checks, not degrees (docs/scoring.md §9)
   $("mElbow").textContent=arm?arm[0]:"–"; $("cElbow").textContent=arm?arm[1]:S.kind==="SV"?"發球：缺 3D 骨架或視角不夠，這拍沒有結論":"正手與雙手反拍不評手肘；手肘角度太不準，不顯示數字";
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage

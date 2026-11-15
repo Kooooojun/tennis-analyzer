@@ -143,3 +143,51 @@ def _front(frames, world, c, s, w, hand, ok):
         ds.append(float(np.dot(W[w, [0, 2]] - W[s, [0, 2]], u / n)))
     m = _med(ds)
     return None if m is None else bool(m >= FRONT_MIN)
+
+
+# --- form checks (docs/scoring.md §10): finish / reach / shoulder tilt / torso lean / stance, from the CLIP layout like arm_checks ---
+FINISH_WIN = FPS // 2  # frames after contact searched for the follow-through peak (0.5 s)
+FORM_VIS_MIN = 0.5
+STANCE_MAX = 3.0       # ankle gap / hip gap above this = hip width collapsed by the view (or a bad pose), drop it
+_WR = dict(R=6, L=5)   # CLIP index of the racket wrist per hand
+
+
+def _form_dir(xy, c, kind, wr):
+    """+1 / -1 image-x direction of the stroke (lean sign). FH/BH: same definition as contact_fwd. SV: the wrist travels toward the net in the follow-through, so before-contact -> after-contact."""
+    if kind == "SV":
+        d = np.nanmedian(xy[c + 8:c + 17, wr, 0]) - np.nanmedian(xy[c - 8:c - 2, wr, 0])
+        return float(np.sign(d)) if np.isfinite(d) and d != 0 else np.nan
+    return _swing_dir(xy, dict(rw=wr), c)
+
+
+def form_checks(frames, c, size=None, world=None, kind=None, hand="R"):
+    """Fields finish (FH/BH), reach and tilt (SV), lean and stance (any kind); None = cannot tell / gate failed. kind None computes all.
+    L = shoulder-centre -> hip-centre length at contact; heights are in L, + = above the shoulder centre. Landmarks under FORM_VIS_MIN are ignored."""
+    out = dict(finish=None, reach=None, tilt=None, lean=None, stance=None)
+    n = len(frames)
+    if c < 8 or c >= n: return out
+    nan = [[np.nan] * 3] * 17
+    P = np.array([nan if fr is None else fr for fr in frames], float)
+    xy = P[:, :, :2] * _scale(size); xy[P[:, :, 2] < FORM_VIS_MIN] = np.nan
+    W = np.array([nan if w is None else w for w in world], float) if world is not None else None
+    if W is not None: W[P[:, :, 2] < FORM_VIS_MIN] = np.nan
+    sc = (xy[:, 1] + xy[:, 2]) / 2; hc = (xy[:, 7] + xy[:, 8]) / 2
+    L = _med(np.linalg.norm(sc[c - 2:c + 3] - hc[c - 2:c + 3], axis=1))
+    wr = _WR.get(hand, 6); hi = np.nanmin(xy[:, 5:7, 1], axis=1)  # higher of the two wrists, per frame
+    up = (sc[:, 1] - hi) / L if L else np.full(n, np.nan)
+    if kind in (None, "FH", "BH") and c + FINISH_WIN < n:
+        seg = up[c:c + FINISH_WIN + 1]
+        if np.isfinite(seg).sum() >= FINISH_WIN // 3:
+            sm = [np.nanmedian(seg[max(0, i - 1):i + 2]) if np.isfinite(seg[max(0, i - 1):i + 2]).any() else np.nan for i in range(len(seg))]
+            out["finish"] = round(float(np.nanmax(sm)), 2)
+    if kind in (None, "SV"):
+        r = _med(up[c - 2:c + 3]); out["reach"] = None if r is None else round(r, 2)
+        rs, os_ = (2, 1) if hand != "L" else (1, 2); A = W if W is not None else xy
+        dy = A[c - 8:c - 2, rs, 1] - A[c - 8:c - 2, os_, 1]; ln = np.linalg.norm(A[c - 8:c - 2, rs] - A[c - 8:c - 2, os_], axis=1)
+        t = _med(np.degrees(np.arcsin(np.clip(dy / ln, -1, 1)))); out["tilt"] = None if t is None else round(t, 1)
+    d = _form_dir(xy, c, kind, wr); v = (sc - hc)[c - 2:c + 3]
+    ln = _med(np.degrees(np.arctan2(v[:, 0] * d, -v[:, 1]))) if np.isfinite(d) else None; out["lean"] = None if ln is None else round(ln, 1)
+    A = W if W is not None else xy
+    st = _med(np.linalg.norm(A[c - 2:c + 3, 11] - A[c - 2:c + 3, 12], axis=1) / np.linalg.norm(A[c - 2:c + 3, 7] - A[c - 2:c + 3, 8], axis=1))
+    out["stance"] = None if st is None or st > STANCE_MAX else round(st, 2)
+    return out
