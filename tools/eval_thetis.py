@@ -1,5 +1,9 @@
 """THETIS 評估：對 work/thetis/<mode>/<clip>/pose*.npy 跑 kind.classify / guess_hand / arm_checks，結果存 work/thetis/res_<mode>.json。
-用法：.venv/bin/python tools/eval_thetis.py <mode> [first|all]
+用法：[HAND=R|L] [EYE=1] [APEX=1] .venv/bin/python tools/eval_thetis.py <mode> [first|all]
+環境變數：HAND＝全部受試者強制用該手；EYE＝用 work/thetis/eye_hands.json 的眼睛確認手（其餘 HAND 或 R）；APEX＝發球／高壓改用持拍腕最高點當擊球點。
+結果檔名 res_<mode><HAND><E><A>_<which>.json（最佳設定 = interp60 + HAND=R EYE=1 APEX=1 -> res_interp60REA_first.json）。
+本機輸入（都不進 git，也沒有腳本產生，要自己備）：work/thetis/p18/<clip>/pose*.npy（原 fps 姿態，pose_full.py N=1）、p60/<clip>/（fps=60 重複影格後的姿態）、
+list_first.txt／list_rest.txt（影片檔名清單，每行一支）、eye_hands.json（可無）。
 mode: native18（18 fps 姿態直接當 60 fps 餵）、dup60（ffmpeg fps=60 重複影格後再跑姿態）、interp60（18 fps 姿態線性內插到 60 fps）。
 THETIS 只在本機測試，結果與影格都不進 git（資料集：Gourgari et al. 2013）。"""
 import glob, json, os, re, sys
@@ -63,8 +67,9 @@ def clip_layout(P, Wd, f):
 
 def main():
     mode = sys.argv[1]; which = sys.argv[2] if len(sys.argv) > 2 else "first"
+    assert mode in ("native18", "dup60", "interp60") and which in ("first", "all"), __doc__
     fps = 18 if mode == "native18" else 60
-    names = [os.path.basename(l.strip())[:-4] for l in open(f"{W}/list_{'first' if which == 'first' else 'first'}.txt")]
+    names = [os.path.basename(l.strip())[:-4] for l in open(f"{W}/list_first.txt")]
     if which == "all": names += [os.path.basename(l.strip())[:-4] for l in open(f"{W}/list_rest.txt")]
     names = [n for n in names if os.path.exists(f"{W}/{'p60' if mode == 'dup60' else 'p18'}/{n}/pose.npy")]
     meta = {n: re.match(r"p(\d+)_(.+)_s(\d+)", n).groups() for n in names}
@@ -88,7 +93,8 @@ def main():
                 fr, wl = clip_layout(P, Wd, f); row["arm"] = arm_checks(fr, f, SIZE, wl, kk, h, one_hand=(act == "backhand"))
         else: row.update(kind="?", conf=0.0, side=None)
         out.append(row)
-    json.dump(dict(hands={str(k): v for k, v in hands.items()}, rows=out), open(f"{W}/res_{mode}{os.environ.get("HAND", "")}{"E" if os.environ.get("EYE") else ""}{"A" if os.environ.get("APEX") else ""}_{which}.json", "w"), ensure_ascii=False)
+    tag = os.environ.get("HAND", "") + ("E" if os.environ.get("EYE") else "") + ("A" if os.environ.get("APEX") else "")
+    json.dump(dict(hands={str(k): v for k, v in hands.items()}, rows=out), open(f"{W}/res_{mode}{tag}_{which}.json", "w"), ensure_ascii=False)
     print(mode, len(out), "clips; hands:", {v[0] for v in hands.values()})
 
 

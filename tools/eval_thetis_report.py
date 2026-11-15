@@ -12,7 +12,7 @@ def table(rs, title):
     for g in GRP:
         a = [r for r in rs if r["group"] == g]
         if not a: continue
-        c = collections.Counter(r["kind"] for r in a); n = len(a); ok = sum(c[OK[g]] for _ in [0]); dec = n - c["?"]
+        c = collections.Counter(r["kind"] for r in a); n = len(a); ok = c[OK[g]]; dec = n - c["?"]
         print(f"| {g} | " + " | ".join(str(c[p]) for p in PRED) + f" | {n} | {ok / n:.0%} | {ok / dec:.0%} | {c['?'] / n:.0%} |" if dec else f"| {g} | all ? |")
     main = [r for r in rs if r["group"] in ("FH", "BH", "SV", "OH")]
     if main:
