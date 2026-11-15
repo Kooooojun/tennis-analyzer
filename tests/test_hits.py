@@ -6,7 +6,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from hits import SR, envelope, candidates
 from events import hand_speed, hands, pick, estimate_lag, LAG
-from match import match
+from match import match, edge_skipped
 
 rng = np.random.default_rng(0)
 
@@ -103,4 +103,28 @@ hand = np.zeros(300); hand[[60, 102]] = 10
 rows = np.array([[1.0, -20, 12, 12], [1.7, -20, 12, 9]])
 assert [r[0] for r in pick(rows, hand, lag=0, who=np.r_[np.zeros(80), np.ones(220)])] == [1.0, 1.7]
 assert [r[0] for r in pick(rows, hand, lag=0, who=np.zeros(300))] == [1.0]
+# T15: head/tail skips are counted: f=44 skipped, f=45 kept; f=N-30 kept, f=N-29 skipped; short clip; no events
+N = 200
+assert edge_skipped(np.array([[44 / 60, -20, 12]]), N) == 1 and edge_skipped(np.array([[45 / 60, -20, 12]]), N) == 0
+assert edge_skipped(np.array([[(N - 30) / 60, -20, 12]]), N) == 0 and edge_skipped(np.array([[(N - 29) / 60, -20, 12]]), N) == 1
+assert edge_skipped(np.array([[1.0, -20, 12], [1.5, -20, 12]]), 60) == 2        # N < 75: every hit skipped
+assert edge_skipped(np.zeros((0, 3)), N) == 0
+# the count agrees with match(): the edge hits never come back as rows
+p = body(N); p[:, 0, 1] = 0.2; p[:, [27, 28], 1] = 0.9
+ev = np.array([[44 / 60, -20, 12], [100 / 60, -20, 12], [(N - 29) / 60, -20, 12]])
+assert edge_skipped(ev, N) == 2 and set(match(p, ev, A)[:, 0]) <= {100 / 60}
+assert edge_skipped(np.array([[np.nan, -20, 12], [44 / 60, -20, 12]]), N) == 1   # NaN time: not counted
+
+# T16: CLI prints exactly one stderr line for edge hits, same stdout as without them; nothing on stderr with none
+import subprocess, tempfile, cv2
+with tempfile.TemporaryDirectory() as d:
+    d = Path(d); np.save(d / "pose.npy", p)
+    vw = cv2.VideoWriter(str(d / "proxy.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 60, (960, 540)); vw.write(np.zeros((540, 960, 3), np.uint8)); vw.release()
+    def cli(e):
+        np.save(d / "events.npy", e)
+        return subprocess.run([sys.executable, str(Path(__file__).resolve().parent.parent / "tools" / "match.py"), str(d / "pose.npy"),
+                               str(d / "events.npy"), str(d / "out.npy"), "R"], capture_output=True, text=True, encoding="utf-8", check=True)
+    edge, plain = cli(ev), cli(ev[[1]])
+    assert len(edge.stderr.splitlines()) == 1 and "2 個擊球" in edge.stderr and plain.stderr == "", (edge.stderr, plain.stderr)
+    assert edge.stdout == plain.stdout, (edge.stdout, plain.stdout)
 print("ok")
