@@ -21,8 +21,8 @@ for V in $R/videos/$S/*.(mov|MOV|mp4|MP4|m4v)(N); do
   [ -f $D/pose.npy ] || $PY -I $R/tools/pose_full.py $D/proxy.mp4 $R/models/pose_heavy.task $D/pose.npy 2>$D/pose.log
   [ -f $D/sounds.npy ] || $PY -I $R/tools/hits.py $D/audio_hp.f32 $D/audio.f32 $D/sounds.npy
   [ -f $D/ball.npy ] || $PY -I $R/tools/ball.py $D/proxy.mp4 $D/ball.npy >$D/ball.log
-  [ -f $D/events.npy ] || $PY -I $R/tools/events.py $D/sounds.npy $D/ball.npy $D/pose.npy $D/events.npy >/dev/null
-  [ -f $D/match.npy ] || $PY -I $R/tools/match.py $D/pose.npy $D/events.npy $D/match.npy >/dev/null
+  [ $D/events.npy -nt $D/sounds.npy ] || $PY -I $R/tools/events.py $D/sounds.npy $D/ball.npy $D/pose.npy $D/events.npy >/dev/null
+  [ $D/match.npy -nt $D/events.npy ] || $PY -I $R/tools/match.py $D/pose.npy $D/events.npy $D/match.npy >/dev/null
 done
 (( ${#names} )) || { echo "no videos in videos/$S"; exit 1; }
 printf '%s\n' $names | $PY -c 'import json,sys; print(json.dumps(sys.stdin.read().split()))' > $W/videos.json

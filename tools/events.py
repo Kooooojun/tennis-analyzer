@@ -39,7 +39,8 @@ def hand_speed(pose, aspect):
         warnings.simplefilter("ignore", RuntimeWarning)
         pad = np.r_[np.full(15, np.nan), L, np.full(15, np.nan)]
         torso = np.nanmedian(np.lib.stride_tricks.sliding_window_view(pad, 31), 1) if N else L   # walking toward the camera grows it
-        r = np.nanmedian(np.stack([np.roll(r, 1, 0), r, np.roll(r, -1, 0)]), 0)   # drops one-frame jumps
+        prev, nxt = np.roll(r, 1, 0), np.roll(r, -1, 0); prev[:1] = np.nan; nxt[-1:] = np.nan   # no wrap-around at the ends
+        r = np.nanmedian(np.stack([prev, r, nxt]), 0)   # drops one-frame jumps
         v = np.linalg.norm(np.diff(r, axis=0), axis=2) * FPS / torso[1:, None]
         return np.r_[np.nan, np.nanmax(v, 1)] if N else v[:, 0]
 
