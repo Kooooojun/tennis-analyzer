@@ -4,12 +4,28 @@ name: ci
 on:
   push:
     branches: [main]
+    paths:
+      - "**"
+      - "!**/*.md"
+      - "!docs/**"
+  # Draft PRs are skipped by the job-level if; converted_to_draft cancels in-progress runs via concurrency without using a runner.
   pull_request:
-  workflow_dispatch:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - "**"
+      - "!**/*.md"
+      - "!docs/**"
+  workflow_dispatch:  # For 3-OS results during draft: gh workflow run ci.yml --ref <branch>
 permissions:
   contents: read
+  actions: write
+  pull-requests: read
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}  # main pushes each keep their own run
 jobs:
   test:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     strategy:
       fail-fast: false
       matrix:
@@ -21,6 +37,12 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - name: cancel if the PR was closed or turned back to draft
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: bash scripts/ci-cancel-stale-pr-run.sh
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: "3.12"
@@ -42,7 +64,8 @@ jobs:
       - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3
         with:
           path: models
-          key: models-${{ hashFiles('.github/workflows/ci.yml') }}
+          # Keyed by model sha256 prefixes instead of ci.yml hash so workflow edits do not re-download models; update when models change.
+          key: models-pose64437af8-ball00d707b9
       - name: models (download to .part, then sha256)
         run: |
           mkdir -p models
