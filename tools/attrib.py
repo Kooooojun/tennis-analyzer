@@ -39,3 +39,9 @@ def who_hit(Ps, Hd, t, wh):
     f = int(round(t * FPS))
     if any(f < 30 or f + 30 > len(P) for P in Ps.values()): raise ValueError(f"hit at {t} s needs 0.5 s of pose on both sides (a negative slice would wrap to the clip's end)")
     return max(Ps, key=lambda k: max(swing(Ps[k], f, wh, WRIST[h]) for h in ([Hd[k]] if Hd[k] else "RL"))) if len(Ps) > 1 else next(iter(Ps))
+
+
+def unnamed(names, V, T):
+    """(video no, track) pairs that still need a name in players.txt: with a players.txt or any video tracking more than one person,
+    every track needs one; only a solo session without players.txt is 'me' by default."""
+    return [(vn, k) for vn, v in enumerate(V, 1) for k in T[v] if (vn, k) not in names] if names or any(len(t) > 1 for t in T.values()) else []

@@ -11,7 +11,7 @@ from common import ROOT, session, work, videos, save, tracks, track_file, player
 from profiles import load_session_profiles
 from kind import classify, prefill
 from crop import square, wide, cut, brighten
-from attrib import matched, wrist_hands, who_hit
+from attrib import matched, wrist_hands, who_hit, unnamed
 from assemble import cands_fp
 from platform_util import imwrite, read_text, unlink, write_text
 
@@ -101,21 +101,20 @@ def sheet(c, idx, Ps, mark, src, low):
 
 s = session(); Wd = work(s); V = videos(s); T = {v: tracks(Wd / v) for v in V}
 names = players(s)
-if names or any(len(t) > 1 for t in T.values()):
-    missing = [(vn, k) for vn, v in enumerate(V, 1) for k in T[v] if (vn, k) not in names]
-    if missing:  # who-is-who sheet: one row per tracked person, 10 moments spread over the frames where they were seen
-        rows = []
-        for vn, k in missing:
-            v = V[vn - 1]; P = np.load(track_file(Wd / v, "pose", k)); cap = cv2.VideoCapture(str(Wd / v / "proxy.mp4"))
-            seen = np.flatnonzero(~np.isnan(P[:, 0, 0]))
-            fs = seen[np.linspace(0, len(seen) - 1, 10).astype(int)] if len(seen) else []
-            row = [tile(cap, [P], int(f), f"v{vn} t{k} {int(f / 60 // 60)}:{f / 60 % 60:04.1f}") for f in fs]
-            rows.append(np.hstack(row + [np.zeros((200, 200, 3), np.uint8)] * (10 - len(row))))
-        if not imwrite(Wd / "players.jpg", np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 80]): sys.exit(f"could not write {Wd / 'players.jpg'}")
-        with open(Wd / "players.txt", "a", encoding="utf-8", newline="\n") as fh:
-            if not names: fh.write("# <video no> <track> <name>: who each tracked person is (see players.jpg). Same name across videos; x = not a player\n")
-            fh.writelines(f"{vn} {k} ?\n" for vn, k in missing)
-        sys.exit(f"{len(missing)} tracked people need a name: look at {Wd / 'players.jpg'} and replace the ? in {Wd / 'players.txt'}, then re-run")
+missing = unnamed(names, V, T)
+if missing:  # who-is-who sheet: one row per tracked person, 10 moments spread over the frames where they were seen
+    rows = []
+    for vn, k in missing:
+        v = V[vn - 1]; P = np.load(track_file(Wd / v, "pose", k)); cap = cv2.VideoCapture(str(Wd / v / "proxy.mp4"))
+        seen = np.flatnonzero(~np.isnan(P[:, 0, 0]))
+        fs = seen[np.linspace(0, len(seen) - 1, 10).astype(int)] if len(seen) else []
+        row = [tile(cap, [P], int(f), f"v{vn} t{k} {int(f / 60 // 60)}:{f / 60 % 60:04.1f}") for f in fs]
+        rows.append(np.hstack(row + [np.zeros((200, 200, 3), np.uint8)] * (10 - len(row))))
+    if not imwrite(Wd / "players.jpg", np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 80]): sys.exit(f"could not write {Wd / 'players.jpg'}")
+    with open(Wd / "players.txt", "a", encoding="utf-8", newline="\n") as fh:
+        if not names: fh.write("# <video no> <track> <name>: who each tracked person is (see players.jpg). Same name across videos; x = not a player\n")
+        fh.writelines(f"{vn} {k} ?\n" for vn, k in missing)
+    sys.exit(f"{len(missing)} tracked people need a name: look at {Wd / 'players.jpg'} and replace the ? in {Wd / 'players.txt'}, then re-run")
 multi = bool(names)
 names = names or {(vn, 0): "me" for vn in range(1, len(V) + 1)}
 PROF = load_session_profiles(s)[0]

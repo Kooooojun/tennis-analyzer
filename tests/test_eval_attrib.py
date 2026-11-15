@@ -41,4 +41,8 @@ for bad in ("v,nan,p1\n", "v,inf,p1\n", "v,10.0,p3\n", "v,abc,p1\n"):
     try: read_holdout(csv("v,5.0,p1\n" + bad), W); raise AssertionError(bad)
     except SystemExit as e: assert "line 2" in str(e), e
 assert read_holdout(csv("v,0.2,p1\nv,99.9,p2\nv,50,p1\n"), W) == ([(3, "v", 50.0, "p1")], [1, 2])  # 6000 格 = 100 s：頭 45 格、尾 30 格擋掉
+from attrib import unnamed
+assert unnamed({}, ["a", "b"], {"a": [0], "b": [0]}) == []  # 單人、沒有 players.txt：照舊叫 me
+assert unnamed({}, ["a"], {"a": [0, 1]}) == [(1, 0), (1, 1)]  # 多人沒有 players.txt：全部要名字
+assert unnamed({(1, 0): "p1"}, ["a", "b"], {"a": [0, 1], "b": [0]}) == [(1, 1), (2, 0)]  # 漏名字的列出來
 print("attrib OK")

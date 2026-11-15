@@ -6,16 +6,17 @@
 import sys, numpy as np
 from common import session, work, load, videos, tracks, track_file, players, size, FPS, profile_for
 from profiles import load_session_profiles
-from attrib import wrist_hands, who_hit
+from attrib import wrist_hands, who_hit, unnamed
 from match import _edge
 from platform_util import read_text
 
 
 def setup(s):
     """{video: ({track: pose}, {track: wrist hand}, wh, {track: name})} for the tracked people that are not x, as candidates.py builds them."""
-    Wd = work(s); names = players(s); PROF = load_session_profiles(s)[0]; out = {}
-    for vi, v in enumerate(videos(s)):
-        nm = {k: names.get((vi + 1, k), "me") for k in tracks(Wd / v)}; nm = {k: n for k, n in nm.items() if n != "x"}
+    Wd = work(s); names = players(s); PROF = load_session_profiles(s)[0]; out = {}; V = videos(s); T = {v: tracks(Wd / v) for v in V}
+    if miss := unnamed(names, V, T): sys.exit(f"tracked people without a name in players.txt (video no, track): {miss}. Run tools/candidates.py {s} and name them first")
+    for vi, v in enumerate(V):
+        nm = {k: names.get((vi + 1, k), "me") for k in T[v]}; nm = {k: n for k, n in nm.items() if n != "x"}
         if not nm: continue
         Ps = {k: np.load(track_file(Wd / v, "pose", k)).astype(float) for k in nm}; sz = size(Wd / v / "proxy.mp4"); wh = np.array(sz, float) / 540
         prof = {k: (profile_for(PROF, n) or {"hand": None})["hand"] for k, n in nm.items()}
