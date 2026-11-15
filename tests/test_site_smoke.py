@@ -52,6 +52,7 @@ for(const engine of [chromium,webkit]){
     await page.goto(process.env.SITE_E2E_URL);
     await page.evaluate(()=>go(DAY_KEYS.reduce((a,b)=>DAYS[a].data.length>DAYS[b].data.length?a:b),'stroke'));
     await page.waitForFunction(()=>S&&v.readyState>=2&&!v._fetching);
+    assert(await page.evaluate(()=>v.playbackRate===rate),'loading a source must preserve the selected speed');
     const first=await page.evaluate(()=>S.id);
     await page.evaluate(()=>step(1)); await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
     await page.waitForTimeout(1000);
@@ -72,7 +73,32 @@ for(const engine of [chromium,webkit]){
       assert(await page.evaluate(()=>[...liveClips.values()].reduce((n,b)=>n+b,0)<=CLIP_LIMIT),'live blob bytes exceed budget');
     }
     assert.equal(await page.evaluate(()=>revokedActive),0,'active clip was revoked');
+    await page.evaluate(()=>{window.frameCallbacks=new Set();const request=v.requestVideoFrameCallback?.bind(v),cancel=v.cancelVideoFrameCallback?.bind(v);if(request){v.requestVideoFrameCallback=fn=>{const id=request((...args)=>{frameCallbacks.delete(id);fn(...args);});frameCallbacks.add(id);return id;};v.cancelVideoFrameCallback=id=>{frameCallbacks.delete(id);cancel(id);};}toggle();});
+    await page.waitForTimeout(100);
+    await page.evaluate(()=>{v.dispatchEvent(new Event('playing'));v.dispatchEvent(new Event('playing'));});
+    assert(await page.evaluate(()=>frameCallbacks.size<=1),'playing events must not multiply frame loops');
+    await page.evaluate(()=>v.pause()); await page.waitForTimeout(50);
+    assert.equal(await page.evaluate(()=>v._want),false,'native pause must clear viewer intent');
+    await page.evaluate(()=>{filter='SV';pfilter='__empty_test__';preloadNeighbors(S);});
+    await page.waitForTimeout(50);
     assert.deepEqual(errors,[]);
+
+    const fallback=await context.newPage();
+    await fallback.addInitScript(()=>{window.fetch=()=>Promise.reject(new TypeError('test fallback'));});
+    await fallback.goto(process.env.SITE_E2E_URL);
+    await fallback.evaluate(()=>go(DAY_KEYS[0],'stroke')); await fallback.waitForFunction(()=>v.readyState>=2);
+    const failedURL=await fallback.evaluate(()=>{const list=visible(),i=list.findIndex(s=>s===S);return new URL(clipSrc(list[(i+1)%list.length]),location.href).href;});
+    let release=false;
+    await fallback.route('**/*.mp4',async route=>{if(!release&&route.request().url()===failedURL)await route.fulfill({status:503,body:''});else await route.continue();});
+    await fallback.evaluate(()=>step(1)); await fallback.waitForFunction(()=>!!v.error); release=true;
+    await fallback.waitForFunction(()=>v.readyState>=2&&!v.error);
+    assert(await fallback.evaluate(()=>Math.abs(v.currentTime-(S.contact-48+.5)/FPS)<1/FPS),'automatic reload must preserve initial alignment');
+    await fallback.unroute('**/*.mp4');
+    await fallback.route('**/*.mp4',async route=>{await new Promise(r=>setTimeout(r,1000));await route.continue().catch(()=>{});});
+    await fallback.evaluate(()=>step(1)); await fallback.waitForTimeout(100);
+    await fallback.evaluate(()=>{toggle();go(DAY,'advice');}); await fallback.waitForTimeout(1400);
+    assert(await fallback.evaluate(()=>v.paused&&!v._want),'leaving a tab must cancel pending playback before metadata');
+    await fallback.close();
     console.log(engine.name()+': clip cache E2E ok');
   }finally{await browser.close();}
 }

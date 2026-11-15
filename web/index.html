@@ -756,20 +756,21 @@ function drawList(){
     b.onclick=()=>load(s.id,"list"); box.append(b);  // load() scrolls to a non-sticky (landscape) player once it knows the clip's shape
   }
   markList();
+  if(S){ cancelPrefetch(); if(ALL.includes(S)&&!v._fetching&&CLIPS.get(clipSrc(S))?.url) preloadNeighbors(S); }
 }
 function markList(){ document.querySelectorAll("#strokes button").forEach(b=>b.classList.toggle("cur",S&&+b.dataset.id===S.id)); }
 
 // ---------- main player ----------
 const v=$("v"), cv=$("cv"), seek=$("seek");
 const OPT={skel:true, guides:true, trail:true};
-let S=null, cur=0, N=150, rate=0.25;
+let S=null, cur=0, N=150, rate=0.25, frameRequest=null;
 const clipSrc=s=>s.src;
 // iOS Safari ignores preload and fetches nothing until play(), so a muted play() starts the fetch; start()/cmpGoto pause it once metadata is in.
 // Low Power Mode also blocks that until a tap, so the badge says to tap. Never throws: a play cut short by pause() rejects with AbortError.
 const TAP="點畫面載入影片";
 const playSafe=(vid,badge)=>{ const token=vid._loadToken; return vid.play()?.catch(e=>{ if(token!==vid._loadToken||e.name!=="NotAllowedError") return; vid._blocked=true; if(!vid.readyState) badge.textContent=TAP; if(vid._want) stopDead(vid); }); };
 // iOS stops fetching a clip paused before its metadata, so the stage stays black; an unloaded clip pauses itself on loadedmetadata instead
-const hold=vid=>{ vid._want=false; vid._resume=false; if(vid.readyState) vid.pause(); };
+const hold=vid=>{ vid._want=false; vid._resume=false; if(vid.readyState||!vid.offsetParent) vid.pause(); };
 // a clip is fetched only once its stage is on screen (home and the overview tab fetch none); route() runs the waiting ones
 const LATER=new Map();
 // the comparison clips also wait until scrolled near (_near), so opening the video tab fetches only the main clip
@@ -798,6 +799,7 @@ function clipFetch(key,background=false){
     try{
       const response=await fetch(key,{signal:e.controller.signal,priority:background?"low":"high"});
       if(!response.ok) throw new Error("clip unavailable");
+      if(!trimClips(Number(response.headers.get("Content-Length")))){ await response.body?.cancel(); CLIPS.delete(key); return key; }
       const blob=await response.blob();
       if(e.controller.signal.aborted) return key;
       if(!trimClips(blob.size)){ CLIPS.delete(key); return key; }
@@ -810,7 +812,8 @@ function clipFetch(key,background=false){
 function cancelPrefetch(){ ++prefetchRun; if(prefetch&&!prefetch.foreground){ prefetch.controller.abort(); for(const [k,e] of CLIPS) if(e===prefetch) CLIPS.delete(k); } prefetch=null; }
 async function preloadNeighbors(s){
   if(location.protocol==="file:"||!shown(v)||S!==s) return;
-  const run=prefetchRun, list=visible(), i=list.indexOf(s);
+  const run=prefetchRun, list=visible(), i=Math.max(0,list.indexOf(s));
+  if(!list.length) return;
   for(const next of [list[(i+1)%list.length],list[(i-1+list.length)%list.length]]){
     if(run!==prefetchRun||!shown(v)||S!==s) return;
     const key=clipSrc(next), task=clipFetch(key,true); prefetch=CLIPS.get(key);
@@ -821,16 +824,17 @@ function cancelAlign(vid){ if(vid._align) vid.removeEventListener("loadedmetadat
 function resetClip(vid,key){
   cancelAlign(vid); vid._resetStall(); vid._clipKey=key; vid._loadToken={}; vid._fetching=false; vid._blocked=false;
   vid.pause(); vid.removeAttribute("src"); vid.load(); trimClips();
+  for(const [k,e] of CLIPS) if(!e.url&&e.foreground&&!players.some(x=>x._clipKey===k)){ e.controller.abort(); CLIPS.delete(k); }
 }
 async function setClip(vid,s,rate,start){
   const key=clipSrc(s), token=vid._loadToken;
   vid._fetching=true; vid._fetchSince=Date.now();
   const src=location.protocol==="file:"?key:await clipFetch(key);
   if(token!==vid._loadToken) return;
-  vid._fetching=false; vid.playbackRate=rate;
-  vid._align=()=>{ vid._align=null; if(token!==vid._loadToken) return; if(!vid._want){ vid.pause(); start(); } };
+  vid._fetching=false;
+  vid._align=()=>{ vid._align=null; if(!vid._want){ vid.pause(); start(); } };
   vid.addEventListener("loadedmetadata",vid._align,{once:true});
-  vid.src=src;
+  vid.src=src; vid.playbackRate=rate;
   if(vid!==v&&vid._want) cmpStart(); else playSafe(vid,vid.parentElement.querySelector(".badge"));
   if(vid===v&&src.startsWith("blob:")) preloadNeighbors(s);
 }
@@ -846,7 +850,7 @@ function watchStall(vid){
   let restore=null, keep=null;  // the pending time restore of the last reload and its [time, playing]; dropped when the clip changes
   vid._resetStall=()=>{ if(restore) vid.removeEventListener("loadedmetadata",restore); restore=keep=null; vid._want=vid._resume=vid._reloading=false; tries=wait=since=errorSince=0; delete m.dataset.fail; m.hidden=true; };
   const reload=(tap=false,still=false)=>{
-    cancelAlign(vid); tries++; since=Date.now(); errorSince=0; const url=vid.currentSrc||vid.src;
+    if(tap||still) cancelAlign(vid); vid._loadToken={}; tries++; since=Date.now(); errorSince=0; const url=vid.currentSrc||vid.src;
     const [t,play,rate]=keep&&!vid.readyState?keep:[vid.readyState?vid.currentTime:null,!!vid._want,vid.playbackRate]; const want=!still&&(play||tap); keep=[t,want,rate];
     if(restore) vid.removeEventListener("loadedmetadata",restore);
     vid._resume=vid._want=want;
@@ -877,6 +881,7 @@ function watchStall(vid){
 [v,$("vA"),$("vB")].forEach(watchStall);
 for(const vid of [v,$("vA"),$("vB")]){  // a reload that fails or is replaced must not leave pause events ignored (abort/emptied fire for the reload itself, so not those)
   vid.addEventListener("error",()=>{ vid._reloading=false; });
+  vid.addEventListener("pause",()=>{ if(vid.paused&&vid.readyState&&!vid.error&&!vid._reloading){ vid._want=vid._resume=false; } });
   vid.addEventListener("loadstart",()=>{ if(vid._reloading&&vid.currentSrc!==vid._reloading) vid._reloading=false; });
 }
 function load(id, scroll){
@@ -942,7 +947,10 @@ function render(f){
   let ph=null; for(const p of S.phases) if(f>=p.f) ph=p;
   const pb=$("phaseBadge"); pb.style.display=ph?"block":"none"; if(ph) pb.textContent=ph.name;
 }
-function tick(){ render(frameOf(v.currentTime)); if(!v.paused) (v.requestVideoFrameCallback?v.requestVideoFrameCallback(tick):requestAnimationFrame(tick)); }
+function tick(){
+  if(frameRequest!==null){ v.cancelVideoFrameCallback?v.cancelVideoFrameCallback(frameRequest):cancelAnimationFrame(frameRequest); frameRequest=null; }
+  render(frameOf(v.currentTime)); if(!v.paused) frameRequest=v.requestVideoFrameCallback?v.requestVideoFrameCallback(tick):requestAnimationFrame(tick);
+}
 function toggle(){ cancelAlign(v); if(v.paused||!v.readyState){ v._want=true; if(!v._fetching) playSafe(v,$("badge")); } else hold(v); }
 v.loop=true;
 v.addEventListener("playing",()=>{ $("play").textContent="⏸ 暫停"; tick(); });
@@ -966,7 +974,7 @@ cv.addEventListener("pointercancel",()=>{ drag=null; });
 
 // ---------- side-by-side compare, both clips aligned on contact ----------
 const vA=$("vA"), vB=$("vB"), cvA=$("cvA"), cvB=$("cvB"), cmpSeek=$("cmpSeek");
-let A=null, B=null, cmpCur=0, cmpRate=0.25;
+let A=null, B=null, cmpCur=0, cmpRate=0.25, cmpRequest=null;
 // a/b are [day, stroke number]; presets with two different days compare across sessions
 // from notes.json: a/b are a stroke number in that session, or [session, number] to compare across sessions
 const PRESETS=Object.values(DAYS).flatMap(d=>(d.presets||[]).map(p=>{ const a=Array.isArray(p.a)?p.a:[d.id,p.a], b=Array.isArray(p.b)?p.b:[d.id,p.b]; return {day:a[0]===b[0]&&a[0]===d.id?d.id:"*",a,b,label:p.label}; })).filter(p=>p.a[0] in DAYS&&p.b[0] in DAYS);
@@ -994,9 +1002,10 @@ const cmpOff=()=>B.contact-A.contact;  // clips cut at a video edge have their c
 const cmpBt=()=>Math.max(0,vA.currentTime+cmpOff()/FPS);
 function cmpGoto(f){ f=Math.max(0,Math.min(149,f)); hold(vA); hold(vB); vA.currentTime=(f+0.5)/FPS; vB.currentTime=Math.max(0,(f+cmpOff()+0.5)/FPS); cmpRender(f); }
 function cmpTick(){
+  if(cmpRequest!==null){ vA.cancelVideoFrameCallback?vA.cancelVideoFrameCallback(cmpRequest):cancelAnimationFrame(cmpRequest); cmpRequest=null; }
   if(vB.readyState>=3&&Math.abs(vB.currentTime-cmpBt())>1.5/FPS) vB.currentTime=cmpBt();  // seeking an unbuffered clip would look like progress to watchStall
   cmpRender(Math.max(0,Math.min(149,Math.floor(vA.currentTime*FPS+1e-3))));
-  if(!vA.paused) (vA.requestVideoFrameCallback?vA.requestVideoFrameCallback(cmpTick):requestAnimationFrame(cmpTick));
+  if(!vA.paused) cmpRequest=vA.requestVideoFrameCallback?vA.requestVideoFrameCallback(cmpTick):requestAnimationFrame(cmpTick);
 }
 vA.loop=vB.loop=true;
 for(const x of [v,vA,vB]) x.addEventListener("loadedmetadata",()=>{ x._blocked=false; });  // a tap lifted Low Power Mode's block; later loads show times again
