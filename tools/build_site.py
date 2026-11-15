@@ -24,6 +24,8 @@ for d in sorted(p for p in S.iterdir() if p.is_dir()):
         assert all(1 <= j[0] <= n for j in f.get("jump", [])), f"{s}: finding '{f['title']}' jumps past #{n}"
     js = "(window.SESSIONS=window.SESSIONS||[]).push(" + json.dumps(sess, ensure_ascii=False, separators=(",", ":")) + ");"
     (d / "pose").mkdir(exist_ok=True); h = hashlib.sha1(js.encode())
+    for old in (d / "pose").glob("*.js"):  # a re-analysis with fewer strokes must not leave stale skeletons behind
+        if old.stem not in {str(x["id"]) for x in strokes}: old.unlink()
     for x in strokes:  # pose/<id>.js hands one stroke's skeleton to the page via a <script> tag, so file:// works (no fetch)
         pj = f"POSE({json.dumps(s)},{x['id']}," + json.dumps({k: x.get(k) for k in POSE}, separators=(",", ":")) + ");"
         (d / "pose" / f"{x['id']}.js").write_text(pj); h.update(pj.encode())

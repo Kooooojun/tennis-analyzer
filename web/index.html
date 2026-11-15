@@ -715,7 +715,7 @@ const hold=vid=>{ if(vid.readyState) vid.pause(); };
 const LATER=new Map();
 function whenShown(vid,fn){ if(vid.offsetParent){ LATER.delete(vid); fn(); } else LATER.set(vid,fn); }
 function load(id, scroll){
-  S=ALL[id]; N=S.n??S.frames.length; seek.max=N-1;  // n: frame count in data.js; older builds only have frames
+  S=ALL[id]; S._poseErr=false; N=S.n??S.frames.length; seek.max=N-1;  // n: frame count in data.js; older builds only have frames
   S.phases=[{f:S.contact-48,name:"準備"},...(S.prep!=null?[{f:S.contact-Math.round(S.prep*FPS),name:"引拍完成"}]:[]),{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}].sort((a,b)=>a.f-b.f);  // 引拍完成 can fall before 準備 or after 向前揮拍
   $("phases").innerHTML=""; for(const p of S.phases){ const b=document.createElement("button"); b.textContent=p.name; b.onclick=()=>goto(p.f); $("phases").append(b); }
   const dn=drillName(S);
@@ -904,7 +904,7 @@ function route(){
   document.querySelector("main").classList.toggle("noplayer",!PLAYER_TABS.includes(TAB));
   document.querySelectorAll("main [hidden] video").forEach(hold);  // player, compare and reel stop when their tab is left
   if(TAB==="charts") drawCharts();
-  for(const [vid,fn] of LATER) if(vid.offsetParent){ LATER.delete(vid); fn(); }
+  for(const [vid,fn] of LATER){ if(!vid.isConnected) LATER.delete(vid); else if(vid.offsetParent){ LATER.delete(vid); fn(); } }  // drop reel <video>s that drawSummary replaced
   if(S){ render(cur); cmpRender(cmpCur); }  // canvases were 0x0 while hidden
 }
 addEventListener("hashchange",route);
