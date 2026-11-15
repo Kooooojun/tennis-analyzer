@@ -21,9 +21,9 @@ permissions:
   contents: read
   pull-requests: read
 concurrency:
-  # PR runs share a group per PR, so a new push or converted_to_draft cancels the old run.
+  # PR runs share a group per PR number (github.ref turns into the base ref once merged), so a new push or converted_to_draft cancels the old run.
   # Every other run (push to main, workflow_dispatch) gets its own group: a shared group would drop a pending main run.
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 jobs:
   gate:
