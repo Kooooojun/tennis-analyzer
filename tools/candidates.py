@@ -7,12 +7,12 @@
 # and labels.txt lines carry '@name' so a wrong prefill can be corrected.
 import sys, cv2, numpy as np
 import warnings; warnings.filterwarnings("ignore")
-from common import ROOT, session, work, videos, save, tracks, track_file, players, size, FPS, load_profiles, profile_for
+from common import ROOT, session, work, videos, save, tracks, track_file, players, size, FPS, profile_for
+from profiles import load_session_profiles
 from kind import classify, prefill
 from crop import square, wide, cut, brighten
-from match import match, WRIST
+from attrib import matched, wrist_hands, who_hit, unnamed
 from assemble import cands_fp
-from metrics import hand_gate
 from platform_util import imwrite, read_text, unlink, write_text
 
 OFF = [-45, -25, -8, 0, 12]  # --legacy sheets: 24 candidates per sheet, 5 small square crops each
@@ -87,6 +87,11 @@ def sheet(c, idx, Ps, mark, src, low):
         if len(Ps) > 1:
             hp = np.nanmean(P[max(0, f + o - 5):f + o + 6, [23, 24], :2].astype(float), axis=(0, 1))
             if np.isfinite(hp).all(): cv2.circle(t, (int(hp[0] * gw), int(hp[1] * TILE[1])), 6, (0, 255, 255), -1)
+            for j, Q in enumerate(Ps):  # the others' wrists as small hollow rings (never cover the ball or racket); several people only
+                if j != mark:
+                    q = Q[max(0, f + o - 5):f + o + 6, [15, 16]].astype(float); q[q[..., 2] < 0.2] = np.nan
+                    for w in np.nanmean(q[..., :2], axis=0):
+                        if np.isfinite(w).all(): cv2.circle(t, (int(w[0] * gw), int(w[1] * TILE[1])), 5, (255, 160, 0), 1)
         text(t, f"whole frame {o:+d}"); g.append(t)
     g = np.hstack(g); pad = 4 * TILE[0] - g.shape[1]
     g = np.hstack([g, np.zeros((TILE[1], pad, 3), np.uint8)]) if pad >= 0 else cv2.resize(g, (4 * TILE[0], TILE[1]))
@@ -96,43 +101,24 @@ def sheet(c, idx, Ps, mark, src, low):
 
 s = session(); Wd = work(s); V = videos(s); T = {v: tracks(Wd / v) for v in V}
 names = players(s)
-if names or any(len(t) > 1 for t in T.values()):
-    missing = [(vn, k) for vn, v in enumerate(V, 1) for k in T[v] if (vn, k) not in names]
-    if missing:  # who-is-who sheet: one row per tracked person, 10 moments spread over the frames where they were seen
-        rows = []
-        for vn, k in missing:
-            v = V[vn - 1]; P = np.load(track_file(Wd / v, "pose", k)); cap = cv2.VideoCapture(str(Wd / v / "proxy.mp4"))
-            seen = np.flatnonzero(~np.isnan(P[:, 0, 0]))
-            fs = seen[np.linspace(0, len(seen) - 1, 10).astype(int)] if len(seen) else []
-            row = [tile(cap, [P], int(f), f"v{vn} t{k} {int(f / 60 // 60)}:{f / 60 % 60:04.1f}") for f in fs]
-            rows.append(np.hstack(row + [np.zeros((200, 200, 3), np.uint8)] * (10 - len(row))))
-        if not imwrite(Wd / "players.jpg", np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 80]): sys.exit(f"could not write {Wd / 'players.jpg'}")
-        with open(Wd / "players.txt", "a", encoding="utf-8", newline="\n") as fh:
-            if not names: fh.write("# <video no> <track> <name>: who each tracked person is (see players.jpg). Same name across videos; x = not a player\n")
-            fh.writelines(f"{vn} {k} ?\n" for vn, k in missing)
-        sys.exit(f"{len(missing)} tracked people need a name: look at {Wd / 'players.jpg'} and replace the ? in {Wd / 'players.txt'}, then re-run")
+missing = unnamed(names, V, T)
+if missing:  # who-is-who sheet: one row per tracked person, 10 moments spread over the frames where they were seen
+    rows = []
+    for vn, k in missing:
+        v = V[vn - 1]; P = np.load(track_file(Wd / v, "pose", k)); cap = cv2.VideoCapture(str(Wd / v / "proxy.mp4"))
+        seen = np.flatnonzero(~np.isnan(P[:, 0, 0]))
+        fs = seen[np.linspace(0, len(seen) - 1, 10).astype(int)] if len(seen) else []
+        row = [tile(cap, [P], int(f), f"v{vn} t{k} {int(f / 60 // 60)}:{f / 60 % 60:04.1f}") for f in fs]
+        rows.append(np.hstack(row + [np.zeros((200, 200, 3), np.uint8)] * (10 - len(row))))
+    if not imwrite(Wd / "players.jpg", np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 80]): sys.exit(f"could not write {Wd / 'players.jpg'}")
+    with open(Wd / "players.txt", "a", encoding="utf-8", newline="\n") as fh:
+        if not names: fh.write("# <video no> <track> <name>: who each tracked person is (see players.jpg). Same name across videos; x = not a player\n")
+        fh.writelines(f"{vn} {k} ?\n" for vn, k in missing)
+    sys.exit(f"{len(missing)} tracked people need a name: look at {Wd / 'players.jpg'} and replace the ? in {Wd / 'players.txt'}, then re-run")
 multi = bool(names)
 names = names or {(vn, 0): "me" for vn in range(1, len(V) + 1)}
-PROF = load_profiles()
+PROF = load_session_profiles(s)[0]
 hand = lambda name: (profile_for(PROF, name) or {"hand": None})["hand"]  # racket hand; None = no profile yet: look at both wrists (assemble.py guesses it later)
-
-
-def matched(P, E, wh, hand):
-    """match() rows by hit time for the racket wrist; unknown hand: the wrist that swung more (bigger arc) at each hit,
-    so a left-hander without a profile does not lose hits (default-R missed 6 of 45 on a left-handed test video)."""
-    M = {}
-    for h in ([hand] if hand else "RL"):
-        for r in match(P, E, wh, h):
-            if r[0] not in M or r[4] > M[r[0]][4]: M[r[0]] = r
-    return M
-
-
-def swing(P, f, wh, wi=16):
-    """Wrist path from 0.33 s before a hit sound to 0.07 s after, in torso lengths. The hitter swings into contact;
-    the other player's big moves (getting ready for the next ball, walking in) mostly come after it or without a visible wrist."""
-    xy = P[:, wi, :2] * wh; xy[P[:, wi, 2] < 0.2] = np.nan
-    L = np.linalg.norm((P[f - 30:f + 30, 11, :2] + P[f - 30:f + 30, 12, :2] - P[f - 30:f + 30, 23, :2] - P[f - 30:f + 30, 24, :2]) / 2 * wh, axis=1)
-    return np.nansum(np.linalg.norm(np.diff(xy[f - 20:f + 5], axis=0), axis=1)) / np.nanmedian(L) if np.isfinite(L).any() else 0.0
 
 
 C = []
@@ -140,14 +126,11 @@ for vi, v in enumerate(V):
     ks = [k for k in T[v] if names[(vi + 1, k)] != "x"]
     if not ks: continue
     Ps = {k: np.load(track_file(Wd / v, "pose", k)).astype(float) for k in ks}; prof = {k: hand(names[(vi + 1, k)]) for k in ks}
-    wh = np.array(size(Wd / v / "proxy.mp4"), float) / 540; E = np.load(Wd / v / "events.npy"); Hd = dict(prof)
-    for k in ks:  # no profile: guess from this track's own matched hits (as assemble does), only to pick the wrist; None = both wrists
-        if Hd[k] is None:
-            ts = [t for t, _, _, sp, arc in matched(Ps[k], E, wh, None).values() if sp >= 0.05 and arc >= 0.7]
-            if ts: Hd[k] = hand_gate([Ps[k]], size(Wd / v / "proxy.mp4"), [ts])[0]
+    wh = np.array(size(Wd / v / "proxy.mp4"), float) / 540; E = np.load(Wd / v / "events.npy")
+    Hd = wrist_hands(Ps, prof, E, wh, size(Wd / v / "proxy.mp4"))
     M = {k: matched(Ps[k], E, wh, Hd[k]) for k in ks}
     for t in sorted({t for m in M.values() for t in m}):
-        k = max(ks, key=lambda k: max(swing(Ps[k], int(round(t * 60)), wh, WRIST[h]) for h in ([Hd[k]] if Hd[k] else "RL"))) if len(ks) > 1 else ks[0]  # who hit it, then: is it a stroke for them
+        k = who_hit(Ps, Hd, t, wh)  # who hit it, then: is it a stroke for them
         if t not in M[k]: continue
         _, pk, on, sp, arc = M[k][t]
         if sp >= 0.05 and arc >= 0.7:
