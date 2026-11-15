@@ -3,7 +3,7 @@
 # Wrist motion per hit (match.py) runs in candidates.py, once the racket hand of each person is known.
 # Re-running skips finished steps, so it is safe to resume after an interruption; a step re-runs when its output is missing or an input is newer.
 # Every ffmpeg output is written to <name>.part first and renamed, so a killed run never leaves a half file that looks finished.
-import json, os, subprocess, sys
+import json, math, os, subprocess, sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -57,7 +57,10 @@ def probe(v):
     except (ValueError, KeyError, IndexError, TypeError):
         sys.exit(f"ffprobe could not read {v}: {r.stderr.strip() or 'no video stream'}")
     rot = next((d["rotation"] for d in s.get("side_data_list", []) if "rotation" in d), s.get("tags", {}).get("rotate", 0))
-    if abs(int(float(rot))) % 360 in (90, 270): w, h = h, w
+    try:
+        if abs(int(float(rot))) % 360 in (90, 270): w, h = h, w
+    except ValueError:
+        sys.exit(f"ffprobe gave an unreadable rotation for {v}: {rot!r}")
     n, _, d = s.get("avg_frame_rate", "0/0").partition("/")  # avg handles variable frame rate
     try:
         fps = int(float(n) / float(d or 1) + 0.5) if float(n) > 0 and float(d or 1) > 0 else None
@@ -72,18 +75,19 @@ def gpu():
     return torch.backends.mps.is_available() or torch.cuda.is_available()
 
 
-def ball_note(proxy):
+def ball_note(proxy, pw, ph):
     """On CPU ball.py is ~60x slower than real time: say so before it starts. Not in ball.py, which another change owns."""
     if gpu(): return
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(proxy)], capture_output=True, text=True)
     try: secs = float(r.stdout)
     except ValueError: return
-    print(f"警告：沒有 GPU，球追蹤用 CPU 跑（約 {CPU_S_PER_FRAME:.1f} 秒/格）：這段 {secs:.0f} 秒影片預估 {secs * 60 * CPU_S_PER_FRAME / 60:.0f} 分鐘"
+    tiles = math.ceil(ph / (pw * 9 / 16))  # ball.py runs one 16:9 crop per tile: portrait 540x960 is 4 crops a frame
+    print(f"警告：沒有 GPU，球追蹤用 CPU 跑（橫式約 {CPU_S_PER_FRAME:.1f} 秒/格，直式約 4 倍）：這段 {secs:.0f} 秒影片預估 {secs * 60 * CPU_S_PER_FRAME * tiles / 60:.0f} 分鐘"
           "（推算，不是在這台電腦實測；實際 ms/frame 看 ball.log）", file=sys.stderr, flush=True)
 
 
 def main(argv):
-    if not argv or not argv[0] or ".." in argv[0] or "/" in argv[0] or "\\" in argv[0]: usage()
+    if not argv or argv[0] in ("", ".") or ".." in argv[0] or "/" in argv[0] or "\\" in argv[0]: usage()
     S = argv[0]
     try:
         N = int(argv[1]) if len(argv) > 1 else 2
@@ -104,18 +108,19 @@ def main(argv):
     longest = max(len(str(W / n / f"pose_world_t{max(N - 1, 1)}.npy.part")) for n in names)
     if os.name == "nt" and longest > MAX_PATH:
         sys.exit(f"output paths would be {longest} characters (Windows limit ~{MAX_PATH}): shorten the session or video names, or clone to a shorter folder such as C:\\dev\\tennis-analyzer")
+    info = [probe(V) for V in vids]  # every video readable before any work starts
     enc = h264_args("2500k", 23)
-    for V, n in zip(vids, names):
+    for V, n, (w, h, fps) in zip(vids, names, info):
         D = W / n; D.mkdir(parents=True, exist_ok=True)
-        w, h, fps = probe(V)
         print(f"== {n}", flush=True)
         # the proxy below is always 60 fps, so a 30 fps source becomes duplicated frames
         if fps: write_text(D / "src_fps.txt", f"{fps}\n")
         else: delete(D / "src_fps.txt")  # unreadable: no stale value from an earlier video
         if fps and fps < 50: print(f"警告：{n} 來源 {fps} fps，proxy 會補成 60 fps（重複影格），速度類數字（手速、準備時間）沒驗證過", file=sys.stderr)
         # shortcut: assumes 16:9 sources (phone video); other ratios get stretched, as before
+        pw, ph = (960, 540) if w > h else (540, 960)
         if stale(D / "proxy.mp4", V):
-            ffmpeg(V, D / "proxy.mp4", "-an", "-vf", f"scale={'960:540' if w > h else '540:960'},fps=60", *enc, "-g", "30", "-f", "mp4")
+            ffmpeg(V, D / "proxy.mp4", "-an", "-vf", f"scale={pw}:{ph},fps=60", *enc, "-g", "30", "-f", "mp4")
         if stale(D / "audio_hp.f32", V): ffmpeg(V, D / "audio_hp.f32", "-vn", "-ac", "1", "-ar", "16000", "-af", "highpass=f=1500", "-f", "f32le")
         if stale(D / "audio.f32", V): ffmpeg(V, D / "audio.f32", "-vn", "-ac", "1", "-ar", "16000", "-f", "f32le")
         # a different people count means a different pose run; no people.txt (older work dir) = trust what is there
@@ -128,7 +133,7 @@ def main(argv):
         write_text(pt, f"{N}\n")
         if stale(D / "sounds.npy", D / "audio_hp.f32", D / "audio.f32"): py("hits.py", D / "audio_hp.f32", D / "audio.f32", D / "sounds.npy")
         if stale(D / "ball.npy", D / "proxy.mp4"):
-            ball_note(D / "proxy.mp4")
+            ball_note(D / "proxy.mp4", pw, ph)
             py("ball.py", D / "proxy.mp4", D / "ball.npy", out=D / "ball.log")
         if stale(D / "events.npy", D / "sounds.npy", D / "ball.npy", pose):
             py("events.py", D / "sounds.npy", D / "ball.npy", pose, D / "events.npy", out=subprocess.DEVNULL)
@@ -143,4 +148,7 @@ if __name__ == "__main__":
         # not the venv: re-run under it. subprocess, not os.exec*: on Windows exec returns to the caller before the child finishes
         if not venv.is_file(): sys.exit("run python setup.py first")
         sys.exit(subprocess.run([str(venv), "-X", "utf8", __file__, *sys.argv[1:]]).returncode)
-    main(sys.argv[1:])
+    try:
+        main(sys.argv[1:])
+    except PermissionError as e:  # Windows: another program (player, Defender, indexer) has the file open
+        sys.exit(f"cannot write {e.filename}: another program may have it open (close it and re-run)")

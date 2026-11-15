@@ -38,8 +38,8 @@ cd tennis-analyzer
 py -3.12 setup.py
 ```
 
-- 有 NVIDIA 顯示卡：`py -3.12 setup.py --cuda`（偵測到 `nvidia-smi` 也會自動裝 CUDA 版 torch）。AMD／Intel 顯示卡不支援，走 CPU。
-- 沒有 GPU 時追球很慢：CPU 約每秒影片 60–70 秒（只在 CI 機器量過），前處理開始前會印預估時間。
+- 有 NVIDIA 顯示卡：`py -3.12 setup.py --cuda`（偵測到 `nvidia-smi` 也會自動裝 CUDA 版 torch）。AMD／Intel 顯示卡不支援，走 CPU。CUDA 版 torch 需要夠新的 NVIDIA 驅動；setup 結尾若警告 `cuda False`，先更新驅動（https://www.nvidia.com/drivers），不然會用 CPU。
+- 沒有 GPU 時追球很慢：CPU 約每秒影片 60–70 秒（橫式；直式約 4 倍；只在 CI 機器量過），前處理開始前會印預估時間。
 - clone 到短路徑（如 `C:\dev\tennis-analyzer`）；路徑太長時 prep 會先報錯。必要時開啟 Windows 的 LongPathsEnabled。
 - 匯入 mediapipe 失敗時：`winget install Microsoft.VCRedist.2015+.x64`。
 - 前處理：`python tools/run.py prep.py wall-1`；看結果：`python tools/run.py open web/index.html`。

@@ -51,6 +51,9 @@ def download(name, url, want):
         part = out.with_name(name + ".part")  # an interrupted download never looks finished
         print("downloading", name, flush=True)
         sh("curl", "-fL", "-o", part, url)
+        if sha256(part) != want:
+            part.unlink()
+            sys.exit(f"{name}: downloaded file has the wrong checksum (deleted it); re-run, or check the URL {url}")
         os.replace(part, out)
     if sha256(out) != want: sys.exit(f"{name} checksum mismatch: delete models/{name} and re-run")  # also catches an old broken file
 
@@ -78,6 +81,8 @@ def main(args):
                         "print('ok: mediapipe', mediapipe.__version__, 'torch', torch.__version__, 'cuda', torch.cuda.is_available(), 'device', d)"])
     if r.returncode:
         sys.exit("import failed" + ("; mediapipe on Windows may need: winget install Microsoft.VCRedist.2015+.x64" if os.name == "nt" else ""))
+    if os.name == "nt" and subprocess.run([str(py), "-c", "import torch, sys; sys.exit(1 if torch.version.cuda and not torch.cuda.is_available() else 0)"]).returncode:
+        print("警告：裝了 CUDA 版 torch，但 torch.cuda.is_available() 是 False。請更新 NVIDIA 驅動（https://www.nvidia.com/drivers），否則球追蹤會用 CPU（很慢）")
     print("venv python:", py)
     print("run scripts with: python tools/run.py <script> ...   e.g. python tools/run.py prep.py <session>")
 

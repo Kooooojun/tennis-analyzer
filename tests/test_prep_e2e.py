@@ -20,7 +20,7 @@ sp = subprocess.run([str(pyv), "-c", "import sysconfig; print(sysconfig.get_path
 Path(sp, "parent_env.pth").write_text("\n".join(site.getsitepackages() + [site.getusersitepackages()]) + "\n", encoding="utf-8")
 subprocess.run([sys.executable, str(REPO / "tests" / "make_synth.py"), str(tmp / "syn"), "1", "960x540"], check=True)
 V = R / "videos" / "synth"; V.mkdir(parents=True)
-shutil.copy(tmp / "syn" / "land.mp4", V / "b.mp4"); shutil.copy(tmp / "syn" / "port.mp4", V / "A.MOV")
+shutil.copy(tmp / "syn" / "land.mp4", V / "b.mp4"); shutil.copy(tmp / "syn" / "port.mp4", V / "A x.MOV")
 old = 1_600_000_000
 for v in V.iterdir(): os.utime(v, (old, old))  # inputs clearly older than outputs: no reliance on mtime resolution or sleep
 
@@ -34,14 +34,14 @@ def prep(*a):
 W = R / "work" / "synth"
 r = prep("synth", "2"); assert r.returncode == 0
 assert r.stdout.splitlines()[-1] == "ready: 2 videos -> work/synth", r.stdout
-assert (W / "videos.json").read_text(encoding="utf-8") == '["A", "b"]\n'  # case-insensitive name order
+assert (W / "videos.json").read_text(encoding="utf-8") == '["A x", "b"]\n'  # case-insensitive name order; a space stays inside one name
 want = {"proxy.mp4", "audio.f32", "audio_hp.f32", "pose.npy", "pose_world.npy", "people.txt", "sounds.npy", "ball.npy", "events.npy", "src_fps.txt", "pose.log", "ball.log"}
-for d in ("A", "b"):
+for d in ("A x", "b"):
     got = {p.name for p in (W / d).iterdir()}
     assert got == want, (d, got ^ want)
     assert (W / d / "people.txt").read_bytes() == b"2\n"
 import cv2
-c = cv2.VideoCapture(str(W / "A" / "proxy.mp4")); assert (c.get(3), c.get(4)) == (540, 960), "portrait proxy"
+c = cv2.VideoCapture(str(W / "A x" / "proxy.mp4")); assert (c.get(3), c.get(4)) == (540, 960), "portrait proxy"
 c = cv2.VideoCapture(str(W / "b" / "proxy.mp4")); assert (c.get(3), c.get(4)) == (960, 540)
 del c
 
@@ -73,8 +73,13 @@ assert prep("synth", "2").returncode == 7
 assert subprocess.run([sys.executable, str(R / "tools" / "run.py"), "seven.py"]).returncode == 7
 
 # argument checks
-for bad in (["../x"], ["synth", "0"], ["synth", "two"], ["nope"], []):
+for bad in (["."], ["../x"], ["synth", "0"], ["synth", "two"], ["nope"], []):
     assert prep(*bad).returncode == 1, bad
+E = R / "videos" / "empty"; E.mkdir()
+r = prep("empty"); assert r.returncode == 1 and "no videos" in r.stderr, r.stderr
+B = R / "videos" / "bad"; B.mkdir(); shutil.copy(V / "b.mp4", B / "a.mp4"); (B / "z.mp4").write_text("not a video", encoding="utf-8")
+r = prep("bad"); assert r.returncode == 1 and "ffprobe could not read" in r.stderr, r.stderr
+assert not (R / "work" / "bad").exists(), "a bad video must stop prep before any work"
 (V / "b.m4v").write_bytes(b""); r = prep("synth"); assert r.returncode == 1 and "same name" in r.stderr, r.stderr
 shutil.rmtree(tmp, ignore_errors=True)
 print("ok test_prep_e2e")
