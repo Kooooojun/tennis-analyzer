@@ -1,4 +1,4 @@
-"""THETIS 評估：對 work/thetis/<mode>/<clip>/pose*.npy 跑 kind.classify / guess_hand / arm_checks，結果存 work/thetis/res_<mode>.json。
+"""THETIS 評估：對 work/thetis/<mode>/<clip>/pose*.npy 跑 kind.classify / hand_gate / arm_checks，結果存 work/thetis/res_<mode>.json。
 用法：[HAND=R|L] [EYE=1] [APEX=1] .venv/bin/python tools/eval_thetis.py <mode> [first|all]
 環境變數：HAND＝全部受試者強制用該手；EYE＝用 work/thetis/eye_hands.json 的眼睛確認手（其餘 HAND 或 R）；APEX＝發球／高壓改用持拍腕最高點當擊球點。
 結果檔名 res_<mode><HAND><E><A>_<which>.json（最佳設定 = interp60 + HAND=R EYE=1 APEX=1 -> res_interp60REA_first.json）。
@@ -9,7 +9,7 @@ THETIS 只在本機測試，結果與影格都不進 git（資料集：Gourgari 
 import glob, json, os, re, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
-from metrics import guess_hand, arm_checks, _scale
+from metrics import hand_gate, arm_checks, _scale
 from kind import classify
 
 R = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -77,7 +77,7 @@ def main():
     hands = {}
     for p in sorted({int(m[0]) for m in meta.values()}):
         ns = [n for n in names if int(meta[n][0]) == p]
-        h, ratio = guess_hand([D[n][0] for n in ns], SIZE)
+        h, ratio, _ = hand_gate([D[n][0] for n in ns], SIZE)  # None = unsure (falls back to R below)
         hands[p] = (h, ratio)
     out = []
     for n in names:
