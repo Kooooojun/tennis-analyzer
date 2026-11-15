@@ -155,6 +155,8 @@ def main():
         probe = mk(N, "IMAGE"); step = max(1, n60 // 60)
         crop = use_crop([len(probe.detect(img_of(f)).pose_landmarks) for f in frames(["-i", src, "-vf", f"select=not(mod(n\\,{step}))", "-vsync", "0"], W, H)])
         probe.close()
+    # below 50 fps every decoded frame is taken as n / fps: the ffmpeg fps filter puts a variable-rate phone video on that
+    # constant grid by its real timestamps (a no-op for constant-rate sources), as the proxy's fps=60 does
     print(f"mode: {'crop' if crop else 'full frame'}, {fps:.3f} fps", flush=True)
     T = Tracker(N); rows = []; wrows = []; crows = []; n = 0
     if not crop:
@@ -163,7 +165,7 @@ def main():
         # wrist speed at contact dropped (hit recall 88% -> 79%). A second, single-person landmarker keeps frame-to-frame tracking;
         # its skeleton replaces the slot standing in the same place. Costs a second model pass (about 2x time).
         one = mk(1) if N > 1 else None
-        it = frames(["-i", src], W, H) if fps >= 50 else frames(["-i", source, "-vf", f"scale={W}:{H}"], W, H)
+        it = frames(["-i", src], W, H) if fps >= 50 else frames(["-i", source, "-vf", f"fps={fps!r},scale={W}:{H}"], W, H)
         for img in it:
             mi = img_of(img); ts = int(n * 1000 / fps); r = lm.detect_for_video(mi, ts)
             fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy(); fc = np.full((N, 3), np.nan)
@@ -186,7 +188,7 @@ def main():
             r = det.detect(img_of(cv2.resize(img[b[1]:b[1] + b[2], b[0]:b[0] + b[2]], (CROP_SIDE, CROP_SIDE))))
             return [(np.c_[crop_to_full([[q.x, q.y] for q in a], b, SW, SH), [q.visibility for q in a]], [[q.x, q.y, q.z] for q in w])
                     for a, w in zip(r.pose_landmarks, r.pose_world_landmarks)]
-        for img in frames(["-i", source] + (["-vf", "fps=60"] if fps >= 50 else []), SW, SH):
+        for img in frames(["-i", source] + ["-vf", f"fps={60 if fps >= 50 else repr(fps)}"], SW, SH):
             got = [x for b in box if b for x in look(img, b, one)]
             if (None in box and n % TILE_EVERY == 0) or not got:
                 found = [x for t in tiles for x in look(img, (*t, ts_), many)]  # tallest first: crowd and far background lose; tile overlaps and crops already found are dropped
