@@ -429,7 +429,7 @@ const armCheck = s => {  // [headline, detail] or null when no check applies to 
   if(s.bh_elbow_conf!=null) return [T(s.bh_elbow_ok,"手肘沒彎","手肘偏彎"), "單手反拍：手肘"+T(s.bh_elbow_ok,"","")+" · 擊球點在身前"+T(s.bh_front_ok,"","")];
   return null;
 };
-const kneeWarn = s => !s.knee_warn ? "" : s.knee_warn_why==="view" ? "這拍鏡頭在正前或正後方，膝角看不準" : `這拍角度不準（3D ${Math.round(s.knee3d)}° 與 2D ${Math.round(s.knee2d)}° 差太多）`;
+const kneeWarn = s => !s.knee_warn ? "" : s.knee_warn_why==="view" ? "這拍鏡頭在正前或正後方，膝角看不準" : (d=>`這拍角度不準（${[s.knee3d!=null&&`3D ${Math.round(s.knee3d)}°`,d!=null&&`2D ${Math.round(d)}°`].filter(Boolean).join(" 與 ")||"3D 與 2D"} 差太多）`)(s.knee3d!=null?s.knee2d:s.knee);  // the DAYS loader moves the 2D angle to knee2d only when a 3D one replaces it
 const SER = new Map();
 function series(s){
   if(SER.has(s)) return SER.get(s);
