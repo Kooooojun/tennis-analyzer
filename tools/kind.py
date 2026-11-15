@@ -35,6 +35,7 @@ def classify(P, f, hand="R", Wd=None, size=None):
     out = dict(kind="?", conf=0.0, side=None)
     if f < 30 or f + 6 > len(P): return out
     rw, rs, os_, lh, rh = (16, 12, 11, 23, 24) if hand == "R" else (15, 11, 12, 24, 23)
+    a0 = max(f - 100, 0); P = P[a0:f + 6]; Wd = None if Wd is None else Wd[a0:f + 6]; f -= a0  # only the windows read below, not the video
     if size is not None: P = P.astype(float); P[:, :, :2] *= np.array(size, float) / 540  # same as metrics._scale (no import: cycle)
     A = P[f - 3:f + 6].astype(float); vb = P[f - 24:f - 13, rw, 2]; vb = vb[vb >= VIS_MIN]
     vc = float(np.nanmean(A[3:8, rw, 2])) if np.isfinite(A[3:8, rw, 2]).any() else 0.0
