@@ -52,3 +52,17 @@ def load(p, default=None):
 def save(p, obj, compact=False):
     Path(p).write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")) if compact
                        else json.dumps(obj, ensure_ascii=False, indent=1))
+
+
+def load_profiles():
+    """work/profiles.json (private, not in git): {"<player>": {"hand": "R"|"L", "backhand": "one"|"two"}}. Missing file = {}."""
+    return load(ROOT / "work" / "profiles.json", {})
+
+
+def profile_for(profiles, name):
+    """Validated profile of one player, or None when not set (then the hand is guessed and flagged). Bad values raise, never default to R."""
+    p = profiles.get(name)
+    if p is None: return None
+    if not isinstance(p, dict) or p.get("hand") not in ("R", "L") or p.get("backhand", "two") not in ("one", "two"):
+        raise ValueError(f"profiles.json['{name}'] must look like {{'hand': 'R'|'L', 'backhand': 'one'|'two'}}, got {p!r}")
+    return {"hand": p["hand"], "backhand": p.get("backhand", "two")}
