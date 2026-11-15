@@ -5,7 +5,7 @@ import numpy as np
 
 WEAK, STRONG, STEP, BASE_N = 6, 8, 1.0, 3
 MIN_N = 10  # fewer strokes than this: same-day retest moved the total 1.6, too noisy to compare (docs/scoring.md §6)
-NAMES = {"total": "總分", "consistency": "一致性", "knee": "膝蓋", "contact_h": "擊球高度", "contact_fwd": "擊球前後", "prep": "準備時間", "open_min": "轉肩"}
+NAMES = {"total": "總分", "consistency": "一致性", "knee": "膝蓋", "contact_h": "擊球高度", "contact_fwd": "擊球前後", "prep": "準備時間", "open_min": "轉肩", "finish": "收拍", "reach": "擊球伸展", "tilt": "肩膀傾斜", "lean": "軀幹前傾", "stance": "站姿寬度"}
 
 
 def compare(history):

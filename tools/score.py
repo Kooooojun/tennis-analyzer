@@ -11,16 +11,23 @@ METRICS = {
     "contact_fwd": dict(cons=(0.10, 0.40)),  # no target: "in front" has no measured optimum and the x projection depends on the camera
     "prep": dict(lin=(0.7, 0.2), cons=(0.05, 0.20)),
     "open_min": dict(lin=(15, 60), cons=(5, 20)),
-    # power: not in form/consistency, only caps the total (docs/scoring.md §10); no cons anchors
+    # form_checks fields (docs/scoring.md §10): no measured optimum in the literature, so consistency only. Gate = the field is None when landmarks are under vis 0.5
+    "finish": dict(cons=(0.15, 0.5), kinds=("FH", "BH")),
+    "reach": dict(cons=(0.1, 0.4), kinds=("SV",)),
+    "tilt": dict(cons=(3, 12), kinds=("SV",)),
+    "lean": dict(cons=(3, 10), kinds=("FH", "BH", "SV")),
+    "stance": dict(cons=(0.15, 0.6), kinds=("FH", "BH", "SV")),
+    # power (FH/BH): not in form/consistency, only caps the total (docs/scoring.md §11); no cons anchors
     "wrist_speed": dict(lin=(12, 4), power=True),
     "turn": dict(lin=(90, 20), power=True),
     "leg_load": dict(lin=(0.15, 0.02), power=True),
 }
 POWER_MARGIN = 1.2  # total <= power + 1.2: Tennis-AI-Coach's +12 on 0-100, same share of a 10-point scale
-KINDS = ("FH", "BH")
+BASE_KINDS = ("FH", "BH")  # metrics without `kinds` apply here (knee etc. are not defined for the serve yet)
+KINDS = ("FH", "BH", "SV")  # SV group exists only when the session has SV strokes
 MIN_N, MIN_N_CONS = 3, 5
 MIN_COVER = 0.5  # usable strokes / strokes in the group; below it the metric says 資料不足 (docs/scoring.md §1)
-SCORE_VERSION = 4  # 4: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate. 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
+SCORE_VERSION = 5  # 5: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate (body-kinematics). 4: + finish, reach, tilt, lean, stance and the SV group (serve-finish). 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
 
 
 def _num(v):
@@ -71,12 +78,13 @@ def _explain(cfg, n, total, med, sp, ok):
                 inputs=dict(median=_r(med, 2), spread=_r(sp, 2), n=n, n_total=total, anchors=list(cfg.get("lin") or cfg.get("band") or []) or None, cons_anchors=list(cfg["cons"]) if "cons" in cfg else None))
 
 
-def score_group(strokes, show_open):
+def score_group(strokes, show_open, kind="FH"):
     # one knee source per group: 2D shifts 9-19 deg with view angle, so a 2D/3D mix is not comparable
     ok = [s for s in strokes if not s.get("knee_warn")]
     knee_src = "knee3d" if sum(_num(s.get("knee3d")) for s in ok) > len(ok) / 2 else "knee"
     out = {}
     for m, cfg in METRICS.items():
+        if kind not in cfg.get("kinds", BASE_KINDS): continue
         if m == "open_min" and not show_open: continue
         vals = [v for v in (_value(s, m, knee_src) for s in strokes) if _num(v)]
         enough = len(vals) >= MIN_N and len(vals) / len(strokes) >= MIN_COVER
@@ -96,7 +104,7 @@ def score_group(strokes, show_open):
 def score_session(strokes, show_open):
     who = lambda s: s.get("player") or "me"  # "player": null counts as "me" too
     keys = sorted({(who(s), s["kind"]) for s in strokes if s["kind"] in KINDS})
-    return [dict(player=p, kind=k, **score_group([s for s in strokes if who(s) == p and s["kind"] == k], show_open))
+    return [dict(player=p, kind=k, **score_group([s for s in strokes if who(s) == p and s["kind"] == k], show_open, k))
             for p, k in keys]
 
 
