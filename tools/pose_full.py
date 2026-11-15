@@ -73,35 +73,118 @@ def describe(lm, img):
     return dict(pos=(hp[0] / H, hp[1] / H), scale=L / H, color=lab)
 
 
+METHOD = "2"  # bump when the pose algorithm changes: prep.py re-runs pose when work/<video>/pose_method.txt differs
+CROP_SIDE, CROP_MIN, TILE, TILE_EVERY = 640, 360, 600, 5  # crop scaled to 640 px; box >= 360 px; 600 px search tiles, searched every 5th frame
+
+
+def to60(A, fps, n60):
+    """Rows at source frames i/fps -> rows at 60 fps frames j/60, n60 of them. Linear in time, both neighbours must be
+    finite (a NaN side gives NaN, never half a skeleton); nothing past the last source frame (NaN). fps >= 50 = as is."""
+    if fps >= 50:  # already on the 60 fps grid; a decoder that came up a frame short is padded, never shifted
+        return A[:n60] if len(A) >= n60 else np.concatenate([A, np.full((n60 - len(A), *A.shape[1:]), np.nan, A.dtype)])
+    x = np.arange(n60) * fps / 60; i = np.floor(x).astype(int); w = (x - i).reshape(-1, *[1] * (A.ndim - 1))
+    out = np.full((n60, *A.shape[1:]), np.nan, A.dtype); ok = i < len(A)
+    j = np.minimum(i + 1, len(A) - 1)
+    lo, hi = A[np.minimum(i, len(A) - 1)], A[j]
+    exact = (w == 0).reshape(-1)
+    v = np.where(w == 0, lo, lo * (1 - w) + hi * w)
+    v[~exact & (i + 1 >= len(A))] = np.nan  # needs a right neighbour that does not exist
+    out[ok] = v[ok]
+    return out
+
+
+def crop_box(xy, W, H, min_side=CROP_MIN):
+    """Pixel landmarks (k, 2), NaN allowed -> square (x0, y0, side) of 2x the skeleton height, >= min_side, inside the frame."""
+    xy = xy[np.isfinite(xy).all(1)]
+    if not len(xy): return None
+    c = (xy.min(0) + xy.max(0)) / 2; ext = np.ptp(xy, 0)
+    side = int(min(max(min_side, 2 * ext[1], 1.6 * ext[0]), H, W))
+    return int(np.clip(round(c[0] - side / 2), 0, W - side)), int(np.clip(round(c[1] - side / 2), 0, H - side)), side
+
+
+def crop_to_full(q, box, W, H):
+    """Landmarks normalized to the square crop (k, 2) -> normalized to the full frame (x by W, y by H)."""
+    x0, y0, side = box
+    return (np.asarray(q, float) * side + (x0, y0)) / (W, H)
+
+
+def use_crop(found):
+    """found: people seen per sampled full frame. Crop when the full frame misses everyone in most of them (far camera)."""
+    return np.mean(np.asarray(found) > 0) < 0.6
+
+
+def frames(cmd, W, H):
+    import subprocess
+    p = subprocess.Popen(["ffmpeg", "-v", "error", *cmd, "-an", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
+    while len(b := p.stdout.read(W * H * 3)) == W * H * 3:  # one frame at a time: a 1080p clip never sits in memory
+        yield np.frombuffer(b, np.uint8).reshape(H, W, 3)
+    p.stdout.close(); p.wait()
+
+
 def main():
-    import subprocess, cv2, mediapipe as mp
+    import types, cv2, mediapipe as mp
     from mediapipe.tasks.python import vision, BaseOptions
     src, model, out = sys.argv[1:4]; N = int(sys.argv[4]) if len(sys.argv) > 4 else 1
-    c = cv2.VideoCapture(src); W, H = int(c.get(cv2.CAP_PROP_FRAME_WIDTH)), int(c.get(cv2.CAP_PROP_FRAME_HEIGHT)); c.release()  # 540x960 or 960x540
+    source = sys.argv[5] if len(sys.argv) > 5 else None  # the original video: low-fps sources run at their own rate, far cameras get crops
+    c = cv2.VideoCapture(src); W, H = int(c.get(cv2.CAP_PROP_FRAME_WIDTH)), int(c.get(cv2.CAP_PROP_FRAME_HEIGHT))  # 540x960 or 960x540
+    n60 = int(c.get(cv2.CAP_PROP_FRAME_COUNT)); c.release()
     if not (W and H): sys.exit(f"cannot read {src}")
-    p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", src, "-an", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
-    lm = vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(base_options=BaseOptions(model_asset_path=model), running_mode=vision.RunningMode.VIDEO,
-                                                   num_poses=N, min_pose_detection_confidence=0.3, min_tracking_confidence=0.3))
-    # num_poses > 1 re-detects every frame while fewer people than N are in view, and its landmarks are coarser: on wall-1 the
-    # wrist speed at contact dropped (hit recall 88% -> 79%). A second, single-person landmarker keeps frame-to-frame tracking;
-    # its skeleton replaces the slot standing in the same place. Costs a second model pass (about 2x time).
-    one = vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(base_options=BaseOptions(model_asset_path=model), running_mode=vision.RunningMode.VIDEO,
-                                                    num_poses=1, min_pose_detection_confidence=0.3, min_tracking_confidence=0.3)) if N > 1 else None
+    mk = lambda n, mode="VIDEO": vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(base_options=BaseOptions(model_asset_path=model),
+        running_mode=getattr(vision.RunningMode, mode), num_poses=n, min_pose_detection_confidence=0.3, min_tracking_confidence=0.3))
+    img_of = lambda a: mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(a))
+    fps, crop, SW, SH = 60, False, W, H
+    ft = Path(out).parent / "src_fps.txt"  # written by prep.py (whole fps); the exact rate comes from the source itself
+    if source and ft.is_file():
+        c = cv2.VideoCapture(source); r = c.get(cv2.CAP_PROP_FPS); SW, SH = int(c.get(cv2.CAP_PROP_FRAME_WIDTH)), int(c.get(cv2.CAP_PROP_FRAME_HEIGHT)); c.release()
+        if (SW > SH) != (W > H): SW, SH = SH, SW  # rotation metadata: ffmpeg outputs it upright, like the proxy
+        if ft.read_text(encoding="utf-8").strip().isdigit() and int(ft.read_text(encoding="utf-8").strip()) < 50 and r > 0: fps = r
+        probe = mk(N, "IMAGE"); step = max(1, n60 // 60)
+        crop = use_crop([len(probe.detect(img_of(f)).pose_landmarks) for f in frames(["-i", src, "-vf", f"select=not(mod(n\\,{step}))", "-vsync", "0"], W, H)])
+        probe.close()
+    print(f"mode: {'crop' if crop else 'full frame'}, {fps:.3f} fps", flush=True)
     T = Tracker(N); rows = []; wrows = []; crows = []; n = 0
-    while True:
-        b = p.stdout.read(W * H * 3)
-        if len(b) < W * H * 3: break
-        img = np.frombuffer(b, np.uint8).reshape(H, W, 3)
-        mi = mp.Image(image_format=mp.ImageFormat.SRGB, data=img); r = lm.detect_for_video(mi, int(n * 1000 / 60))
-        fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy(); fc = np.full((N, 3), np.nan)
-        ds = [describe(a, img) for a in r.pose_landmarks]; sl = [None] * N
-        for k, d, a, w in zip(T.step(ds), ds, r.pose_landmarks, r.pose_world_landmarks):
-            if k >= 0: fr[k] = [[q.x, q.y, q.visibility] for q in a]; fw[k] = [[q.x, q.y, q.z] for q in w]; fc[k] = d["color"]; sl[k] = d
-        r1 = one.detect_for_video(mi, int(n * 1000 / 60)) if one else None
-        if r1 and r1.pose_landmarks and (k := same_person(describe(r1.pose_landmarks[0], img), sl)) is not None:
-            fr[k] = [[q.x, q.y, q.visibility] for q in r1.pose_landmarks[0]]; fw[k] = [[q.x, q.y, q.z] for q in r1.pose_world_landmarks[0]]
-        rows.append(fr); wrows.append(fw); crows.append(fc); n += 1
-        if n % 6000 == 0: print(n, flush=True)
+    if not crop:
+        lm = mk(N)
+        # num_poses > 1 re-detects every frame while fewer people than N are in view, and its landmarks are coarser: on wall-1 the
+        # wrist speed at contact dropped (hit recall 88% -> 79%). A second, single-person landmarker keeps frame-to-frame tracking;
+        # its skeleton replaces the slot standing in the same place. Costs a second model pass (about 2x time).
+        one = mk(1) if N > 1 else None
+        it = frames(["-i", src], W, H) if fps >= 50 else frames(["-i", source, "-vf", f"scale={W}:{H}"], W, H)
+        for img in it:
+            mi = img_of(img); ts = int(n * 1000 / fps); r = lm.detect_for_video(mi, ts)
+            fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy(); fc = np.full((N, 3), np.nan)
+            ds = [describe(a, img) for a in r.pose_landmarks]; sl = [None] * N
+            for k, d, a, w in zip(T.step(ds), ds, r.pose_landmarks, r.pose_world_landmarks):
+                if k >= 0: fr[k] = [[q.x, q.y, q.visibility] for q in a]; fw[k] = [[q.x, q.y, q.z] for q in w]; fc[k] = d["color"]; sl[k] = d
+            r1 = one.detect_for_video(mi, ts) if one else None
+            if r1 and r1.pose_landmarks and (k := same_person(describe(r1.pose_landmarks[0], img), sl)) is not None:
+                fr[k] = [[q.x, q.y, q.visibility] for q in r1.pose_landmarks[0]]; fw[k] = [[q.x, q.y, q.z] for q in r1.pose_world_landmarks[0]]
+            rows.append(fr); wrows.append(fw); crows.append(fc); n += 1
+            if n % 6000 == 0: print(n, flush=True)
+    else:
+        # Far camera (people ~100 px on the proxy): full-resolution source. Each slot is re-found in a square crop around its last
+        # skeleton, scaled to 640 px, by a single-person landmarker (this replaces the second model pass above); empty slots are
+        # searched in overlapping 600 px tiles every TILE_EVERY frames. All skeletons then go through the same Tracker.
+        one, many = mk(1, "IMAGE"), mk(N, "IMAGE"); box = [None] * N
+        tiles = [(x, y) for y in sorted({*range(0, SH - TILE, TILE // 2), SH - TILE}) for x in sorted({*range(0, SW - TILE, TILE // 2), SW - TILE})]
+        def look(img, b, det):  # skeletons in a crop, as full-frame normalized landmarks
+            r = det.detect(img_of(cv2.resize(img[b[1]:b[1] + b[2], b[0]:b[0] + b[2]], (CROP_SIDE, CROP_SIDE))))
+            return [(np.c_[crop_to_full([[q.x, q.y] for q in a], b, SW, SH), [q.visibility for q in a]], [[q.x, q.y, q.z] for q in w])
+                    for a, w in zip(r.pose_landmarks, r.pose_world_landmarks)]
+        for img in frames(["-i", source] + (["-vf", "fps=60"] if fps >= 50 else []), SW, SH):
+            got = [x for b in box if b for x in look(img, b, one)]
+            if (None in box and n % TILE_EVERY == 0) or not got:
+                found = [x for t in tiles for x in look(img, (*t, TILE), many)]  # tallest first: crowd and far background lose
+                got += sorted(found, key=lambda x: -np.ptp(x[0][:, 1]))[:N]
+            lms = [[types.SimpleNamespace(x=v[0], y=v[1], visibility=v[2]) for v in a] for a, _ in got]
+            ds = [describe(a, img) for a in lms]
+            fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy(); fc = np.full((N, 3), np.nan); box = [None] * N
+            for k, d, (a, w) in zip(T.step(ds), ds, got):
+                if k >= 0: fr[k] = a; fw[k] = w; fc[k] = d["color"]; box[k] = crop_box(a[:, :2] * (SW, SH), SW, SH)
+            rows.append(fr); wrows.append(fw); crows.append(fc); n += 1
+            if n % 6000 == 0: print(n, flush=True)
+    if fps < 50 or crop:  # back on the proxy's 60 fps frame numbers, which every later step indexes by
+        rows, wrows, crows = (list(to60(np.array(x), fps, n60)) for x in (rows, wrows, crows)); n = n60
     P, Wl = np.array(rows).reshape(n, N, 33, 3), np.array(wrows).reshape(n, N, 33, 3)
     S = ~np.isnan(P[:, :, 0, 0]); C = np.array(crows).reshape(n, N, 3)
     with warnings.catch_warnings():
