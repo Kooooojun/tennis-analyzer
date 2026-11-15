@@ -61,9 +61,9 @@ for v in VIDS:
 print("full 鏡像 OK", n, "拍；左手資料當右手時 auto_kind 錯", bad)
 
 # 3. 猜慣用手：只看揮拍段；鏡像資料猜出相反邊；太短不猜
-import csv
+from eval_hits import read_labels
 P = np.load(WD / V0 / "pose_t1.npy").astype(float)  # 使用者本人，右手（逐拍看圖確認過，見 testset/results/player-profile.md）
-ts = [[float(r["t_sec"]) for r in csv.DictReader(open(ROOT / f"testset/labels/hits_{V0}.csv", encoding="utf-8", newline="")) if r["player"] == "white"]]
+ts = [[float(r["t_sec"]) for r in read_labels(ROOT / f"testset/labels/hits_{V0}.csv")[0] if r["player"] == "white"]]
 h, ratio = guess_hand([P], (960, 540), ts); hm, _ = guess_hand([mir(P, SW33)], (960, 540), ts)
 assert (h, hm) == ("R", "L") and ratio > 1.15, (h, hm, ratio)
 assert guess_hand([P[:30]], (960, 540))[0] is None
