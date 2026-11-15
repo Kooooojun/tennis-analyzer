@@ -69,7 +69,7 @@ def main(args):
         sh(sys.executable, "-m", "venv", R / ".venv")
     sh(py, "-m", "pip", "install", "-q", "--upgrade", "pip")
     sh(py, "-m", "pip", "install", "-q", "-r", R / "requirements.txt")
-    if os.name == "nt" and ("--cuda" in args or shutil.which("nvidia-smi")):
+    if os.name == "nt" and ("--cuda" in args or shutil.which("nvidia-smi")) and subprocess.run([str(py), "-c", "import torch, sys; sys.exit(0 if torch.version.cuda else 1)"]).returncode:
         print("NVIDIA GPU: installing CUDA torch from", TORCH_CUDA, flush=True)
         sh(py, "-m", "pip", "install", "-q", "--force-reinstall", "--no-deps", "torch==2.15.0", "--index-url", TORCH_CUDA)
     for d in ("models", "videos", "work", "web/sessions"): (R / d).mkdir(parents=True, exist_ok=True)

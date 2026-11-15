@@ -3,7 +3,7 @@
 # Wrist motion per hit (match.py) runs in candidates.py, once the racket hand of each person is known.
 # Re-running skips finished steps, so it is safe to resume after an interruption; a step re-runs when its output is missing or an input is newer.
 # Every ffmpeg output is written to <name>.part first and renamed, so a killed run never leaves a half file that looks finished.
-import json, subprocess, sys
+import json, os, subprocess, sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -93,15 +93,16 @@ def main(argv):
     src = R / "videos" / S
     if not src.is_dir(): usage()
     need_ffmpeg()
-    # sorted by name ignoring case (as the old prep.sh zsh glob did), ties broken by exact name so the order never depends on the OS
-    vids = sorted((v for v in src.iterdir() if v.is_file() and v.suffix.lower() in EXTS), key=lambda v: (v.name.casefold(), v.name))
+    # dotfiles (macOS ._A.mp4 sidecars) skipped like the old zsh glob; sorted by name ignoring case (as that glob did), ties broken by exact name so the order never depends on the OS
+    vids = sorted((v for v in src.iterdir() if v.is_file() and v.suffix.lower() in EXTS and not v.name.startswith(".")), key=lambda v: (v.name.casefold(), v.name))
     if not vids: sys.exit(f"no videos in videos/{S}")
     names = [v.stem for v in vids]
-    dup = sorted({n for n in names if names.count(n) > 1})
+    folded = [n.casefold() for n in names]  # work/<S>/A and work/<S>/a are one folder on macOS and Windows
+    dup = sorted({n for n, f in zip(names, folded) if folded.count(f) > 1})
     if dup: sys.exit(f"same name, different extension in videos/{S}: {', '.join(dup)} (rename one)")
     W = R / "work" / S
     longest = max(len(str(W / n / f"pose_world_t{max(N - 1, 1)}.npy.part")) for n in names)
-    if longest > MAX_PATH:
+    if os.name == "nt" and longest > MAX_PATH:
         sys.exit(f"output paths would be {longest} characters (Windows limit ~{MAX_PATH}): shorten the session or video names, or clone to a shorter folder such as C:\\dev\\tennis-analyzer")
     enc = h264_args("2500k", 23)
     for V, n in zip(vids, names):
