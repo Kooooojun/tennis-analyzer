@@ -74,9 +74,9 @@ def _zigzag(w, thr):
 
 def kinematics(xy, J, c, hand="R", start=None):
     """Leg load/drive, wrist speed, trunk share, shoulder turn and the 2D-knee foreshortening gate for the stroke at frame c.
-    xy: (frames, n, 2) in 540-px units, y down. hand: racket hand "R"/"L". start: backswing-end frame for the turn (default c-30)."""
+    xy: (frames, n, 2) in 540-px units, y down. hand: racket hand "R"/"L" (J is remapped by _hand; pass "R" for an already remapped J). start: backswing-end frame for the turn (default c-30)."""
     a, b = max(0, c - 90), min(len(xy), c + 61)  # the 150-frame web clip
-    s, w = (J['rs'], J['rw']) if hand == "R" else (J['ls'], J['lw'])
+    J = _hand(J, hand); s, w = J['rs'], J['rw']
     X = _smooth(xy[a:b]); c0 = c - a
     hip = (X[:, J['lh']] + X[:, J['rh']]) / 2
     L = np.nanmedian(np.linalg.norm((X[:, J['ls']] + X[:, J['rs']]) / 2 - hip, axis=1))
@@ -120,9 +120,17 @@ def kinematics(xy, J, c, hand="R", start=None):
     return out
 
 
+def _hand(J, hand):
+    """Joint map with the racket arm under rs/re/rw. Left-hander: swap rs<->ls and use le/lw; _core only uses ls/rs as a pair elsewhere."""
+    if hand not in ("R", "L"): raise ValueError(f"hand must be 'R' or 'L', got {hand!r}")
+    return J if hand == "R" else {**J, "rs": J["ls"], "ls": J["rs"], "re": J["le"], "rw": J["lw"]}
+
+
 def _core(xy, vis, c, J, world=None, hand="R"):
     """J maps names to landmark indices for this array layout. world: optional (frames, n, 3) metres, same layout, for knee3d.
-    knee = 2D knee (unchanged definition); knee3d = same window/percentile on 3D angles, None without world data."""
+    knee = 2D knee (unchanged definition); knee3d = same window/percentile on 3D angles, None without world data.
+    hand: racket hand, "R" or "L" (per-player setting, work/profiles.json); everything with the hitting arm follows it."""
+    J = _hand(J, hand)
     L = np.linalg.norm((xy[:, J['ls']] + xy[:, J['rs']]) / 2 - (xy[:, J['lh']] + xy[:, J['rh']]) / 2, axis=1)
     bh = np.linalg.norm(xy[:, J['nose']] - (xy[:, J['lh']] + xy[:, J['rh']]) / 2, axis=1)
     openp = np.clip(np.linalg.norm(xy[:, J['rs']] - xy[:, J['ls']], axis=1) / bh / SWMAX * 100, 0, 120)
@@ -141,7 +149,7 @@ def _core(xy, vis, c, J, world=None, hand="R"):
                 contact_fwd=None if fwd is None else round(fwd, 2), prep=prep,
                 elbow=round(_med([_angle(xy, i, J['rs'], J['re'], J['rw']) for i in range(c - 2, c + 3)]), 1),
                 vis=round(float(np.nanmean(vis[c - 2:c + 3, J['rw']])), 2),
-                **kinematics(xy, J, c, hand, None if prep is None else c - round(prep * FPS)))
+                **kinematics(xy, J, c, "R", None if prep is None else c - round(prep * FPS)))  # J is already remapped for the racket hand
 
 
 FULL = dict(nose=0, ls=11, rs=12, le=13, re=14, lw=15, rw=16, lh=23, rh=24, lk=25, rk=26, la=27, ra=28)
@@ -149,11 +157,13 @@ CLIP = dict(nose=0, ls=1, rs=2, le=3, re=4, lw=5, rw=6, lh=7, rh=8, lk=9, rk=10,
 
 
 def measure_full(P, t, size, Wd=None, hand="R"):
-    """P: pose.npy (frames,33,3). t: contact time in seconds. size: proxy (w, h). Adds an automatic FH/BH/OH guess."""
+    """P: pose.npy (frames,33,3). t: contact time in seconds. size: proxy (w, h). Adds an automatic FH/BH/OH guess.
+    hand "L": the FH/BH rule is applied mirrored (a lefty's forehand side is image-left when the right-hander's is image-right)."""
+    J = _hand(FULL, hand); sg = 1 if hand == "R" else -1
     xy = P[:, :, :2] * _scale(size); f = int(round(t * 60))
     hip_x = np.nanmean((xy[f - 8:f + 9, 23, 0] + xy[f - 8:f + 9, 24, 0]) / 2)
-    nose_y = np.nanmean(xy[f - 3:f + 4, 0, 1]); wy = np.nanmin(xy[f - 6:f + 7, 16, 1])
-    dx = np.nanmean(xy[f + 15:f + 22, 16, 0]) - np.nanmean(xy[f - 12:f - 6, 16, 0]); side = np.nanmean(xy[f - 2:f + 3, 16, 0]) - hip_x
+    nose_y = np.nanmean(xy[f - 3:f + 4, 0, 1]); wy = np.nanmin(xy[f - 6:f + 7, J['rw'], 1])
+    dx = sg * (np.nanmean(xy[f + 15:f + 22, J['rw'], 0]) - np.nanmean(xy[f - 12:f - 6, J['rw'], 0])); side = sg * (np.nanmean(xy[f - 2:f + 3, J['rw'], 0]) - hip_x)
     auto = "OH" if wy < nose_y - 0.02 else "FH" if side > 0.04 else "BH" if side < -0.02 else ("FH" if dx < 0 else "BH")
     return dict(f=f, auto_kind=auto, **_core(xy, P[:, :, 2], f, FULL, Wd, hand))
 
@@ -163,6 +173,38 @@ def measure_clip(frames, c, size=None, world=None, hand="R"):
     P = np.array([nan if fr is None else fr for fr in frames], float)
     Wd = np.array([nan if w is None else w for w in world], float) if world else None
     return _core(P[:, :, :2] * _scale(size), P[:, :, 2], c, CLIP, Wd, hand)
+
+
+GUESS_MIN = 30  # sharp wrist-speed samples (0.5 s at 60 fps) needed per wrist before guessing a hand
+GUESS_WIN = (24, 12)  # frames before / after a hit that count as "swinging"
+GUESS_VIS = 0.9  # a hidden wrist jumps 3x faster than a real swing; only sharp frames count (0.5 picked the wrong hand on the mirrored wall-1 video)
+
+
+def guess_hand(poses, size=None, times=None):
+    """Racket hand from the video: the wrist whose image speed (per torso length) has the higher 98th percentile (idea from
+    Logan-Huang/Tennis-AI-Coach). poses: pose arrays (frames,33,3) of ONE player; times: per array the hit times in seconds, so only
+    swings count (testset/results/player-profile.md: over a whole wall-1 video the percentile picked the wrong hand for a right-hander,
+    because a hand-held phone moved close to the legs and the skeleton jumped); None = whole video.
+    Returns (hand, ratio), ratio = faster / slower percentile (close to 1 = unsure), or (None, None) with too few visible frames.
+    Still a guess: a two-hander's helper hand or a mirrored phone video can fool it."""
+    sp = {15: [], 16: []}; sizes = size if isinstance(size, list) else [size] * len(poses)  # one proxy size per pose array
+    for i, P in enumerate(poses):
+        P = np.asarray(P, float); xy = P[:, :, :2] * _scale(sizes[i]); vis = P[:, :, 2]
+        L = np.linalg.norm((xy[:, 11] + xy[:, 12]) / 2 - (xy[:, 23] + xy[:, 24]) / 2, axis=1)[1:]
+        sel = np.ones(len(P) - 1, bool)
+        if times is not None:
+            sel[:] = False
+            for tt in times[i]: sel[max(0, int(round(tt * FPS)) - GUESS_WIN[0]):int(round(tt * FPS)) + GUESS_WIN[1]] = True
+        for w in sp:
+            fin = np.isfinite(xy[:, w, 0]); q = np.pad(np.where(fin[:, None], xy[:, w], 0), ((2, 2), (0, 0)), mode="edge")
+            m = np.median(np.lib.stride_tricks.sliding_window_view(q, 5, axis=0), axis=2)  # 5-frame median: pose jitter is not a swing
+            good = np.convolve(fin & (vis[:, w] >= GUESS_VIS), np.ones(5), "same") == 5  # whole window finite and sharp
+            v = np.linalg.norm(np.diff(m, axis=0), axis=1) / np.maximum(L, 1e-3)
+            sp[w].append(v[sel & good[1:] & good[:-1] & np.isfinite(v)])  # a NaN torso length would turn the percentile into NaN and silently pick R
+    q = {w: np.concatenate(a) for w, a in sp.items()}
+    if min(len(a) for a in q.values()) < GUESS_MIN: return None, None
+    l, r = (float(np.percentile(q[w], 98)) for w in (15, 16))
+    return ("L" if l > r else "R"), round(max(l, r) / max(min(l, r), 1e-9), 2)
 
 
 # --- arm shape checks (docs/scoring.md §7): pass/fail with a confidence gate, never a degree score ---
