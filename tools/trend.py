@@ -5,7 +5,10 @@ import numpy as np
 
 WEAK, STRONG, STEP, BASE_N = 6, 8, 1.0, 3
 MIN_N = 10  # fewer strokes than this: same-day retest moved the total 1.6, too noisy to compare (docs/scoring.md §6)
-NAMES = {"total": "總分", "consistency": "一致性", "knee": "膝蓋", "contact_h": "擊球高度", "contact_fwd": "擊球前後", "prep": "準備時間", "open_min": "轉肩"}
+NAMES = {"total": "總分", "consistency": "一致性", "knee": "膝蓋", "contact_h": "擊球高度", "contact_fwd": "擊球前後", "prep": "準備時間", "open_min": "轉肩", "finish": "收拍", "reach": "擊球伸展", "tilt": "肩膀傾斜", "lean": "軀幹前傾", "stance": "站姿寬度", "wrist_speed": "手速", "turn": "轉肩幅度", "leg_load": "下蹲"}
+
+
+def _scored(items): return {k for k, v in items.items() if v is not None}  # None = not scored, so it is not part of the set
 
 
 def compare(history):
@@ -17,7 +20,7 @@ def compare(history):
     out = []
     for item, v in last["items"].items():
         # total / consistency average over whichever metrics were scored, so only compare sessions that scored the same set
-        same = [h for h in prev if item not in ("total", "consistency") or h["items"].keys() == last["items"].keys()]
+        same = [h for h in prev if item not in ("total", "consistency") or _scored(h["items"]) == _scored(last["items"])]
         olds = [h["items"].get(item) for h in same][-BASE_N:]; olds = [x for x in olds if x is not None]
         if v is None or not olds: continue
         base = round(float(np.mean(olds)), 2); d = round(v - base, 2)

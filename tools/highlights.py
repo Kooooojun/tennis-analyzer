@@ -20,7 +20,7 @@ def stroke(ref):
     x=D[s][n-1]; return {**x,"path":str(web(s)/x["src"])}
 EDGES=[(1,2),(1,3),(3,5),(2,4),(4,6),(1,7),(2,8),(7,8),(7,9),(9,11),(8,10),(10,12)]
 BG=(18,20,24); INK=(240,240,240); MUTE=(160,165,175); GOOD=(74,222,128); WARN=(251,191,36); BAD=(248,113,113)
-kc=lambda a:GOOD if a<=130 else WARN if a<=150 else BAD
+kc=lambda a:MUTE if a is None else GOOD if a<=130 else WARN if a<=150 else BAD
 
 def frames(s):
     cap=cv2.VideoCapture(s['path']); out=[]
@@ -66,7 +66,7 @@ def header(title,sub,lines=()):
 def label(d,x,y,s,tag,col):
     d.text((x,y),tag,font=F(34),fill=INK,stroke_width=3,stroke_fill=(0,0,0))
     k=s['knee3d'] if s.get('knee3d') is not None else s['knee']
-    d.text((x,y+44),f"準備時膝蓋 {k:.0f}°",font=F(30),fill=col,stroke_width=3,stroke_fill=(0,0,0))
+    if k is not None: d.text((x,y+44),f"準備時膝蓋 {k:.0f}°",font=F(30),fill=col,stroke_width=3,stroke_fill=(0,0,0))
     if s.get('knee_warn'): d.text((x,y+84),"這拍角度不準",font=F(30),fill=BAD,stroke_width=3,stroke_fill=(0,0,0))
 
 class Out:

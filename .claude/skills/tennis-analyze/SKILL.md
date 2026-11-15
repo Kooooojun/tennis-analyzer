@@ -17,13 +17,15 @@ Reply to the user in the language they write in. The page and reel text are Trad
 tools/prep.sh <s> [people]
 ```
 
-`people` is how many people to track (default 2; use 1 for a solo session, up to 4 for doubles). This makes the proxy, audio, pose, onsets, ball track (`ball.npy`, RacketVision), hit events (`events.npy` = sound onsets plus ball turns near any tracked wrist) and match files per video in `work/<s>/<video>/`, plus `videos.json`, which fixes the order (video 1, 2, 3 by filename). Pose runs about real time and the ball tracker adds about 2.4 s per second of video on an Apple GPU (portrait is 4x that), so 40 minutes of video takes about 2.5 hours. Run it in the background and tell the user how long it will take. It resumes where it stopped.
+`people` is how many people to track (default 2; use 1 for a solo session, up to 4 for doubles). This makes the proxy, audio, pose (one file per tracked person), hit sounds, ball track (`ball.npy`, RacketVision) and hit events (`events.npy` = hit sounds confirmed by a fast wrist on any tracked person, timed with the ball track) per video in `work/<s>/<video>/`, plus `videos.json`, which fixes the order (video 1, 2, 3 by filename). Pose runs about real time for one person and about half speed with `people` > 1 (a second single-person model pass keeps the main skeleton sharp), and the ball tracker adds about 2.4 s per second of video on an Apple GPU (portrait is 4x that), so 40 minutes of video takes about 2.5 hours. Run it in the background and tell the user how long it will take. It resumes where it stopped.
 
 Portrait and landscape 16:9 video both work (proxy is 540x960 or 960x540; each stroke stores its `size`). Each tracked person gets a track per video (`pose.npy` is track 0, the person seen most; `pose_t1.npy` track 1, and so on). The tracker keeps identities by position and shirt colour. It works well for 2 people near the camera (wall practice). Far-away doubles players are often not detected at all, and people in the same colour can swap tracks.
 
 ## 1b. Who is who (judgment, only when more than one person was tracked)
 
 The first run of `candidates.py` stops and writes `work/<s>/players.jpg`: one row per tracked person per video (`v<video> t<track>`), 10 crops spread over the video. It also writes `work/<s>/players.txt` with one `<video no> <track> ?` line per row. Ask the user what to call each friend (or use shirt colour, e.g. `white`, `black`), look at the sheet and replace each `?` with a name. Use the same name for the same person in every video, and `x` for a track that is nobody (a passer-by, a ghost skeleton). Names are one word without spaces.
+
+Then ask each named player's racket hand and backhand type and write `work/profiles.json` (see "Players' hand and backhand" below) before re-running `candidates.py`: it checks each person's racket wrist (a lefty's left wrist) and pre-fills the kind with that hand. If you add a profile later, move labels.txt aside (`trash`) and re-run it.
 
 If one row shows two different people, the tracker swapped them partway. Name the row after the person it shows most; you fix the strokes after the swap one by one in labels.txt (next step).
 
@@ -35,11 +37,19 @@ If one row shows two different people, the tracker swapped them partway. Name th
 
 This writes `work/<s>/sheet0.jpg`… with 24 candidates per sheet. Each row shows 5 crops around one hit sound (-45, -25, -8, 0, +12 frames at 60 fps), labeled `<idx> v<video> m:ss`. Read every sheet. Fill `work/<s>/labels.txt`, one line per idx, in the form `idx kind drill [comment]`:
 
-- With several players each line is prefilled `idx ? ? @name`: the person whose wrist swung most at that hit sound, named from players.txt. The sheet label shows the same `@name`, and the crops follow that person. If the crops show a different person than the name says (a tracker swap), change the name. If the crops show someone who is not hitting, use `x`. The crops show only the prefilled person, so a partner's shadow swing or ball bounce can look like a stroke while the other player really hit. When the wrist moves but you see no ball on the strings, look at the whole frame (`ffmpeg -v error -y -ss <t> -i work/<s>/<video>/proxy.mp4 -frames:v 1 work/<s>/frame.jpg`) before you keep it.
+- With several players each line is prefilled `idx <kind guess or ?> ? @name`: the person whose wrist swung most at that hit sound, named from players.txt. The sheet label shows the same `@name`, and the crops follow that person. If the crops show a different person than the name says (a tracker swap), change the name. If the crops show someone who is not hitting, use `x`. The crops show only the prefilled person, so a partner's shadow swing or ball bounce can look like a stroke while the other player really hit. When the wrist moves but you see no ball on the strings, look at the whole frame (`ffmpeg -v error -y -ss <t> -i work/<s>/<video>/proxy.mp4 -frames:v 1 work/<s>/frame.jpg`) before you keep it.
 - `kind` is FH, BH, SV (serve), OH (overhead), or `x`. Use `x` when it is not a player (another person the tracker jumped to), not a stroke (a bounce, a pickup, a practice swing with no ball), or a duplicate of the stroke just before (the follow-through of the previous candidate).
 - `drill` is `feed` if the user tossed the ball to themselves (look at -45 / -25: the ball is in their hand or a free hand is releasing it), `rally` if it came from the other side, `high` if it was self-fed high, `unsure` if you can't tell. SV takes no drill.
 - Solo sessions (people 1, or one person in frame): first ask the user, or work out from the sheets, which person they are. If the tracker follows someone else for a stretch, mark those runs `x other-player`.
 - A rally shows a gap of roughly 3–6 s between candidates. A run of feeds shows toss motions. Use the timing to settle doubtful feed / rally calls.
+
+**Players' hand and backhand (do this the first time you see each player).** Ask the user, for every player name in the session (`me` when there is one person), which hand holds the racket and whether the backhand is one-handed or two-handed. Write them to `work/profiles.json` (private, not in git; names are friends' data):
+
+```json
+{"white": {"hand": "R", "backhand": "two"}, "black": {"hand": "L", "backhand": "one"}}
+```
+
+Every hitting-arm metric (elbow, contact height and position, prep time, FH/BH guess, arm checks) follows each stroke's player. A lefty with the right-hand default gets wrong FH/BH guesses and wrong elbow numbers, so do not skip this. If a player has no entry, `assemble.py` guesses the hand from wrist speed during the swings, prints `GUESSED` (and `UNSURE` when the two wrists are within 15%), and marks every stroke `hand_guess: true`: tell the user, ask them to confirm, and say in `notes.json` `caveat` that the hand was guessed. A guess cannot be right for a mirrored phone video (selfie camera) or a one-hander's helper hand; only the user knows. Add the entry and re-run assemble → export → refine; old sessions without `hand` count as right-handed, numbers unchanged.
 
 Then build the stroke list:
 
@@ -47,7 +57,7 @@ Then build the stroke list:
 .venv/bin/python tools/assemble.py <s>
 ```
 
-It validates labels.txt and lists the candidates where its automatic FH/BH guess disagrees with yours. Re-check those on the sheet.
+It validates labels.txt and lists the candidates where its automatic kind (`auto_kind`: FH/BH/SV/OH, or `?` = it would not guess) disagrees with yours. Re-check those on the sheet. `candidates.py` pre-fills the kind column of labels.txt with that guess when `kind_conf` >= 0.5 (still a guess: confirm it on the sheet, and fill in the drill). It is reliable for forehands, much weaker for backhands, and only a hint for OH vs SV; see docs/research/stroke-classify.md.
 
 ## 3. Clips and contact frames (judgment)
 
@@ -80,7 +90,8 @@ Compute what matters from `web/sessions/<s>/strokes.json`. Each stroke has these
 - `knee3d` (same window on the 3D skeleton, null for sessions without `pose_world.npy`) and `knee_warn` (true when |knee3d - knee| > 20°, so the angle is unreliable for that stroke). The web page and reel show `knee3d` when present. Thresholds above were set on 2D `knee`; 3D reads about 9° lower on average.
 - `prep`: seconds from backswing end (hitting wrist furthest back relative to the hips, searched up to 1.0 s before contact) to contact. Longer means the racket was ready earlier. On wall-1 it matched hand-picked frames within 2 frames (median); a backswing finished more than 1.0 s before contact is cut to the window.
 - `contact_fwd`: wrist ahead of the hip centre along the swing direction at contact, in torso lengths (same unit as `contact_h`). Its spread across strokes is the contact-point consistency. It moves about 0.1 per frame of contact error, so set refine.json contacts carefully before reading the spread, and compare only same-camera sessions.
-- `serve_arm_straight` (SV) and `bh_elbow_ok` / `bh_front_ok` (one-handed BH, set `"one_hand_bh": true` in refine.json; `"hand": "L"` for lefties): true / false / null (null = cannot tell from this view). They are checks, not scores; rules in docs/scoring.md §9. Forehands get none.
+- `serve_arm_straight` (SV) and `bh_elbow_ok` / `bh_front_ok` (one-handed BH: the player's `"backhand": "one"` in profiles.json; a lefty uses the left arm): true / false / null (null = cannot tell from this view). They are checks, not scores; rules in docs/scoring.md §9. Forehands get none.
+- Body use, readable from any horizontal camera angle (docs/scoring.md §11): `trunk_share` (racket-side shoulder peak speed ÷ wrist peak speed, both relative to the hips; low = arm-only swing), `turn` (degrees the shoulder line travels from backswing end to 0.3 s after contact), `leg_load` / `leg_drive` (hip drop before contact and rise at contact, share of standing hip height; this is how low the body gets, not a knee angle: a wide stance lowers the hip too), `wrist_speed` (torso lengths/s). `knee2d_ok` false = the leg was not side-on, so the 2D `knee` is unreliable (3D is unaffected). The score caps a group's total at its power score (wrist speed, turn, leg load) + 1.2, so an upright arm-only swing cannot score high; `scores.json` shows `power`, `uncapped` and `capped`.
 - `elbow`, `open_min` (shoulder turn, 0% is fully side-on), and `vis` (wrist visibility).
 
 Good comparisons are self-fed vs rally forehand medians, the best and worst examples by number, and other sessions shot from the same camera position.

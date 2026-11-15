@@ -3,7 +3,7 @@
 # pose: frames x 33 x (x, y, visibility) normalized; world: frames x 33 x (x, y, z) metres, hip-centred. NaN where the track is unseen.
 # Identity is a closed set of N slots: each frame, detections go to slots by hip position + torso colour, so someone who walks
 # away and comes back gets their old slot. Which slot is which friend is decided later by eye (candidates.py -> players.txt).
-import itertools, sys
+import itertools, sys, warnings
 import numpy as np
 
 
@@ -38,6 +38,26 @@ class Tracker:
         return out
 
 
+def merge(seen, col, overlap=0.1):
+    """seen (frames, slots) bool, col (slots, 3) mean shirt Lab -> groups of slots that are one person, biggest slot first.
+    One person alone in the frame drifts between free slots; slots that almost never coexist (< `overlap` of the smaller one's
+    frames) and wear the same colour are joined. Two people seen together, or in different shirts, stay apart."""
+    groups = []
+    for k in np.argsort(-seen.sum(0), kind="stable"):
+        g = next((g for g in groups if seen[:, k].any() and np.linalg.norm(col[k] - col[g[0]]) < Tracker.COL / 2
+                  and (seen[:, k] & seen[:, g].any(1)).sum() < overlap * seen[:, k].sum()), None)
+        if g is None: groups.append([int(k)])
+        else: g.append(int(k))
+    return groups
+
+
+def same_person(d, slots):
+    """Slot (index into slots: describe() dicts, None = empty) whose hip is within half a torso of d's, nearest first; None = no one."""
+    near = [(np.hypot(*np.subtract(d["pos"], q["pos"])), k) for k, q in enumerate(slots) if q is not None]
+    near = [x for x in near if x[0] < 0.5 * d["scale"]]
+    return min(near)[1] if near else None
+
+
 def describe(lm, img):
     """Hip centre and torso length in frame heights, and mean Lab colour of the shirt (box between shoulders and hips)."""
     import cv2
@@ -59,23 +79,44 @@ def main():
     p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", src, "-an", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
     lm = vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(base_options=BaseOptions(model_asset_path=model), running_mode=vision.RunningMode.VIDEO,
                                                    num_poses=N, min_pose_detection_confidence=0.3, min_tracking_confidence=0.3))
-    T = Tracker(N); rows = []; wrows = []; n = 0
+    # num_poses > 1 re-detects every frame while fewer people than N are in view, and its landmarks are coarser: on wall-1 the
+    # wrist speed at contact dropped (hit recall 88% -> 79%). A second, single-person landmarker keeps frame-to-frame tracking;
+    # its skeleton replaces the slot standing in the same place. Costs a second model pass (about 2x time).
+    one = vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(base_options=BaseOptions(model_asset_path=model), running_mode=vision.RunningMode.VIDEO,
+                                                    num_poses=1, min_pose_detection_confidence=0.3, min_tracking_confidence=0.3)) if N > 1 else None
+    T = Tracker(N); rows = []; wrows = []; crows = []; n = 0
     while True:
         b = p.stdout.read(W * H * 3)
         if len(b) < W * H * 3: break
         img = np.frombuffer(b, np.uint8).reshape(H, W, 3)
-        r = lm.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=img), int(n * 1000 / 60))
-        fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy()
-        for k, a, w in zip(T.step([describe(a, img) for a in r.pose_landmarks]), r.pose_landmarks, r.pose_world_landmarks):
-            if k >= 0: fr[k] = [[q.x, q.y, q.visibility] for q in a]; fw[k] = [[q.x, q.y, q.z] for q in w]
-        rows.append(fr); wrows.append(fw); n += 1
+        mi = mp.Image(image_format=mp.ImageFormat.SRGB, data=img); r = lm.detect_for_video(mi, int(n * 1000 / 60))
+        fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy(); fc = np.full((N, 3), np.nan)
+        ds = [describe(a, img) for a in r.pose_landmarks]; sl = [None] * N
+        for k, d, a, w in zip(T.step(ds), ds, r.pose_landmarks, r.pose_world_landmarks):
+            if k >= 0: fr[k] = [[q.x, q.y, q.visibility] for q in a]; fw[k] = [[q.x, q.y, q.z] for q in w]; fc[k] = d["color"]; sl[k] = d
+        r1 = one.detect_for_video(mi, int(n * 1000 / 60)) if one else None
+        if r1 and r1.pose_landmarks and (k := same_person(describe(r1.pose_landmarks[0], img), sl)) is not None:
+            fr[k] = [[q.x, q.y, q.visibility] for q in r1.pose_landmarks[0]]; fw[k] = [[q.x, q.y, q.z] for q in r1.pose_world_landmarks[0]]
+        rows.append(fr); wrows.append(fw); crows.append(fc); n += 1
         if n % 6000 == 0: print(n, flush=True)
     P, Wl = np.array(rows).reshape(n, N, 33, 3), np.array(wrows).reshape(n, N, 33, 3)
-    seen = (~np.isnan(P[:, :, 0, 0])).sum(0); order = [k for k in np.argsort(-seen, kind="stable") if seen[k]] or [0]
-    for i, k in reversed(list(enumerate(order))):  # pose.npy last: prep.sh treats it as "this video is done"
+    S = ~np.isnan(P[:, :, 0, 0]); C = np.array(crows).reshape(n, N, 3)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning); col = np.nanmean(C, 0)  # NaN for a slot never used: merge() skips it
+    tr = []
+    for g in merge(S, col):  # per frame the biggest slot of the group wins (the rare frames two of them overlap are duplicates)
+        p, w = P[:, g[0]].copy(), Wl[:, g[0]].copy()
+        for k in g[1:]: m = np.isnan(p[:, 0, 0]) & S[:, k]; p[m], w[m] = P[m, k], Wl[m, k]
+        tr.append((p, w))
+    tr = sorted([t for t in tr if (~np.isnan(t[0][:, 0, 0])).any()], key=lambda t: -(~np.isnan(t[0][:, 0, 0])).sum()) or tr[:1]
+    from pathlib import Path
+    for old in Path(out).parent.glob("pose*_t*.npy"):  # a re-run may find fewer people: stale extra tracks would be read as people
+        if int(old.stem.rsplit("_t", 1)[1]) >= len(tr): old.unlink()
+    for i, (p, w) in reversed(list(enumerate(tr))):  # pose.npy last: prep.sh treats it as "this video is done"
         sfx = "" if i == 0 else f"_t{i}"
-        np.save(out.replace("pose.npy", f"pose_world{sfx}.npy"), Wl[:, k]); np.save(out.replace("pose.npy", f"pose{sfx}.npy"), P[:, k])
-    print("done", n, "frames; frames seen per track:", [int(seen[k]) for k in order])
+        np.save(out.replace("pose.npy", f"pose_world{sfx}.npy"), w); np.save(out.replace("pose.npy", f"pose{sfx}.npy"), p)
+    print("done", n, "frames; frames seen per slot:", S.sum(0).tolist(), "-> per track after joining one person's slots:",
+          [int((~np.isnan(p[:, 0, 0])).sum()) for p, _ in tr])
 
 
 if __name__ == "__main__":

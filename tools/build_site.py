@@ -1,5 +1,6 @@
 # build_site.py — bundle every finished session for web/index.html (works from file://, no server needed).
-# Reads web/sessions/<s>/strokes.json + notes.json (+ reel.mp4 if present), writes web/sessions/<s>/data.js and web/sessions/manifest.js.
+# Reads web/sessions/<s>/strokes.json + notes.json (+ scores.json, reel.mp4 if present) and web/sessions/trend.json,
+# writes web/sessions/<s>/data.js, web/sessions/manifest.js and web/sessions/trend.js.
 import json
 from common import ROOT, load
 
@@ -12,6 +13,7 @@ for d in sorted(p for p in S.iterdir() if p.is_dir()):
     vids = sorted({x["video"] for x in strokes})
     sess = dict(id=s, label=notes.get("label", s[5:].replace("-", "/") if len(s) == 10 else s),
                 sub=notes.get("sub", f"{len(vids)} 支影片"), camera=notes.get("camera", ""), showOpen=notes.get("showOpen", False),
+                date=notes.get("date", s), players=sorted({x.get("player") or "me" for x in strokes}), scores=load(d / "scores.json") if (d / "scores.json").exists() else None,
                 caveat=notes.get("caveat", ""), findings=notes.get("findings", []), presets=notes.get("presets", []),
                 reel=f"sessions/{s}/reel.mp4" if (d / "reel.mp4").exists() else None,
                 strokes=[{**x, "src": f"sessions/{s}/{x['src']}"} for x in strokes])
@@ -21,4 +23,5 @@ for d in sorted(p for p in S.iterdir() if p.is_dir()):
     (d / "data.js").write_text("(window.SESSIONS=window.SESSIONS||[]).push(" + json.dumps(sess, ensure_ascii=False, separators=(",", ":")) + ");")
     ids.append(s); print(f"{s}: {n} strokes, {len(sess['findings'])} findings{', reel' if sess['reel'] else ''}{'' if notes else '  (no notes.json yet)'}")
 (S / "manifest.js").write_text("window.SESSION_IDS=" + json.dumps(ids) + ";")
+(S / "trend.js").write_text("window.TREND=" + json.dumps(load(S / "trend.json", []), ensure_ascii=False, separators=(",", ":")) + ";")
 print("open web/index.html")

@@ -2,7 +2,8 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from pose_full import Tracker
+from pose_full import Tracker, merge, same_person
+import numpy as np
 
 WHITE, BLACK, RED = (95, 0, 0), (15, 0, 0), (50, 60, 40)
 
@@ -42,4 +43,25 @@ assert t.step([det(0.3, 0.5, WHITE), det(1.2, 0.5, BLACK), det(0.8, 0.5, RED)]) 
 
 # empty frame changes nothing
 assert t.step([]) == [] and t.step([det(1.2, 0.5, BLACK)]) == [b]
+
+# merge: one person split over two slots (they almost never coexist, same shirt) becomes one track
+seen = np.zeros((100, 3), bool); seen[:50, 0] = seen[50:, 1] = True; seen[48:52, 2] = True; seen[49:51, 1] = True
+assert merge(seen, np.array([WHITE, WHITE, BLACK], float)) == [[1, 0], [2]]
+# two different people who take turns (never together) stay apart: the shirt colour differs
+assert merge(seen[:, :2], np.array([WHITE, BLACK], float)) == [[1], [0]]
+# two people in the same shirt who are often on screen together stay apart
+both = np.ones((100, 2), bool)
+assert merge(both, np.array([WHITE, WHITE], float)) == [[0], [1]]
+# three fragments of one person chain into one, biggest first
+seen = np.zeros((90, 3), bool); seen[:20, 0] = seen[20:60, 1] = seen[60:, 2] = True
+assert merge(seen, np.array([WHITE] * 3, float)) == [[1, 2, 0]]
+# a track never seen does not join anything
+assert merge(np.zeros((10, 2), bool), np.array([WHITE, WHITE], float)) == [[0], [1]]
+
+# same_person: the single-person model's detection replaces the slot standing where it stands, nothing else
+d1 = det(0.5, 0.5, WHITE)
+assert same_person(d1, [det(1.3, 0.5, BLACK), det(0.52, 0.5, WHITE)]) == 1
+assert same_person(d1, [det(1.3, 0.5, BLACK)]) is None          # it is someone the two-person model did not see
+assert same_person(d1, [None, det(0.53, 0.5, WHITE)]) == 1       # empty slots are skipped
+assert same_person(d1, []) is None
 print("ok")

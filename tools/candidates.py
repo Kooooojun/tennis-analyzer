@@ -6,7 +6,9 @@
 # and labels.txt lines carry '@name' so a wrong prefill can be corrected.
 import sys, cv2, numpy as np
 import warnings; warnings.filterwarnings("ignore")
-from common import session, work, videos, save, tracks, track_file, players, size
+from common import session, work, videos, save, tracks, track_file, players, size, FPS, load_profiles, profile_for
+from kind import classify, CONF_MIN
+from match import match, WRIST
 
 OFF = [-45, -25, -8, 0, 12]
 PER_SHEET = 24
@@ -42,11 +44,14 @@ if names or any(len(t) > 1 for t in T.values()):
         sys.exit(f"{len(missing)} tracked people need a name: look at {Wd / 'players.jpg'} and replace the ? in {Wd / 'players.txt'}, then re-run")
 multi = bool(names)
 names = names or {(vn, 0): "me" for vn in range(1, len(V) + 1)}
+PROF = load_profiles()
+hand = lambda name: (profile_for(PROF, name) or {"hand": "R"})["hand"]  # racket hand; no profile = R (assemble.py guesses and flags it)
 
-def swing(P, f, wh):
+
+def swing(P, f, wh, wi=16):
     """Wrist path from 0.33 s before a hit sound to 0.07 s after, in torso lengths. The hitter swings into contact;
     the other player's big moves (getting ready for the next ball, walking in) mostly come after it or without a visible wrist."""
-    xy = P[:, 16, :2] * wh; xy[P[:, 16, 2] < 0.2] = np.nan
+    xy = P[:, wi, :2] * wh; xy[P[:, wi, 2] < 0.2] = np.nan
     L = np.linalg.norm((P[f - 30:f + 30, 11, :2] + P[f - 30:f + 30, 12, :2] - P[f - 30:f + 30, 23, :2] - P[f - 30:f + 30, 24, :2]) / 2 * wh, axis=1)
     return np.nansum(np.linalg.norm(np.diff(xy[f - 20:f + 5], axis=0), axis=1)) / np.nanmedian(L) if np.isfinite(L).any() else 0.0
 
@@ -55,15 +60,15 @@ C = []
 for vi, v in enumerate(V):
     ks = [k for k in T[v] if names[(vi + 1, k)] != "x"]
     if not ks: continue
-    Ps = {k: np.load(track_file(Wd / v, "pose", k)).astype(float) for k in ks} if len(ks) > 1 else {}
-    wh = np.array(size(Wd / v / "proxy.mp4"), float) / 540
-    M = {k: {r[0]: r for r in np.load(track_file(Wd / v, "match", k))} for k in ks}
+    Ps = {k: np.load(track_file(Wd / v, "pose", k)).astype(float) for k in ks}; Hd = {k: hand(names[(vi + 1, k)]) for k in ks}
+    wh = np.array(size(Wd / v / "proxy.mp4"), float) / 540; E = np.load(Wd / v / "events.npy")
+    M = {k: {r[0]: r for r in match(Ps[k], E, wh, Hd[k])} for k in ks}
     for t in sorted({t for m in M.values() for t in m}):
-        k = max(ks, key=lambda k: swing(Ps[k], int(round(t * 60)), wh)) if Ps else ks[0]  # who hit it, then: is it a stroke for them
+        k = max(ks, key=lambda k: swing(Ps[k], int(round(t * 60)), wh, WRIST[Hd[k]])) if len(ks) > 1 else ks[0]  # who hit it, then: is it a stroke for them
         if t not in M[k]: continue
         _, pk, on, sp, arc = M[k][t]
         if sp >= 0.05 and arc >= 0.7:
-            C.append(dict(v=v, vn=vi + 1, t=float(t), arc=float(arc), sp=float(sp), track=k, player=names[(vi + 1, k)]))
+            C.append(dict(v=v, vn=vi + 1, t=float(t), arc=float(arc), sp=float(sp), track=k, player=names[(vi + 1, k)], hand=Hd[k]))
 save(Wd / "cands.json", C)
 
 for old in Wd.glob("sheet*.jpg"): old.unlink()
@@ -82,11 +87,23 @@ for k in range(0, len(C), PER_SHEET):
     sheet = np.vstack([np.hstack(rows[i:i + 2]) for i in range(0, len(rows), 2)])
     cv2.imwrite(str(Wd / f"sheet{k // PER_SHEET}.jpg"), sheet, [cv2.IMWRITE_JPEG_QUALITY, 80])
 
+def guess(c):
+    """Pre-fill for labels.txt: the automatic stroke kind when confident, else '?' (you still confirm it and add the drill)."""
+    v, key = c["v"], (c["v"], c["track"]); wp = track_file(Wd / v, "pose_world", c["track"])
+    if key not in poses: poses[key] = np.load(track_file(Wd / v, "pose", c["track"]))
+    if key not in worlds: worlds[key] = np.load(wp) if wp.exists() else None
+    k = classify(poses[key], int(round(c["t"] * FPS)), c["hand"], worlds[key])  # a left-hander's backswing side mirrors
+    return k["kind"] if k["conf"] >= CONF_MIN else "?"
+
+
+worlds = {}
 lab = Wd / "labels.txt"
 if lab.exists():
     print("labels.txt exists, left untouched")
 else:
-    lab.write_text("# idx kind drill [@player]   kind: FH BH SV OH, or x = not a player / not a stroke.  drill: feed rally high unsure (SV takes none)."
-                   " @player: who hit it (prefilled from players.txt, change it if the crop shows someone else). Anything after is a comment\n"
-                   + "".join(f"{i} ? ?{' @' + c['player'] if multi else ''}\n" for i, c in enumerate(C)))
+    G = [guess(c) for c in C]
+    lab.write_text("# idx kind drill [@player]   kind: FH BH SV OH, or x = not a player / not a stroke (a kind already filled in is the automatic guess: confirm or change it)."
+                   "  drill: feed rally high unsure (SV takes none). @player: who hit it (prefilled from players.txt, change it if the crop shows someone else). Anything after is a comment\n"
+                   + "".join(f"{i} {g} ?{' @' + c['player'] if multi else ''}\n" for i, (g, c) in enumerate(zip(G, C))))
+    print("auto kind pre-filled for", sum(g != "?" for g in G), "of", len(G))
 print(len(C), "candidates,", (len(C) + PER_SHEET - 1) // PER_SHEET, "sheets in", Wd)
