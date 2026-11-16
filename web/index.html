@@ -1078,7 +1078,7 @@ const cmpBt=()=>Math.max(0,vA.currentTime+cmpOff()/FPS);
 function cmpGoto(f){ f=Math.max(0,Math.min(149,f)); hold(vA); hold(vB); vA.currentTime=(f+0.5)/FPS; vB.currentTime=Math.max(0,(f+cmpOff()+0.5)/FPS); cmpRender(f); }
 function cmpTick(){
   if(cmpRequest!==null){ vA.cancelVideoFrameCallback?vA.cancelVideoFrameCallback(cmpRequest):cancelAnimationFrame(cmpRequest); cmpRequest=null; }
-  if(vB.readyState>=3&&Math.abs(vB.currentTime-cmpBt())>1.5/FPS) vB.currentTime=cmpBt();  // seeking an unbuffered clip would look like progress to watchStall
+  if(vB.readyState>=3&&Math.abs(vB.currentTime-cmpBt())>1.5/FPS){ if(vA._want&&!document.hidden) cmpWait(); vB.currentTime=cmpBt(); }  // seeking an unbuffered clip would look like progress to watchStall
   cmpRender(Math.max(0,Math.min(149,Math.floor(vA.currentTime*FPS+1e-3))));
   if(!vA.paused) cmpRequest=vA.requestVideoFrameCallback?vA.requestVideoFrameCallback(cmpTick):requestAnimationFrame(cmpTick);
 }
@@ -1105,7 +1105,7 @@ function cmpStart(){
 }
 function cmpWait(){ for(const x of [vA,vB]){ x._reloading=x.src; x.pause(); } }
 for(const vid of [vA,vB]){
-  vid.addEventListener("waiting",()=>{ if(vid._want&&!document.hidden) cmpWait(); });
+  for(const event of ["waiting","seeking"]) vid.addEventListener(event,()=>{ if(vid._want&&!document.hidden) cmpWait(); });
   for(const event of ["canplay","seeked"]) vid.addEventListener(event,()=>{ if(vA._want&&vB._want&&!document.hidden&&shown(vA)&&shown(vB)) cmpStart(); });
 }
 for(const vid of [vA,vB]) vid.addEventListener("seeked",()=>{ if(vA.paused) cmpRender(Math.floor(vA.currentTime*FPS+1e-3)); });

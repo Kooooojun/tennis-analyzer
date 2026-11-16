@@ -61,6 +61,10 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
    assert.deepEqual(await page.evaluate(()=>[vA.paused,vB.paused]),[true,true]);
    await page.evaluate(()=>{delete vB.readyState;vB.dispatchEvent(new Event('canplay'));});
    await page.waitForFunction(()=>!vA.paused&&!vB.paused);
+   await page.evaluate(()=>{Object.defineProperty(vB,'seeking',{configurable:true,value:true});vB.dispatchEvent(new Event('seeking'));});
+   assert.deepEqual(await page.evaluate(()=>[vA.paused,vB.paused]),[true,true]);
+   await page.evaluate(()=>{delete vB.seeking;vB.dispatchEvent(new Event('seeked'));});
+   await page.waitForFunction(()=>!vA.paused&&!vB.paused);
   },
   async compareBroken(page){
    await compare(page);await page.route('**/*edge-broken*',r=>r.fulfill({status:404,body:''}));
