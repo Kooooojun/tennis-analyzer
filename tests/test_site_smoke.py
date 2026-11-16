@@ -90,7 +90,8 @@ for(const engine of [chromium,webkit]){
     assert.equal(await page.evaluate(()=>v._want),false,'a second tap must cancel queued playback');
     await page.evaluate(()=>{toggle();goto(25);});
     assert.equal(await page.locator('#play').textContent(),'▶ 播放','seek must clear the queued-play button before a source exists');
-    await page.locator('#speeds button').last().click();
+    if(await page.locator('#speedCyc').isVisible()){for(let k=0;k<4&&await page.evaluate(()=>rate!==1);k++)await page.locator('#speedCyc').click();}
+    else{await page.locator('#speeds button').last().click();}
     await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
     assert(await page.evaluate(()=>v.playbackRate===rate&&rate===1&&v.paused),'loading must use the latest speed and cancelled playback intent');
     await page.unroute('**/*.mp4*');
