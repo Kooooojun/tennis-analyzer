@@ -10,7 +10,7 @@ from pathlib import Path
 R = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(R / "tools"))  # run with -I: the script's folder is not on sys.path
 from platform_util import h264_args, need_ffmpeg, replace, stale, unlink, utf8_stdout, venv_python, write_text
-from proxy import layout, video_filter
+from proxy import layout, video_filter, needs_padding
 
 EXTS = {".mov", ".mp4", ".m4v"}
 MAX_PATH = 240  # Windows MAX_PATH is 260; leave room for temp names
@@ -133,10 +133,9 @@ def main(argv):
         if fps and fps < 50: print(f"警告：{n} 來源 {fps} fps，proxy 會補成 60 fps（重複影格；姿態用原始 fps 跑再內插），速度類數字（手速、準備時間）沒驗證過", file=sys.stderr)
         pw, ph, *_ = layout(w, h)
         filt = video_filter(w, h)
-        padded = w * ph != h * pw
-        pf = D / "proxy_filter.txt"  # 僅非 16:9 記錄，舊拉伸 proxy 缺記錄時自動重建。
-        # Integer arithmetic keeps exactly +/-1% inside the tolerance.
-        if 100 * abs(w * ph - h * pw) > h * pw:
+        padded = needs_padding(w, h)
+        pf = D / "proxy_filter.txt"  # 僅超出 16:9 容許範圍時記錄，舊拉伸 proxy 缺記錄時自動重建。
+        if padded:
             g = math.gcd(w, h)
             print(f"來源比例 {w // g}:{h // g}，等比例縮放後補黑邊成 16:9", file=sys.stderr)
         changed = padded and (not pf.is_file() or pf.read_text(encoding="utf-8").strip() != filt)

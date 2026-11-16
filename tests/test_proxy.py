@@ -40,6 +40,19 @@ class ProxyTest(unittest.TestCase):
         np.testing.assert_allclose(map_pose(np.array([[0., 0., 1.], [1., 1., 0.5]]), 640, 480),
                                    [[0.125, 0., 1.], [0.875, 1., 0.5]])
 
+    def test_near_16_9(self):
+        P = np.array([[0.2, 0.3, 1.]], np.float32)
+        for w, h in ((1920, 1088), (1088, 1920), (854, 480), (1920, 1078),
+                     (1616, 900), (1584, 900), (909, 1600), (891, 1600)):
+            pw, ph = (960, 540) if w > h else (540, 960)
+            self.assertEqual(video_filter(w, h), f"scale={pw}:{ph}")
+            self.assertEqual(layout(w, h), (pw, ph, pw, ph, 0, 0))
+            self.assertIs(map_pose(P, w, h), P)
+            self.assertIs(map_pose(P, w, h, inverse=True), P)
+        for wh in ((1440, 1080), (480, 640), (1618, 900), (1582, 900), (910, 1600), (890, 1600)):
+            self.assertIn(",pad=", video_filter(*wh))
+            self.assertIsNot(map_pose(P, *wh), P)
+
     def test_sheet_inverse(self):
         # 只載函式，避免 candidates 的 CLI 主程式讀取私人場次。
         tree = ast.parse((R / "tools" / "candidates.py").read_text(encoding="utf-8"))

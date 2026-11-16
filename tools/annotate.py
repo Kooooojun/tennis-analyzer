@@ -3,12 +3,13 @@
 # Needs work/<s>/<video>/pose.npy (python tools/run.py prep.py). Stroke numbers and figures come from web/sessions/<s>/strokes.json (final numbers shown on the page);
 # without it you still get the skeleton + live knee angle. Frames are streamed ffmpeg -> draw -> ffmpeg, so memory does not grow with video length.
 # Drawing constants (fonts, colours, knee colouring) mirror tools/highlights.py, which is a script and cannot be imported.
-import argparse, json, math, subprocess, sys, time, numpy as np, cv2
+import argparse, math, subprocess, sys, time, numpy as np, cv2
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from common import ROOT, FPS, session, work, web, videos, load, tracks, track_file
 from platform_util import h264_args
 from proxy import map_pose
+from prep import probe_rate
 
 LONG = 1280  # long side of the output, px
 FONTS = ["/System/Library/Fonts/STHeiti Medium.ttc", "/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc",
@@ -30,10 +31,7 @@ def F(n): return _fonts.setdefault(n, ImageFont.truetype(FONT, n))
 
 def probe(src):
     """(w, h) after rotation, the same view ffmpeg decodes."""
-    j = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:stream_side_data=rotation", "-of", "json", str(src)]))
-    st = j["streams"][0]; w, h = st["width"], st["height"]
-    if any(abs(int(sd.get("rotation", 0))) in (90, 270) for sd in st.get("side_data_list", [])): w, h = h, w
-    return w, h
+    return probe_rate(src)[:2]
 
 
 def angle(a, b, c):

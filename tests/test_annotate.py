@@ -67,9 +67,20 @@ a2 = parse_args(["2026-11-20", "clip1", "--panel", "br"])
 assert a2.session == "2026-11-20" and a2.video == "clip1" and a2.panel == "br"
 
 # 新補邊姿態畫回原片；真 ffmpeg 輸出核對所有軌，及送往即時膝角的座標。
-import contextlib, io, subprocess, tempfile, cv2
+import contextlib, io, json, subprocess, tempfile, cv2
 from unittest.mock import patch
 import annotate as mod
+from prep import probe_rate
+
+for metadata, size in (({"tags": {"rotate": "-90.0"}}, (1088, 1920)),
+                       ({"side_data_list": [{"rotation": "-90.0"}]}, (1088, 1920)),
+                       ({"side_data_list": [{"rotation": 0}], "tags": {"rotate": "90"}}, (1920, 1088)),
+                       ({"tags": {"rotate": "180.0"}}, (1920, 1088))):
+    data = json.dumps({"streams": [{"width": 1920, "height": 1088, "avg_frame_rate": "60/1", **metadata}]})
+    with patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=data, stderr="")), \
+         patch.object(subprocess, "check_output", return_value=data.encode()):
+        assert probe_rate("clip.mp4") == (*size, 60.)
+        assert mod.probe("clip.mp4") == size, "標註與prep的旋轉尺寸須相同"
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); wd = root / "work" / "clip"; wd.mkdir(parents=True)

@@ -17,7 +17,8 @@ from proxy import video_filter
 with tempfile.TemporaryDirectory() as d:
     root = Path(d); (root / "videos" / "ratios").mkdir(parents=True)
     (root / "videos" / "ratios" / "clip.mp4").touch()
-    for wh, warned in (((1920, 1080), False), ((1080, 1920), False), ((1088, 1920), False), ((720, 1280), False),
+    for wh, warned in (((1920, 1080), False), ((1080, 1920), False), ((1088, 1920), False), ((1920, 1088), False),
+                       ((854, 480), False), ((1920, 1078), False), ((720, 1280), False),
                        ((1904, 1080), False), ((1760, 1000), False), ((1616, 900), False), ((891, 1600), False), ((909, 1600), False),
                        ((1888, 1080), True), ((640, 480), True), ((480, 640), True)):
         calls = []; err = io.StringIO()
@@ -28,8 +29,16 @@ with tempfile.TemporaryDirectory() as d:
             prep_module.main(["ratios", "1"])
         assert ("來源比例" in err.getvalue()) == warned, (wh, err.getvalue())
         pw, ph = (960, 540) if wh[0] > wh[1] else (540, 960)
-        filt = f"scale={pw}:{ph}" if wh[0] * ph == wh[1] * pw else video_filter(*wh)
+        filt = video_filter(*wh) if warned else f"scale={pw}:{ph}"
         assert calls[0][2:] == ("-an", "-vf", f"{filt},fps=60", "-g", "30", "-f", "mp4"), calls
+        assert (root / "work" / "ratios" / "clip" / "proxy_filter.txt").exists() == warned
+        if not warned:
+            calls.clear()
+            with patch.object(prep_module, "R", root), patch.object(prep_module, "need_ffmpeg"), \
+                 patch.object(prep_module, "probe", return_value=(*wh, 60)), patch.object(prep_module, "stale", return_value=False), \
+                 patch.object(prep_module, "ffmpeg", side_effect=lambda *a: calls.append(a)), patch.object(prep_module, "py") as py:
+                prep_module.main(["ratios", "1"])
+            assert not calls and not py.called, "近16:9的既有快取不得重建proxy或重跑下游"
 
 def audio_commands(streams):
     with tempfile.TemporaryDirectory() as d:
