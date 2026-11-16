@@ -27,7 +27,7 @@ export async function fixture(ref=process.env.SITE_REF){
   res.setHeader('Cache-Control','no-store');
   if(file.endsWith('.mp4')){
    const range=/bytes=(\d+)-(\d*)/.exec(req.headers.range||''),start=range?+range[1]:0,end=range&&range[2]?Math.min(+range[2],media.length-1):media.length-1;
-   const hanging=url.searchParams.get('hang')==='always'||url.searchParams.get('hang')==='once'&&!url.searchParams.has('_retry');
+   const hanging=end-start+1>64&&(url.searchParams.get('hang')==='always'||url.searchParams.get('hang')==='once'&&!url.searchParams.has('_retry'));
    events.push({file,query:url.search,hang:hanging,time:performance.now(),method:req.method});
    res.writeHead(range?206:200,{'Content-Type':'video/mp4','Content-Length':end-start+1,'Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${start}-${end}/${media.length}`}:{})});
    if(req.method==='HEAD')res.end();
