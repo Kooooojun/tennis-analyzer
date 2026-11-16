@@ -179,6 +179,36 @@ async function checkProgressAndFilter(page, label) {
 
       if (scheme === "light") {
         await checkProgressAndFilter(page, "chromium-1440x900");
+
+        // Portrait clip on desktop (1440x900): #nowTitle must display full stroke # and kind without ellipsis truncation
+        const desktopPortrait = await page.evaluate(() => {
+          const player = document.querySelector(".player");
+          const main = document.querySelector("main");
+          const wasWide = player.classList.contains("wide");
+          if (wasWide) {
+            player.classList.remove("wide");
+            main.classList.remove("wideplayer");
+          }
+          const t = document.getElementById("nowTitle");
+          const cs = getComputedStyle(t);
+          const res = {
+            playerWidth: player.getBoundingClientRect().width,
+            text: t.textContent,
+            scrollW: t.scrollWidth,
+            clientW: t.clientWidth,
+            textOverflow: cs.textOverflow,
+            whiteSpace: cs.whiteSpace,
+          };
+          if (wasWide) {
+            player.classList.add("wide");
+            main.classList.add("wideplayer");
+          }
+          return res;
+        });
+        assert(/#\d+/.test(desktopPortrait.text) && /(正拍|反拍|發球)/.test(desktopPortrait.text),
+          `chromium-1440x900 portrait #nowTitle missing stroke # or kind: "${desktopPortrait.text}"`);
+        assert(desktopPortrait.textOverflow !== "ellipsis" && desktopPortrait.scrollW <= desktopPortrait.clientW,
+          `chromium-1440x900 portrait #nowTitle truncated (playerW=${desktopPortrait.playerWidth.toFixed(0)}, textOverflow=${desktopPortrait.textOverflow}, scrollW=${desktopPortrait.scrollW}, clientW=${desktopPortrait.clientW}, text="${desktopPortrait.text}")`);
       }
 
       // 4 & 5. #homeLink height >= 44px, non-transparent border/background, contrast >= 4.5:1
