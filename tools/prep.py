@@ -3,7 +3,7 @@
 # Wrist motion per hit (match.py) runs in candidates.py, once the racket hand of each person is known.
 # Re-running skips finished steps, so it is safe to resume after an interruption; a step re-runs when its output is missing or an input is newer.
 # Every ffmpeg output is written to <name>.part first and renamed, so a killed run never leaves a half file that looks finished.
-import json, math, os, subprocess, sys
+import json, math, os, subprocess, sys, tempfile
 from functools import lru_cache
 from pathlib import Path
 
@@ -90,15 +90,12 @@ def gpu():
     return torch.backends.mps.is_available() or torch.cuda.is_available()
 
 
-def ball_note(proxy, pw, ph):
-    """On CPU ball.py is ~60x slower than real time: say so before it starts. Not in ball.py, which another change owns."""
-    if gpu(): return
-    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(proxy)], capture_output=True, text=True)
-    try: secs = float(r.stdout)
-    except ValueError: return
+def ball_note(pw, ph, frames):
+    """用與視窗相交的原批次格數估算 CPU 推論時間。"""
+    if not frames or gpu(): return
     tiles = math.ceil(ph / (pw * 9 / 16))  # ball.py runs one 16:9 crop per tile: portrait 540x960 is 4 crops a frame
-    print(f"警告：沒有 GPU，球追蹤用 CPU 跑（橫式約 {CPU_S_PER_FRAME:.1f} 秒/格，直式約 4 倍）：這段 {secs:.0f} 秒影片預估 {secs * 60 * CPU_S_PER_FRAME * tiles / 60:.0f} 分鐘"
-          "（推算，不是在這台電腦實測；實際 ms/frame 看 ball.log）", file=sys.stderr, flush=True)
+    print(f"警告：沒有 GPU，球追蹤只算候選附近的批次（橫式約 {CPU_S_PER_FRAME:.1f} 秒/格，直式約 4 倍）：{frames} 格預估 {frames * CPU_S_PER_FRAME * tiles / 60:.0f} 分鐘"
+          "（推算，另需整片解碼；不是在這台電腦實測；實際 ms/frame 看 ball.log）", file=sys.stderr, flush=True)
 
 
 def main(argv):
@@ -184,10 +181,24 @@ def main(argv):
                 write_text(note, record)
         else: delete(note)
         if stale(D / "sounds.npy", D / "audio_hp.f32", D / "audio.f32"): py("hits.py", D / "audio_hp.f32", D / "audio.f32", D / "sounds.npy")
-        if stale(D / "ball.npy", D / "proxy.mp4"):
-            ball_note(D / "proxy.mp4", pw, ph)
-            py("ball.py", D / "proxy.mp4", D / "ball.npy", out=D / "ball.log")
-        if stale(D / "events.npy", D / "sounds.npy", D / "ball.npy", pose):
+        poses = [pose, *sorted(D.glob("pose_t*.npy"))]
+        if stale(D / "ball.npy", D / "proxy.mp4", D / "sounds.npy", *poses):
+            import cv2, numpy as np
+            from ball import BATCH, window_mask
+            from common import size
+            from events import ball_windows, hands
+            cap = cv2.VideoCapture(str(D / "proxy.mp4"))
+            n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)); cap.release()
+            w, h = size(D / "proxy.mp4")
+            hand, who = hands([np.load(p).astype(np.float64) for p in poses], w / h, who=True)
+            windows = ball_windows(np.load(D / "sounds.npy").reshape(-1, 4), hand, who, n)
+            mask = window_mask(windows, n)
+            frames = sum(min(BATCH, n - i) for i in range(0, n, BATCH) if mask[i:i + BATCH].any())
+            ball_note(pw, ph, frames)
+            with tempfile.TemporaryDirectory(prefix="ball_windows_") as tmp:
+                wp = Path(tmp) / "windows.npy"; np.save(wp, windows)
+                py("ball.py", D / "proxy.mp4", D / "ball.npy", "--windows", wp, out=D / "ball.log")
+        if stale(D / "events.npy", D / "sounds.npy", D / "ball.npy", *poses):
             py("events.py", D / "sounds.npy", D / "ball.npy", pose, D / "events.npy", out=subprocess.DEVNULL)
     write_text(W / "videos.json", json.dumps(names) + "\n")
     print(f"ready: {len(names)} videos -> work/{S}")

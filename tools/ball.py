@@ -1,4 +1,4 @@
-# ball.py <proxy.mp4> <ball.npy> [cpu|mps|cuda] — per-frame tennis ball (x, y, conf), x/y normalized 0-1 of the proxy frame, NaN when not found.
+# ball.py <proxy.mp4> <ball.npy> [cpu|mps|cuda] [--windows windows.npy] — per-frame tennis ball (x, y, conf), normalized 0-1, NaN outside windows or when not found.
 # The network is the TrackNetV3-style UNet from RacketVision BallTrack (github.com/OrcustD/RacketVision, MIT, Copyright (c) 2025
 # Linfeng Dong; license text in third_party/RacketVision-LICENSE), rewritten without mmengine. Weights: models/balltrack_best.pth.
 # Input per frame: median background + the last 4 frames (BGR, 512x288); output: heatmap of the newest frame.
@@ -72,27 +72,48 @@ def locate(hm):  # center of the largest blob above THRE, as in the original inf
     return x + w / 2, y + h / 2, float(hm[y:y + h, x:x + w].max())
 
 
-def main(src, out, device=None):
+def window_mask(windows, n):
+    """整數半開影格區間；None 表示整片。"""
+    mask = np.ones(n, bool) if windows is None else np.zeros(n, bool)
+    if windows is None: return mask
+    a = np.asarray(windows)
+    if a.shape == (0,): return mask
+    if a.ndim != 2 or a.shape[1] != 2 or not np.issubdtype(a.dtype, np.integer) or \
+            (a[:, 0] < 0).any() or (a[:, 1] < a[:, 0]).any() or (a[:, 1] > n).any():
+        raise ValueError("視窗需為影片範圍內的整數起迄格（尾端不含）")
+    for start, stop in a: mask[start:stop] = True
+    return mask
+
+
+def main(src, out, device=None, windows=None):
     cap = cv2.VideoCapture(src); W, H = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)); N = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if not (W and H): sys.exit(f"cannot read {src}")
+    try: mask = np.r_[window_mask(windows, N), np.full(SEQ, windows is None)]
+    except ValueError:
+        cap.release(); raise
     crops = crops_for(W, H)
     s = []  # median background from 25 evenly spaced frames (players move, the court stays)
-    for f in np.linspace(0, max(N - 2, 0), 25).astype(int):
+    for f in np.linspace(0, max(N - 2, 0), 25).astype(int) if mask.any() else []:
         cap.set(cv2.CAP_PROP_POS_FRAMES, int(f)); ok, im = cap.read()
         if ok: s.append(im)
     cap.release()
-    if not s: sys.exit(f"cannot read frames of {src}")
+    if mask.any() and not s: sys.exit(f"cannot read frames of {src}")
     dev = torch.device(device or ("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"))
     rs = lambda im, c: cv2.resize(im[c[1]:c[1] + c[3], c[0]:c[0] + c[2]], (W_IN, H_IN), interpolation=cv2.INTER_AREA)
-    med = [torch.from_numpy(np.median(np.stack([rs(im, c) for im in s]), 0).astype(np.float32) / 255).permute(2, 0, 1).to(dev) for c in crops]
-    net = Net(); load_weights(net, WEIGHTS); net.to(dev).eval()
-    print(f"device {dev}, {len(crops)} crop(s), {N} frames", flush=True)
+    if mask.any():
+        med = [torch.from_numpy(np.median(np.stack([rs(im, c) for im in s]), 0).astype(np.float32) / 255).permute(2, 0, 1).to(dev) for c in crops]
+        net = Net(); load_weights(net, WEIGHTS); net.to(dev).eval()
+    print(f"device {dev}, {len(crops)} crop(s), {N} frames, {int(mask[:N].sum())} selected", flush=True)
 
     res = np.full((N + SEQ, 3), np.nan, np.float32); score = np.full(N + SEQ, -1.0, np.float32)
     bufs = [[] for _ in crops]; done = 0; t0 = time.time()
 
     def flush(n):  # n windows per crop; bufs hold SEQ-1 history frames then the new ones
         nonlocal done
+        if not mask[done:done + n].any():
+            for buf in bufs: del buf[:n]
+            done += n
+            return
         for ci, c in enumerate(crops):
             fr = torch.from_numpy(np.stack(bufs[ci][:n + SEQ - 1])).to(dev).permute(0, 3, 1, 2).float() / 255
             x = torch.cat([med[ci].expand(n, 3, H_IN, W_IN), torch.stack([fr[k:k + SEQ] for k in range(n)]).reshape(n, 3 * SEQ, H_IN, W_IN)], 1)
@@ -119,12 +140,18 @@ def main(src, out, device=None):
     if len(bufs[0]) > SEQ - 1: flush(len(bufs[0]) - (SEQ - 1))
     p.stdout.close()
     if p.wait(): sys.exit(f"ffmpeg failed decoding {src} after {got} frames")  # a truncated ball.npy would be cached by prep.sh forever
-    res = res[:got]
+    res = res[:got]; res[~mask[:got]] = np.nan
     np.save(out, res)
     ok = ~np.isnan(res[:, 0])
     print(f"{got} frames, ball found in {int(ok.sum())} ({100 * ok.mean():.0f}%), {1000 * (time.time() - t0) / max(got, 1):.1f} ms/frame")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3: sys.exit("usage: ball.py <proxy.mp4> <ball.npy> [cpu|mps|cuda]")
-    main(sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)
+    import argparse
+    parser = argparse.ArgumentParser(description="追球；可選整數半開影格視窗 NPY，省略則跑整片")
+    parser.add_argument("src"); parser.add_argument("out")
+    parser.add_argument("device", nargs="?")
+    parser.add_argument("--windows", help="形狀 (N, 2) 的整數 NPY，尾端不含")
+    args = parser.parse_args()
+    try: main(args.src, args.out, args.device, np.load(args.windows) if args.windows else None)
+    except (OSError, ValueError) as e: sys.exit(str(e))
