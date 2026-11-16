@@ -4,6 +4,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from score import score_group, SCORE_VERSION
 from trend import _entry, compare
+from platform_util import utf8_stdout
+utf8_stdout()
 
 
 def group(kind="FH", **values):
