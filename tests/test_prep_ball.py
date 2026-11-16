@@ -1,4 +1,4 @@
-"""Run: .venv/bin/python tests/test_prep_ball.py"""
+"""執行：.venv/bin/python tests/test_prep_ball.py"""
 import contextlib, io, os, subprocess, sys, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -37,13 +37,13 @@ class CacheTests(unittest.TestCase):
             os.utime(source / "clip.mp4", (old - 10, old - 10))
             for p in d.iterdir(): os.utime(p, (old, old))
 
-            calls = []
+            calls = []; expected_windows = []
             def py(script, *args, **kwargs):
                 calls.append(script)
                 if script == "ball.py":
                     self.assertIn("--windows", args)
                     windows = np.load(args[args.index("--windows") + 1])
-                    self.assertEqual(windows.shape, (0, 2))
+                    self.assertEqual(windows.tolist(), expected_windows)
                     np.save(d / "ball.npy", np.full((60, 3), np.nan, np.float32))
                 elif script == "events.py": np.save(d / "events.npy", np.empty((0, 3)))
                 else: self.fail(script)
@@ -66,6 +66,22 @@ class CacheTests(unittest.TestCase):
                 calls.clear(); prep.main(["sample", "2"])
                 self.assertEqual(calls, [])
                 self.assertFalse(list(d.glob("*.part")))
+                # Only the secondary person swings; the main track is entirely unseen.
+                p = np.zeros((60, 33, 3), np.float32); p[..., 2] = 1
+                p[:, [11, 12], 1] = .4; p[:, [23, 24], 1] = .6
+                p[:, [11, 23], 0] = .45; p[:, [12, 24], 0] = .55
+                p[:, 15] = [.4, .6, 1]; p[:, 16] = [.6, .6, 1]
+                p[:, 16, 0] += np.interp(np.arange(60), [0, 24, 34, 59], [0, 0, .3, .3])
+                np.save(d / "pose_t1.npy", p)
+                np.save(d / "sounds.npy", [[.5, -20, 12, 9]])
+                expected_windows = [[1, 48]]
+                prep.main(["sample", "2"])
+                self.assertEqual(calls, ["ball.py", "events.py"])
+                os.utime(d / "ball.npy", (old, old))
+                with patch("cv2.VideoCapture") as capture:
+                    capture.return_value.get.return_value = 0
+                    with self.assertRaises(SystemExit) as error: prep.main(["sample", "2"])
+                    self.assertIn("cannot read", str(error.exception))
 
 
 if __name__ == "__main__": unittest.main()

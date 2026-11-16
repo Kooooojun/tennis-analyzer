@@ -1,4 +1,4 @@
-"""Run: .venv/bin/python tests/test_ball.py"""
+"""執行：.venv/bin/python tests/test_ball.py"""
 import subprocess, sys, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -72,6 +72,11 @@ class BatchTests(unittest.TestCase):
                 net.assert_not_called(); load.assert_not_called()
                 self.assertEqual(np.load(d / "empty.npy").shape, (60, 3))
                 self.assertTrue(np.isnan(np.load(d / "empty.npy")).all())
+            np.save(d / "windows.npy", np.empty((0, 2), dtype=np.int64))
+            result = subprocess.run([sys.executable, str(Path(ball.__file__)), str(src), str(d / "cli.npy"), "cpu:0",
+                                     "--windows", str(d / "windows.npy")], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(np.isnan(np.load(d / "cli.npy")).all())
 
 
 if __name__ == "__main__": unittest.main()

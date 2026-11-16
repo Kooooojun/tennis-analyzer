@@ -185,11 +185,12 @@ def main(argv):
         if stale(D / "ball.npy", D / "proxy.mp4", D / "sounds.npy", *poses):
             import cv2, numpy as np
             from ball import BATCH, window_mask
+            from common import size
             from events import ball_windows, hands
             cap = cv2.VideoCapture(str(D / "proxy.mp4"))
-            n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            aspect = cap.get(cv2.CAP_PROP_FRAME_WIDTH) / cap.get(cv2.CAP_PROP_FRAME_HEIGHT); cap.release()
-            hand, who = hands([np.load(p).astype(np.float64) for p in poses], aspect, who=True)
+            n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)); cap.release()
+            w, h = size(D / "proxy.mp4")
+            hand, who = hands([np.load(p).astype(np.float64) for p in poses], w / h, who=True)
             windows = ball_windows(np.load(D / "sounds.npy").reshape(-1, 4), hand, who, n)
             mask = window_mask(windows, n)
             frames = sum(min(BATCH, n - i) for i in range(0, n, BATCH) if mask[i:i + BATCH].any())

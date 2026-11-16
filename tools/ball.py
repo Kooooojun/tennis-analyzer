@@ -150,7 +150,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="追球；可選整數半開影格視窗 NPY，省略則跑整片")
     parser.add_argument("src"); parser.add_argument("out")
-    parser.add_argument("device", nargs="?", choices=("cpu", "mps", "cuda"))
+    parser.add_argument("device", nargs="?")
     parser.add_argument("--windows", help="形狀 (N, 2) 的整數 NPY，尾端不含")
     args = parser.parse_args()
     try: main(args.src, args.out, args.device, np.load(args.windows) if args.windows else None)

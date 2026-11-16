@@ -145,6 +145,7 @@ def ball_windows(rows, hand, who, n):
     """第一輪候選估 lag 所需的完整影格範圍，合併為半開區間。"""
     intervals = []
     for t, *_ in pick(rows, hand, lag=0, slack=15, who=who, low=False):
+        # Turns in -15..+3 also need 6 frames for peaks, 4 for velocity and 4 for gap endpoints.
         start, stop = max(0, int(np.ceil(t * FPS - 29))), min(n, int(np.floor(t * FPS + 17)) + 1)
         if start < stop: intervals.append((start, stop))
     merged = []
