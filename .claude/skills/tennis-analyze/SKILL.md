@@ -152,6 +152,8 @@ Anchors, sources, coverage gate and which metrics each camera excludes are in `d
 
 確定宣稱跨場進步／退步時，必須在每個對應分數的 `metric` 引用明寫 `"change": "up"`／`"change": "down"`，分項一致性另寫 `"stat": "cons"`；不可把方向寫在單拍或原始統計引用。`change` 會無條件核對差值、誤差與方向，不能靠「建議／請」等字跳過。中性觀察與未來練習指令不加 `change`；舊文字僅作保守詞彙核對，不把它當成理解自然語言的保證。
 
+`cite.change` 是權威宣告，文字判斷只是保守輔助，不保證抓到所有寫法；逐項確認文字與宣告方向一致。遇到新的文字寫法漏抓，列已知限制，不再擴充文字規則；改用明確的分數引用與 `change` 表達確定變化，誤差內或無估計仍只能寫中性觀察。
+
 Highlight reel (optional, when asked or when the session has clear examples). Write `work/<s>/reel.json`. The format is in the header of `tools/highlights.py`: cards plus one- or two-up clips by final stroke number. Then:
 
 ```

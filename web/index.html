@@ -453,7 +453,7 @@ const ITEM = {total:"總分", uncapped:"未壓前總分", form:"技術", consist
 const STAT = {median:"中位數", mean:"平均", min:"最小", max:"最大", n:"拍數", score:"分數", cons:"一致性分", spread:"散佈"};
 const formNote = g => g?.form_n===1&&g.form_metrics?.length===1?`只根據 1 項：${ITEM[g.form_metrics[0]]||g.form_metrics[0]}`:"";
 const differentItems = (a,b) => a?.score_set!=null&&b?.score_set!=null&&JSON.stringify(a.score_set)!==JSON.stringify(b.score_set);
-const scoreInterval = u => `<span class="ci">${u?.ci?`（${u.ci.map(x=>x.toFixed(1)).join("–")}）`:u?"（區間不足）":"（未估區間）"}</span>`;
+const scoreInterval = u => `<span class="ci">${u?.ci?`（${u.ci.map(x=>x.toFixed(1)).join("–")}）`:"（區間不足）"}</span>`;
 const scoreText = (v,u) => v==null?"–":v.toFixed(1)+scoreInterval(u);
 const scoreGroup = s => DAYS[s.day||DAY].scores?.groups?.find(g=>g.player===who(s)&&g.kind===s.kind);
 const esc = x => String(x).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -720,7 +720,7 @@ function drawOverview(){
     const ckLine=(c,w)=>`${multi?esc(PN(c.player))+" · ":""}${esc(c.name)}：${w}、看不出來 ${c.unclear||0}${(c.unclear||0)>((c.passed||0)+(c.failed||0)+(c.unclear||0))/2?"，一半以上看不出來":""}`;
     if(vck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+vck.map(c=>(c.passed||0)+(c.failed||0)?`<li class="${c.failed?"down":"up"}">${ckLine(c,`✓ 通過 ${c.passed||0}、✗ 沒通過 ${c.failed||0}`)}</li>`:`<li>${ckLine(c,"每一拍都判斷不了")}</li>`).join("")+`</ul>`;
     if(rck.length) h+=`<h3>姿勢檢查・參考（未驗證）</h3><ul class="flags armref">`+rck.map(c=>`<li>${ckLine(c,(w=>`${w[0]} ${c.passed||0}、${w[1]} ${c.failed||0}`)(words(c)))}</li>`).join("")+`</ul><p class="caveat">這幾項沒有足夠驗證（彎手臂在測試資料裡一拍都沒抓到），看不出來的拍可能有問題，不要當成沒問題。</p>`;
-    h+=`<p class="caveat">1–10 分；括號為 95% 區間，是同一場內抽樣的誤差，不是跨日重測。區間不足表示重抽未全數通過閘門。灰色「資料不足」不打分；方法見 docs/scoring.md。</p>`;
+    h+=`<p class="caveat">1–10 分；括號為 95% 區間，是同一場內抽樣的誤差，不是跨日重測。區間不足表示尚未估計，或重抽未全數通過閘門。灰色「資料不足」不打分；方法見 docs/scoring.md。</p>`;
   }
   const fs=[...(d.findings||[])].sort((a,b)=>(!!a.info-!!b.info)).slice(0,3);
   if(fs.length) h+=`<h3>本場重點</h3><ul class="highlights">`+fs.map(f=>`<li><button class="${f.good?"good":f.info?"info":""}" data-go="advice">${f.good?"✓":"△"} ${esc(f.title)}</button></li>`).join("")+`</ul>`;
@@ -1384,7 +1384,7 @@ function drawSpark(svg,t){  // total + consistency per session, oldest left
       if(ci){const bar=mk("g",{class:"error-bar","data-key":key,stroke:color,"stroke-width":1.5});
         mk("line",{x1:x(i),x2:x(i),y1:y(ci[0]),y2:y(ci[1])},bar);
         for(const end of ci)mk("line",{x1:x(i)-4,x2:x(i)+4,y1:y(end),y2:y(end)},bar);}
-      const label=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v}${ci?`，95% 區間 ${ci.map(x=>x.toFixed(1)).join("–")}`:"，未估區間"} · 鏡頭：${h[i].camera||"沒寫"}${note?` · ${note}`:""}${changed?" · 項目不同":""}`;
+      const label=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v}${ci?`，95% 區間 ${ci.map(x=>x.toFixed(1)).join("–")}`:"，區間不足"} · 鏡頭：${h[i].camera||"沒寫"}${note?` · ${note}`:""}${changed?" · 項目不同":""}`;
       const c=mk("circle",{cx:x(i),cy:y(v),r:radius,fill:key==="consistency"?"var(--panel)":color,stroke:color,role:"img",tabindex:0,"aria-label":label}); const tt=document.createElementNS(NS,"title"); tt.textContent=label; c.append(tt); }
   }
   let lx=-1e9;

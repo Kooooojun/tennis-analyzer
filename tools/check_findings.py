@@ -79,7 +79,7 @@ def _change_errors(finding, scores, runs):
     up, down = r"進步|改善|變好|(?:更|比較)(?:好|穩|一致)|比[^不沒無未非]*穩|一致了", r"退步|變差|(?:更|比較)差|(?:變得?|更)不穩|比[^不沒無未非]*不穩"
     cross_session = r"前場|上場|上次|前次|之前|昨天|跨場|\d{1,2}/\d{1,2}"
     drills = {c.get("drill") for c in finding.get("cite", []) if isinstance(c, dict) and c.get("drill") is not None}
-    clauses = [c.strip() for c in re.split(r"[。；，,：:！!?？\n]", text) if re.search(up + "|" + down, c)]
+    clauses = [c.strip() for c in re.split(r"[。；，,：:！!?？\n]|但是|而且|所以|因此|但|而", text) if re.search(up + "|" + down, c)]
     split_clauses = []
     for clause in clauses:
         parts = re.split(r"(而且|並且|但是|同時|以及|且|但|而|與|及|、)", clause)
@@ -103,18 +103,20 @@ def _change_errors(finding, scores, runs):
     def entry(run, group):
         h = _entry(run, group)
         h["items"].update({k: group.get(k) for k in GROUP_KEYS})
-        h["uncertainty"].update(group.get("uncertainty", {}))
+        h["uncertainty"].update(group.get("uncertainty") or {})
         form = sorted(m for m, x in group["metrics"].items() if x["score"] is not None and not METRICS.get(m, {}).get("power"))
         power = sorted(m for m, x in group["metrics"].items() if x["score"] is not None and METRICS.get(m, {}).get("power"))
         h["component_sets"] = {"form": form, "power": power, "uncapped": [form, h["cons_set"]]}
         h["items"].update({m + ".cons": x["cons"] for m, x in group["metrics"].items()})
-        h["uncertainty"].update({m + ".cons": x.get("uncertainty", {}).get("cons") for m, x in group["metrics"].items()})
+        h["uncertainty"].update({m + ".cons": (x.get("uncertainty") or {}).get("cons") for m, x in group["metrics"].items()})
         return h
 
     errors = []
     for player, kind in identities:
         group = next((g for g in scores.get("groups", []) if (g["player"], g["kind"]) == (player, kind)), None)
-        if group is None: continue
+        if group is None:
+            errors.append(f"{kind}沒有足夠的誤差估計，不能宣稱進步或退步")
+            continue
         history = []
         for run in runs:
             if run.get("session") == scores.get("session") or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(run.get("date"))): continue
@@ -126,27 +128,29 @@ def _change_errors(finding, scores, runs):
         names = {**NAMES, "form": "技術", "power": "力量", "uncapped": "未壓前總分"}
         cited_items = [c["metric"] + (".cons" if c.get("stat") == "cons" else "") for c in finding.get("cite", []) if isinstance(c, dict) and isinstance(c.get("metric"), str)
                        and (c.get("player") or "me", c.get("kind")) == (player, kind)]
+        cited_cons = [m for m in cited_items if m.endswith(".cons")]
         claims = [(c["metric"] + (".cons" if c.get("stat") == "cons" else ""), c["change"]) for c in declared
                   if (c.get("player") or "me", c.get("kind")) == (player, kind)]
         for clause in clauses:
             mentioned = re.findall("|".join(re.escape(n) for n in sorted(names.values(), key=len, reverse=True)), clause)
             items = [item for item, name in names.items() if name in mentioned]
-            if not items or items == ["consistency"] and len(cited_items) == 1 and cited_items[0].endswith(".cons"):
-                items = cited_items
+            if not items or items == ["consistency"] and cited_cons:
+                items = cited_cons or cited_items
             if re.search(r"穩|一致", clause):
+                if cited_cons: items = [m for m in items if m != "consistency"] + cited_cons
                 metric_items = [m for m in items if m.removesuffix(".cons") in group["metrics"]]
                 if re.search(r"進步|退步|改善|變好|變差|(?:更|比較)(?:好|差)", clause):
                     specific = [m for m in metric_items if m.endswith(".cons") or re.search(re.escape(names.get(m, m)) + r"(?:的|變得)?(?:一致性|更穩|比較穩)", clause)]
                     items = [m for m in items if m not in specific and not (m == "consistency" and specific)]
                 else:
-                    specific, items = metric_items, []
+                    specific, items = metric_items, [m for m in items if m in GROUP_KEYS and names[m] in mentioned]
                 items += [m if m.endswith(".cons") else m + ".cons" for m in specific]
                 items = items or ["consistency"]
             claims += [(item, direction) for item in set(items or ["total"]) for direction, pattern in (("up", up), ("down", down)) if re.search(pattern, clause)]
         for item, direction in sorted(set(claims)):
             name = names.get(item.removesuffix(".cons"), item) + ("一致性" if item.endswith(".cons") else "")
             flag = flags.get(item)
-            if flag is None: errors.append(f"{name}沒有足夠的同版本、同機位誤差估計，不能宣稱進步或退步")
+            if flag is None: errors.append(f"{name}沒有足夠的誤差估計，不能宣稱進步或退步（需同版本、同機位可比資料）")
             elif flag["flag"] == "在誤差內": errors.append(f"{name}變化在誤差內（差 {flag['diff']}，門檻 {flag['threshold']:.2f}），不能宣稱進步或退步")
             elif direction == "up" and flag["diff"] < 0 or direction == "down" and flag["diff"] > 0:
                 errors.append(f"{name}進退步方向與實際差值 {flag['diff']} 相反")

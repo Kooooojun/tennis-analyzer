@@ -54,6 +54,15 @@ try{
      const count=svg.querySelectorAll('polyline').length;svg.remove();return count;
     });
     assert.equal(lines,0,'不同版本不連線');
+    const missing=await page.evaluate(()=>{
+     const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');document.body.append(svg);
+     const row=date=>({session:'synthetic',date,camera:'側面',knee_src:'knee',score_version:10,n:20,items:{total:7,consistency:7},uncertainty:null});
+     drawSpark(svg,{history:[row('2026-01-01'),row('2026-01-02')]});
+     const labels=[...svg.querySelectorAll('circle')].map(e=>e.getAttribute('aria-label'));
+     svg.remove();return {labels,overview:scoreInterval(null),incomplete:scoreInterval({ci:null})};
+    });
+    assert(missing.labels.length>0&&missing.labels.every(x=>x.includes('區間不足')&&!x.includes('未估區間')),'缺區間的走勢點須統一文案');
+    assert(missing.overview.includes('區間不足')&&missing.incomplete.includes('區間不足'),'總覽缺區間須統一文案');
     const segments=await page.evaluate(()=>{
      const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');document.body.append(svg);
      const old={session:'synthetic',date:'2026-01-01',camera:'側面',knee_src:'knee',score_version:10,items:{total:7,consistency:7}};

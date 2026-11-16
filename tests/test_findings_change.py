@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tools'))
 from check_findings import check
+from trend import _entry, compare
 
 
 def run(session, day, total, consistency):
@@ -44,6 +45,7 @@ cases = [
         '建議：總分比前場退步', '總分比前場進步請繼續維持')],
     ('下次練習改善膝蓋彎曲', noise, 'total', False),
     ('建議先改善膝蓋彎曲', noise, 'total', False),
+    *[(f'無法確定位置{word}總分進步', noise, 'total', True) for word in ('但', '而', '所以', '因此')],
 ]
 for text, runs, metric, expected in cases:
     actual = errors(text, runs, metric)
@@ -74,5 +76,52 @@ if not errors('觀察結果', [up[-1]], change='up'):
 mixed = dict(title='觀察結果', cite=[dict(stroke=1, field='knee', kind='FH', metric='total', value=8, change='up')])
 if not check(dict(findings=[mixed]), [dict(kind='FH', knee=8)], up[-1], runs=up):
     failures.append('單拍引用不能混入分數方向')
+
+
+def expect_claim(label, text, runs, cites, expected, strokes=(), missing=False):
+    try:
+        actual = check(dict(findings=[dict(title=text, cite=cites)]), strokes, runs[-1], runs=runs)
+        if bool(actual) != expected or missing and not any('沒有足夠的誤差估計' in x for x in actual):
+            failures.append((label, actual))
+    except Exception as exc:
+        failures.append((label, type(exc).__name__, str(exc)))
+
+
+scoped = copy.deepcopy(up)
+for r, value in zip(scoped, (7, 7.1)):
+    r['groups'][0]['metrics']['knee']['cons'] = value
+expect_claim('多筆引用不改查整組一致性', '一致性改善', scoped,
+             [dict(kind='FH', metric='knee', stat='cons', value=7.1), dict(kind='FH', metric='total', value=8)], True)
+scoped = copy.deepcopy(up)
+for r, value in zip(scoped, (7, 7.1)):
+    r['groups'][0]['metrics']['prep'] = copy.deepcopy(r['groups'][0]['metrics']['knee'])
+    r['groups'][0]['metrics']['prep'].update(score=4, cons=value)
+expect_claim('更穩只查引用的 cons', '更穩', scoped,
+             [dict(kind='FH', metric='knee', stat='cons', value=8), dict(kind='FH', metric='prep', value=4)], False)
+expect_claim('每筆 cons 都須通過', '一致性改善', scoped,
+             [dict(kind='FH', metric='knee', stat='cons', value=8), dict(kind='FH', metric='prep', stat='cons', value=7.1)], True)
+expect_claim('未有評分組不能跳過', '總分進步', up,
+             [dict(stroke=1, kind='OH', field='knee', value=130)], True, [dict(kind='OH', knee=130)], missing=True)
+for where in ('missing', 'group', 'metric', 'history'):
+    absent = copy.deepcopy(up)
+    cite = dict(kind='FH', metric='total', value=8, change='up')
+    if where == 'missing': del absent[-1]['groups'][0]['uncertainty']
+    elif where == 'group': absent[-1]['groups'][0]['uncertainty'] = None
+    elif where == 'metric':
+        absent[-1]['groups'][0]['metrics']['knee']['uncertainty'] = None
+        cite.update(metric='knee', stat='cons')
+    else: absent[0]['groups'][0]['uncertainty'] = None
+    expect_claim(f'缺估計或 null：{where}', '觀察結果', absent, [cite], True, missing=True)
+try:
+    rows = [_entry(r, r['groups'][0]) for r in up]
+    rows[0]['uncertainty'] = None
+    if compare(rows): failures.append('null 歷史列仍被比較')
+except Exception as exc:
+    failures.append(('null 歷史列', type(exc).__name__))
+shared = [run('a', '2026-01-01', 9, 3), run('b', '2026-01-02', 6, 8)]
+expect_claim('總分與一致性更穩不得漏總分', '總分與一致性更穩', shared,
+             [dict(kind='FH', metric='total', value=6), dict(kind='FH', metric='consistency', value=8)], True)
+expect_claim('未具名更穩維持原本的一致性判斷', '更穩', shared,
+             [dict(kind='FH', metric='total', value=6)], False)
 assert not failures, failures
 print('方向引用、否定句與練習指令核對通過')

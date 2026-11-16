@@ -26,7 +26,7 @@ def compare(history):
         # Additional composite claims from check_findings carry their own relevant component sets.
         same = [h for h in same if item not in last.get("component_sets", {}) or h.get("component_sets", {}).get(item) == last["component_sets"][item]]
         same = [h for h in same if h["items"].get(item) is not None][-BASE_N:]
-        sem = lambda h: (h.get("uncertainty", {}).get(item) or {}).get("sem")
+        sem = lambda h: ((h.get("uncertainty") or {}).get(item) or {}).get("sem")
         if v is None or not same or any(sem(h) is None or not math.isfinite(sem(h)) or sem(h) < 0 for h in [last, *same]): continue
         base = float(np.mean([h["items"][item] for h in same])); d = v - base
         threshold = 1.96 * math.sqrt(sem(last)**2 + sum(sem(h)**2 for h in same) / len(same)**2)
@@ -49,8 +49,8 @@ def _entry(r, g):
     """One history row. Every session is kept; comparable / series_key let the web split or mark lines (same n / camera rules as compare(); the date filter there lives in dated())."""
     cam = r.get("camera") or ""
     return dict(session=r["session"], date=r.get("date"), camera=cam, n=g["n"], knee_src=g.get("knee_src"), score_version=g.get("score_version"), items=_items(g),
-                uncertainty={"total": g.get("uncertainty", {}).get("total"), "consistency": g.get("uncertainty", {}).get("consistency"),
-                             **{m: x.get("uncertainty", {}).get("score") for m, x in g["metrics"].items()}},
+                uncertainty={"total": (g.get("uncertainty") or {}).get("total"), "consistency": (g.get("uncertainty") or {}).get("consistency"),
+                             **{m: (x.get("uncertainty") or {}).get("score") for m, x in g["metrics"].items()}},
                 cons_set=sorted(m for m, x in g["metrics"].items() if x["cons"] is not None),
                 form_metrics=g.get("form_metrics"), form_n=g.get("form_n"), score_set=_score_set(g),
                 comparable=g["n"] >= MIN_N and bool(cam) and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(r.get("date")))), series_key=[cam, g.get("knee_src"), g.get("score_version")])
