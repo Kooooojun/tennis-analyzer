@@ -35,6 +35,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.end_headers()
         self.media = dict(case=query.get("case", [""])[0], start=start, left=end - start + 1,
+                          chunk=max(1,min(65536,int(query.get("chunk", [65536])[0]))),
                           gap=float(query.get("gap", [0])[0]), interval=float(query.get("interval", [0])[0]))
         stream = path.open("rb")
         stream.seek(start)
@@ -52,14 +53,16 @@ class Handler(SimpleHTTPRequestHandler):
         left, sent = self.media["left"], 0
         try:
             while left:
-                data = source.read(min(left, 65536))
+                data = source.read(min(left, self.media["chunk"]))
                 if not data:
                     break
                 outputfile.write(data)
                 outputfile.flush()
                 sent += len(data)
                 left -= len(data)
-                if sent == len(data) and self.media["gap"]:
+                if self.media["interval"]:
+                    self.record("chunk", bytes=len(data))
+                if sent == len(data) and self.media["gap"] and left:
                     self.record("pause", bytes=sent)
                     time.sleep(self.media["gap"])
                 elif left and self.media["interval"]:

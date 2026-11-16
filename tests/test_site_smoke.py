@@ -1,3 +1,10 @@
+# Playwright E2E runs locally only; the three-OS CI runs the synthetic build smoke without SITE_E2E_URL.
+# Local E2E requires Node, playwright-core with Chromium/WebKit installed, and private session fixtures.
+# Start: python tests/site_cache_server.py --root "$SITE_FIXTURE_ROOT" --log "$SITE_SERVER_LOG"
+# Run: SITE_E2E_URL="$SITE_URL" PLAYWRIGHT_MODULE="$PW_MODULE" python tests/test_site_smoke.py
+# Background: add SITE_SERVER_LOG="$SITE_SERVER_LOG"; run node tests/site_cache_background.mjs,
+# then repeat with SITE_ENGINE=webkit (Chromium needs a headed browser or SITE_CHROMIUM_EXECUTABLE).
+# Drip: use the same env as background and run node tests/site_cache_drip.mjs (1 KiB / 2 s native fallback).
 # Run: .venv/bin/python tests/test_site_smoke.py   (plain asserts; cases follow testset/results/cross-platform_pred.md)
 # Builds a synthetic session (Chinese name and notes, no real data) with build_site.py in a scratch copy of tools/, under the
 # default locale and again with a cp1252 stdout, and checks data.js is UTF-8 with LF only and the ?v= hash matches the file bytes.
