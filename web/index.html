@@ -973,27 +973,36 @@ function watchStall(vid){
   const hideMsg=()=>{ m.hidden=true; m.disabled=true; if(m.textContent) m.textContent=""; if(live.textContent) live.textContent=""; };
   let sig="", since=0, wait=0, tries=0, errorSince=0, progress=0, autoRetries=0, retryAt=0, hiddenAt=0, offAt=0, mediaSince=0, mediaSig="";
   let restore=null, keep=null, errorStatus=0;
-  let byteProbe=null;
-  const cancelByteProbe=()=>{ byteProbe?.abort(); byteProbe=null; };
+  let byteProbe=null, probeToken=null;
+  const cancelByteProbe=(resumeNative=false)=>{
+    const probe=byteProbe; if(!probe) return;
+    const replacing=vid._fetching;
+    byteProbe=null; vid._fetching=false;
+    probe.entry.watchers.delete(vid);
+    if(!probe.entry.url&&!probe.entry.watchers.size){
+      probe.entry.controller.abort(); if(CLIPS.get(vid._clipKey)===probe.entry) CLIPS.delete(vid._clipKey);
+    }
+    if(resumeNative&&replacing){ setClip(vid,vid._clip,vid._start); if(vid.src!==probe.source) vid.src=probe.source; vid.load(); prime(vid); }
+    return probe.source;
+  };
   const probeBytes=()=>{
-    const controller=byteProbe=new AbortController();
-    (async()=>{
-      try{
-        const response=await fetch(vid.src,{signal:controller.signal,cache:"no-store"});
-        const type=(response.headers.get("Content-Type")||"").split(";")[0].trim().toLowerCase();
-        if(!response.ok||type&&!type.startsWith("video/")&&type!=="application/octet-stream"){ await response.body?.cancel(); return; }
-        const reader=response.body.getReader();
-        let received=false;  // The initial prefix may be the same bytes that already stalled in the native player.
-        for(;;){ const {done,value}=await reader.read(); if(done) break; if(byteProbe===controller&&value.byteLength){ if(received) progress++; received=true; } }
-      }catch{}  // Native playback retains its own retry path when the probe is unavailable (for example, CORS).
-    })();
+    const task=clipFetch(vid._clipKey), probe=byteProbe={entry:CLIPS.get(vid._clipKey),source:vid.src,bytes:0};
+    (probe.entry.watchers??=new Set()).add(vid); probeToken=vid._loadToken;
+    task.then(url=>{
+      if(byteProbe!==probe) return;
+      probe.entry.watchers.delete(vid); byteProbe=null;
+      if(!url.startsWith("blob:")&&!vid._fetching) return;
+      vid._fetching=false; vid._reloading=probe.source; cancelAlign(vid);
+      setClip(vid,vid._clip,vid._start);
+      if(!url.startsWith("blob:")&&vid.src!==probe.source){ vid.src=probe.source; vid.load(); prime(vid); }
+    });
   };
   vid._cancelResume=()=>{ vid._resume=false; if(keep) keep[1]=false; };
-  vid._resetStall=()=>{ cancelByteProbe(); if(restore) vid.removeEventListener("loadedmetadata",restore); restore=keep=null; loadingToken=null; vid._want=vid._resume=vid._reloading=false; tries=wait=since=errorSince=errorStatus=autoRetries=retryAt=offAt=mediaSince=0; delete m.dataset.fail; hideMsg(); };
+  vid._resetStall=()=>{ cancelByteProbe(); probeToken=null; if(restore) vid.removeEventListener("loadedmetadata",restore); restore=keep=null; loadingToken=null; vid._want=vid._resume=vid._reloading=false; tries=wait=since=errorSince=errorStatus=autoRetries=retryAt=offAt=mediaSince=0; delete m.dataset.fail; hideMsg(); };
   const pausePair=()=>{ if(vid!==v&&vid._want) cmpWait(); };
   const reload=(tap=false,still=false)=>{
-    cancelByteProbe();
-    if(vid._fetching||!vid.src){
+    const replacement=cancelByteProbe()||keep?.[2];
+    if((vid._fetching||!vid.src)&&!replacement){
       if(vid._clip){
         const s=vid._clip, start=vid._start, want=!still&&(vid._want||vid._resume||tap), attempts=tries+1;
         resetClip(vid,vid._clipKey); tries=attempts; since=Date.now(); vid._want=vid._resume=want;
@@ -1004,7 +1013,7 @@ function watchStall(vid){
     }
     pausePair();
     if(tap) cancelAlign(vid); vid._loadToken={}; tries++; since=Date.now(); wait=mediaSince=errorSince=0;
-    const source=new URL(vid._badBlob?vid._clipKey:vid.currentSrc||vid.src,location.href); vid._badBlob=false;
+    const source=new URL(vid._badBlob?vid._clipKey:replacement||vid.currentSrc||vid.src,location.href); vid._badBlob=false;
     if(/^https?:$/.test(source.protocol)) source.searchParams.set("_retry",Date.now());  // Chrome can retain a truncated response under the original URL.
     const url=source.href;
     const t=(keep?keep[0]:vid.readyState?vid.currentTime:null)??(vid===v?((vid._pendingFrame??S.contact-48)+.5)/FPS:null); const want=!still&&(vid._resume||tap); if(vid!==v&&!want) stopDead(vid); keep=[t,want];
@@ -1017,9 +1026,9 @@ function watchStall(vid){
     vid._reloading=url; vid.src=url; releaseClips(); vid.playbackRate=vid===v?rate:cmpRate; vid.load(); prime(vid);
   };
   const retry=(tap=false,still=false)=>{ if(still) stopDead(vid); if(vid===v&&!still&&m.dataset.fail&&keep?.[1]) vid._want=vid._resume=true; delete m.dataset.fail; m.disabled=true; tries=0; retryAt=0; reload(tap,still); setMsg("影片下載中…"); };
-  const fail=()=>{ cancelByteProbe(); keep=[keep?keep[0]:vid.readyState?vid.currentTime:null,!!vid._resume]; stopDead(vid,true); m.disabled=false; m.dataset.fail=1; setMsg("影片載不到，按這裡重試"); retryAt=autoRetries<3?Date.now()+15000*2**autoRetries:0; };
+  const fail=()=>{ const source=cancelByteProbe(); keep=[keep?keep[0]:vid.readyState?vid.currentTime:null,!!vid._resume,source]; stopDead(vid,true); m.disabled=false; m.dataset.fail=1; setMsg("影片載不到，按這裡重試"); retryAt=autoRetries<3?Date.now()+15000*2**autoRetries:0; };
   m.onclick=()=>{ if(!m.dataset.fail) return; retry(vid===v,vid!==v); };
-  const suspend=now=>{ cancelByteProbe(); since=wait=errorSince=mediaSince=0; if(!offAt) offAt=now; if((vid._want||vid._resume)&&!(vid._edgeWait&&$("vA")._want)&&(!vid.readyState||vid._reloading||vid.paused)) stopDead(vid); else if(!vid._want) vid._cancelResume(); };
+  const suspend=now=>{ if(byteProbe){ cancelByteProbe(true); probeToken=null; } since=wait=errorSince=mediaSince=0; if(!offAt) offAt=now; if((vid._want||vid._resume)&&!(vid._edgeWait&&$("vA")._want)&&(!vid.readyState||vid._reloading||vid.paused)) stopDead(vid); else if(!vid._want) vid._cancelResume(); };
   const resume=now=>{ if(offAt&&retryAt) retryAt+=now-offAt; offAt=0; };
   document.addEventListener("visibilitychange",()=>{
     since=wait=errorSince=mediaSince=0;
@@ -1029,7 +1038,7 @@ function watchStall(vid){
     resume(Date.now());
     if(m.dataset.fail) retry(false,true);
   });
-  vid.addEventListener("progress",e=>{ if(e.isTrusted) progress++; });
+  vid.addEventListener("progress",e=>{ if(e.isTrusted&&!vid._fetching){ progress++; cancelByteProbe(); probeToken=null; } });
   vid.addEventListener("error",()=>{
     cancelByteProbe();
     errorSince=Date.now();
@@ -1054,7 +1063,18 @@ function watchStall(vid){
     resume(now);
     if(m.dataset.fail){ if(retryAt&&now>=retryAt){ autoRetries++; retry(false,vid!==v); } return; }
     if(vid===v&&mainLoadTimer) return;
-    if(vid._fetching){ if(!since) since=now; if(now-since>=10000){ tries<1?reload():fail(); return; } if(now-vid._fetchSince>=1000){ const e=CLIPS.get(vid._clipKey); setMsg("影片下載中…"+(e?.total?" "+Math.min(100,Math.floor(e.bytes/e.total*100))+"%":""),"影片下載中…"); } return; }
+    if(byteProbe&&!vid._fetching&&byteProbe.entry.bytes){
+      // Validated bytes replace the native stream and become bounded cached media, rather than discarded progress.
+      vid._fetching=true; vid._fetchSince=now; vid._reloading=vid.src;
+      cancelAlign(vid); vid.removeAttribute("src"); vid.load();
+    }
+    if(vid._fetching){
+      if(!since) since=now;
+      // shortcut: split prefixes can extend inactivity; revisit if native byte counts become available.
+      if(byteProbe){ const e=byteProbe.entry; if(e.bytes!==byteProbe.bytes){ if(byteProbe.bytes) since=e.lastByte; byteProbe.bytes=e.bytes; } if(now-mediaSince>=30000){ fail(); return; } }
+      if(now-since>=10000){ tries<1?reload():fail(); return; }
+      if(now-vid._fetchSince>=1000){ const e=CLIPS.get(vid._clipKey); setMsg("影片下載中…"+(e?.total?" "+Math.min(100,Math.floor(e.bytes/e.total*100))+"%":""),"影片下載中…"); } return;
+    }
     if(!vid.src){ if(vid._clip){ if(!since) since=now; if(now-since>=10000) tries<1?reload():fail(); } else hideMsg(); return; }
     if(vid.error){
       if(!vid._badBlob&&(vid.error.code===3||vid.error.code===4&&(errorStatus===404||errorStatus===410))){ fail(); return; }
@@ -1068,7 +1088,7 @@ function watchStall(vid){
     if(media!==mediaSig){ mediaSig=media; mediaSince=now; }
     if(k!==sig){ sig=k; since=now; }
     // Allow native Range negotiation to finish; WebKit exposes no byte progress before metadata.
-    if(!byteProbe&&!vid.readyState&&now-since>=3000&&/^https?:/.test(vid.src)) probeBytes();
+    if(!byteProbe&&vid._clip&&probeToken!==vid._loadToken&&!vid.readyState&&now-since>=3000&&/^https?:/.test(vid.src)) probeBytes();
     if(now-mediaSince>=30000){ fail(); return; }
     if(now-since>=10000){ tries<1?reload():fail(); return; }
     if(now-wait>=1000) setMsg("影片下載中…");

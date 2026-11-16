@@ -32,6 +32,54 @@ try{
      assert.equal(count,4);assert.equal(await page.locator('#stage .pose-msg').isVisible(),false);assert.equal(await live.textContent(),'');
      return {firstRetryStatusMs:8500,recoveredByMs:41000,requests:count};
     },
+    async nativeConnectionStuck(page){
+     const before=f.events.length,start=performance.now();
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?nativeHang=1&drip=4&case='+Date.now();load(4,false);},f.url);
+     await page.waitForFunction(()=>v._fetching,null,{timeout:6500});
+     await page.locator('#play').click();
+     await page.waitForFunction(()=>v.readyState>=3&&!v.seeking&&!v.paused,null,{timeout:6500});
+     const frame=await page.evaluate(()=>v.currentTime);
+     await page.waitForFunction(t=>v.currentTime>t+.05,frame,{timeout:2500});
+     const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4'));
+     assert(requests.some(e=>e.range&&e.hang),'必須真的卡住原生 Range 連線');
+     assert(requests.some(e=>!e.range&&!e.hang&&e.chunks>0),'獨立 GET 必須正常傳送資料');
+     assert(performance.now()-start<11000,'十一秒內必須恢復實際播放');
+     assert.equal(await page.locator('#stage .vid-msg[data-fail]').count(),0);
+     return {elapsedMs:Math.round(performance.now()-start),source:await page.evaluate(()=>v.src.startsWith('blob:')?'blob':'native'),requests};
+    },
+    async byteFallbackShared(page){
+     const before=f.events.length;
+     await page.evaluate(url=>{
+      ALL[4].src=url+'sessions/synthetic/clips/4.mp4?nativeHang=1&drip=8&case='+Date.now();
+      go(DAY_KEYS[0],'video');cmpLoad(ALL[4],ALL[4]);
+     },f.url);
+     await page.locator('#vA').scrollIntoViewIfNeeded();
+     await page.waitForFunction(()=>vA._fetching&&vB._fetching&&CLIPS.get(vB._clipKey)?.bytes>0,null,{timeout:6500});
+     await page.evaluate(()=>{resetClip(vA,clipSrc(ALL[8]));setClip(vA,ALL[8],()=>vA.pause());});
+     await page.waitForFunction(()=>vB.readyState>=3&&!vB.seeking&&vB.src.startsWith('blob:'),null,{timeout:10000});
+     const state=await page.evaluate(()=>{const e=CLIPS.get(vB._clipKey);return {cached:e?.url===vB.src,bytes:e?.size,limit:CLIP_LIMIT};});
+     assert(state.cached&&state.bytes>0&&state.bytes<=state.limit,'離開一側不能取消另一側共用的有界快取下載');
+     const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4'));
+     assert.equal(requests.filter(e=>!e.range).length,1,'兩側應共用一條替代 GET');
+     return state;
+    },
+    async byteFallbackRejected(page){
+     let fetches=0;
+     await page.route('**/*nativeHang*',route=>{
+      if(route.request().resourceType()!=='fetch')return route.continue();
+      fetches++;return route.fulfill({status:200,contentType:'text/html',body:'<html>unavailable</html>'});
+     });
+     const before=f.events.length,start=performance.now();
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?nativeHang=1&drip=4&case='+Date.now();load(4,false);},f.url);
+     await page.waitForFunction(()=>v.src.includes('_retry'),null,{timeout:13000});
+     const fetchesBeforeRetry=fetches;
+     await page.waitForFunction(()=>v.readyState>=3&&!v.seeking,null,{timeout:6000});
+     const retry=f.events.slice(before).find(e=>e.file.endsWith('/4.mp4')&&e.query.includes('_retry'));
+     assert.equal(fetchesBeforeRetry,1,'同一次載入遇到無效回應不能重複探測');
+     assert(retry&&retry.time-start<13000,'替代下載失敗仍須約十秒原生重試');
+     assert.equal(await page.evaluate(()=>v._fetching),false);
+     return {fetches,fetchesBeforeRetry,retryMs:Math.round(retry.time-start)};
+    },
     async slowByteProgress(page){
      const before=f.events.length;
      await page.evaluate(url=>{
@@ -43,12 +91,17 @@ try{
       ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=20&case='+Date.now();load(4,false);
      },f.url);
      await page.waitForFunction(()=>v.readyState>=3&&!v.seeking,null,{timeout:27500});
-     const state=await page.evaluate(()=>({metadataMs:Math.round(slowMetadataMs),progress:slowProgress,states:slowStates}));
+     const state=await page.evaluate(()=>({metadataMs:Math.round(slowMetadataMs),progress:slowProgress,states:slowStates,blob:v.src.startsWith('blob:'),cached:CLIPS.get(v._clipKey)?.url===v.src}));
      const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4')),retries=requests.filter(e=>e.query.includes('_retry')).length;
      assert(state.metadataMs>=18000,`metadata 過早：${state.metadataMs}`);assert(requests.reduce((n,e)=>n+e.chunks,0)>=40);
      if(engine!=='webkit')assert(state.progress>0,'Chromium 必須有可信任下載進度');
+     const byteRatio=requests.reduce((n,e)=>n+e.bytes,0)/f.media.length;
+     assert(byteRatio<1.35,`不得維持雙倍下載：${byteRatio.toFixed(2)} 倍`);
+     if(engine==='webkit')assert(state.blob&&state.cached,'替代下載必須實際成為有容量上限的快取影片');
+     else assert.equal(state.blob,false,'原生有進度時保留串流');
+     assert.equal(await page.locator('#stage .vid-msg[data-fail]').count(),0,'滴流完成不得留下失敗提示');
      console.log(JSON.stringify({measurement:{...state,retries,requests:requests.length,chunks:requests.map(e=>e.chunks)}}));
-     assert.equal(retries,0,'持續下載時不得重載');return {...state,retries,requests:requests.length,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
+     assert.equal(retries,0,'持續下載時不得重載');return {...state,retries,byteRatio,requests:requests.length,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
     },
     async slowByteCeiling(page){
      const before=f.events.length,start=performance.now();
@@ -66,7 +119,9 @@ try{
      assert(elapsedMs>=29500&&elapsedMs<=34000,`媒體上限應約 30 秒，實際 ${elapsedMs} ms`);
      if(engine!=='webkit')assert(progress>=20,'Chromium 必須持續有可信任下載進度');
      assert(requests.some(e=>e.chunks>=100),'伺服器必須持續傳送真實資料');assert.equal(retries,0);
-     return {elapsedMs,progress,retries,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
+     await failed().click();
+     assert.equal(await page.evaluate(()=>v.src.includes('_retry')),true,'上限後手動重試仍須使用 cache-buster');
+     return {elapsedMs,progress,retries,manualRetry:true,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
     },
     async slowByteStops(page){
      const before=f.events.length;

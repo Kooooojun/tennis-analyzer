@@ -31,8 +31,8 @@ export async function fixture(ref=process.env.SITE_REF){
   if(file.endsWith('.mp4')){
    const drip=Number(url.searchParams.get('drip')),body=drip?slowMedia:media;
    const range=/bytes=(\d+)-(\d*)/.exec(req.headers.range||''),start=range?+range[1]:0,end=range&&range[2]?Math.min(+range[2],body.length-1):body.length-1;
-   const hanging=end-start+1>64&&(url.searchParams.get('hang')==='always'||url.searchParams.get('hang')==='once'&&!url.searchParams.has('_retry'));
-   const event={file,query:url.search,hang:hanging,time:performance.now(),method:req.method,bytes:0,chunks:0};events.push(event);
+   const hanging=end-start+1>64&&(url.searchParams.get('hang')==='always'||url.searchParams.get('hang')==='once'&&!url.searchParams.has('_retry')||url.searchParams.has('nativeHang')&&range&&!url.searchParams.has('_retry'));
+   const event={file,query:url.search,range:req.headers.range||null,hang:!!hanging,time:performance.now(),method:req.method,bytes:0,chunks:0};events.push(event);
    res.writeHead(range?206:200,{'Content-Type':'video/mp4','Content-Length':end-start+1,'Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${start}-${end}/${body.length}`}:{})});
    if(req.method==='HEAD')res.end();
    else if(hanging){res.write(body.subarray(start,start+64));res.flushHeaders();}
