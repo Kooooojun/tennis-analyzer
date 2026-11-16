@@ -127,4 +127,35 @@ with tempfile.TemporaryDirectory() as d:
     edge, plain = cli(ev), cli(ev[[1]])
     assert len(edge.stderr.splitlines()) == 1 and "2 個擊球" in edge.stderr and plain.stderr == "", (edge.stderr, plain.stderr)
     assert edge.stdout == plain.stdout, (edge.stdout, plain.stdout)
+
+# T17: chunked envelope() is bit-for-bit identical to single-shot float64 and handles short/empty arrays
+from hits import HOP, band_snr
+big = rng.normal(0, 1e-2, 30000 * HOP + 37).astype(np.float32)
+n_big = len(big) // HOP
+ref_env = 20 * np.log10(np.sqrt((big[:n_big * HOP].reshape(n_big, HOP).astype(np.float64) ** 2).mean(1)) + 1e-6)
+assert np.array_equal(envelope(big), ref_env)
+assert len(envelope(np.zeros(HOP - 1, np.float32))) == 0
+assert len(envelope(np.zeros(0, np.float32))) == 0
+
+# T18: hits.py CLI handles 0-byte empty audio files and multi-chunk audio files identically
+with tempfile.TemporaryDirectory() as d:
+    d = Path(d)
+    (d / "empty_hp.f32").write_bytes(b"")
+    (d / "empty.f32").write_bytes(b"")
+    subprocess.run([sys.executable, str(Path(__file__).resolve().parent.parent / "tools" / "hits.py"),
+                    str(d / "empty_hp.f32"), str(d / "empty.f32"), str(d / "empty_sounds.npy")], check=True)
+    assert np.load(d / "empty_sounds.npy").shape == (0, 4)
+
+    big_raw = big.copy()
+    big_raw[10 * SR:10 * SR + 80] += rng.normal(0, 0.3, 80).astype(np.float32)
+    big_hp = big_raw.copy()
+    big_hp.tofile(d / "big_hp.f32")
+    big_raw.tofile(d / "big.f32")
+    subprocess.run([sys.executable, str(Path(__file__).resolve().parent.parent / "tools" / "hits.py"),
+                    str(d / "big_hp.f32"), str(d / "big.f32"), str(d / "big_sounds.npy")], check=True)
+    got = np.load(d / "big_sounds.npy")
+    db_ref = envelope(big_hp)
+    exp = np.array([(t, float(db_ref[i:i + 6].max()), on, band_snr(big_raw, t)) for t, on, i in candidates(db_ref)], dtype=np.float64).reshape(-1, 4)
+    assert np.array_equal(got, exp, equal_nan=True)
+
 print("ok")
