@@ -42,39 +42,83 @@ function contrast(fg, bg) {
     await page.evaluate(() => document.getElementById("selA").closest(".card").scrollIntoView({ block: "start" }));
     await page.waitForTimeout(200);
     const cmpPort = await page.evaluate(() => {
-      const r = document.querySelector(".player").getBoundingClientRect();
+      const p = document.querySelector(".player");
+      const r = p.getBoundingClientRect();
       const visH = Math.max(0, Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0));
       return {
+        pos: getComputedStyle(p).position,
+        top: r.top,
+        bottom: r.bottom,
+        h: r.height,
         visH,
         vh: window.innerHeight,
-        ratio: visH / window.innerHeight,
+        ratio: r.height / window.innerHeight,
         scrollW: document.documentElement.scrollWidth,
         vw: window.innerWidth,
       };
     });
     assert(cmpPort.scrollW <= cmpPort.vw, `portrait video tab horizontal overflow: ${cmpPort.scrollW} > ${cmpPort.vw}`);
-    assert(cmpPort.visH <= cmpPort.vh * 0.4,
-      `portrait .player visible height at compare (${cmpPort.visH.toFixed(1)}px = ${(cmpPort.ratio * 100).toFixed(1)}%) must be <= 40% of ${cmpPort.vh}px`);
+    assert.equal(cmpPort.pos, "sticky", `portrait .player must be sticky, got ${cmpPort.pos}`);
+    assert(cmpPort.top >= -1 && cmpPort.bottom > 0 && cmpPort.visH > 0,
+      `portrait .player must stay visible when scrolled to compare (top=${cmpPort.top}, bottom=${cmpPort.bottom})`);
+    assert(cmpPort.h <= cmpPort.vh * 0.4,
+      `portrait .player height at compare (${cmpPort.h.toFixed(1)}px = ${(cmpPort.ratio * 100).toFixed(1)}%) must be <= 40% of ${cmpPort.vh}px`);
 
-    // Scroll to stroke list on stroke tab
+    // Scroll down on stroke tab, check sticky .player <= 40% and visible, then click 2nd stroke and verify scrollY != 0
     await page.evaluate(() => go(DAY_KEYS[0], "stroke"));
     await page.waitForTimeout(200);
-    await page.evaluate(() => document.querySelector(".strokes").closest(".card").scrollIntoView({ block: "start" }));
+    await page.evaluate(() => window.scrollTo(0, 120));
     await page.waitForTimeout(200);
     const strokePort = await page.evaluate(() => {
-      const r = document.querySelector(".player").getBoundingClientRect();
+      const p = document.querySelector(".player");
+      const r = p.getBoundingClientRect();
       const visH = Math.max(0, Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0));
       return {
+        pos: getComputedStyle(p).position,
+        top: r.top,
+        bottom: r.bottom,
+        h: r.height,
         visH,
         vh: window.innerHeight,
-        ratio: visH / window.innerHeight,
+        ratio: r.height / window.innerHeight,
         scrollW: document.documentElement.scrollWidth,
         vw: window.innerWidth,
+        scrollY: window.scrollY,
       };
     });
     assert(strokePort.scrollW <= strokePort.vw, `portrait stroke tab horizontal overflow: ${strokePort.scrollW} > ${strokePort.vw}`);
-    assert(strokePort.visH <= strokePort.vh * 0.4,
-      `portrait .player visible height at stroke list (${strokePort.visH.toFixed(1)}px = ${(strokePort.ratio * 100).toFixed(1)}%) must be <= 40% of ${strokePort.vh}px`);
+    assert.equal(strokePort.pos, "sticky", `portrait .player on stroke tab must be sticky, got ${strokePort.pos}`);
+    assert(strokePort.top >= -1 && strokePort.bottom > 0 && strokePort.visH > 0,
+      `portrait .player must stay visible at stroke list (top=${strokePort.top}, bottom=${strokePort.bottom})`);
+    assert(strokePort.h <= strokePort.vh * 0.4,
+      `portrait .player height at stroke list (${strokePort.h.toFixed(1)}px = ${(strokePort.ratio * 100).toFixed(1)}%) must be <= 40% of ${strokePort.vh}px`);
+
+    // Click 2nd stroke in list -> scrollY must NOT reset to 0
+    await page.locator(".strokes button").nth(1).click();
+    await page.waitForTimeout(350);
+    const afterListClickScrollY = await page.evaluate(() => window.scrollY);
+    assert(afterListClickScrollY > 0, `clicking 2nd stroke in list must not reset scrollY to 0 (got ${afterListClickScrollY})`);
+
+    // Scroll to #chart on stroke tab, click to jump -> main video currentTime changes and .player stays visible
+    await page.evaluate(() => {
+      const el = document.getElementById("chart");
+      const y = el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.5;
+      window.scrollTo(0, Math.max(0, y));
+    });
+    await page.waitForTimeout(200);
+    const beforeJumpT = await page.evaluate(() => v.currentTime);
+    const chartBox = await page.locator("#chart").boundingBox();
+    assert(chartBox && chartBox.width > 0, "#chart must have bounding box");
+    await page.mouse.click(chartBox.x + chartBox.width * 0.2, chartBox.y + chartBox.height * 0.5);
+    await page.waitForTimeout(200);
+    const afterJump = await page.evaluate(() => {
+      const r = document.querySelector(".player").getBoundingClientRect();
+      return { t: v.currentTime, top: r.top, bottom: r.bottom, vh: window.innerHeight };
+    });
+    assert(Math.abs(afterJump.t - beforeJumpT) > 0.01,
+      `clicking #chart jump must change v.currentTime (before=${beforeJumpT}, after=${afterJump.t})`);
+    assert(afterJump.top >= -1 && afterJump.bottom > 0 && afterJump.bottom <= afterJump.vh,
+      `.player must stay in viewport after #chart jump (top=${afterJump.top}, bottom=${afterJump.bottom})`);
 
     // 2a. WebKit 844x390 landscape: .player and .stage dimensions match main (<= 1px tolerance)
     await page.setViewportSize({ width: 844, height: 390 });
@@ -127,11 +171,15 @@ function contrast(fg, bg) {
       }
     }
 
-    // Touch height >= 44px for useCurA / useCurB on iPhone 13
+    // Touch height >= 44px and distinct aria-label for useCurA / useCurB on iPhone 13
     const btnA = page.locator("#useCurA");
     const btnB = page.locator("#useCurB");
     assert.equal(await btnA.count(), 1, "#useCurA button must exist");
     assert.equal(await btnB.count(), 1, "#useCurB button must exist");
+    const ariaA = await btnA.getAttribute("aria-label");
+    const ariaB = await btnB.getAttribute("aria-label");
+    assert(ariaA && ariaA.includes("左"), `#useCurA aria-label must mention 左邊, got ${ariaA}`);
+    assert(ariaB && ariaB.includes("右"), `#useCurB aria-label must mention 右邊, got ${ariaB}`);
     const boxA = await btnA.boundingBox();
     const boxB = await btnB.boundingBox();
     assert(boxA && boxA.height >= 43.5, `#useCurA touch height must be >= 44px, got ${boxA?.height}`);
