@@ -101,21 +101,22 @@ async function rapid(page,slow){
  await page.waitForFunction(()=>S.id===0&&v.readyState>=3);await page.waitForTimeout(700);
  await page.evaluate(()=>{cancelPrefetch();const first=ALL[24],entry=CLIPS.get(first.src);if(entry?.url)URL.revokeObjectURL(entry.url);CLIPS.delete(first.src);delete first.frames;});
  const requests=[],inflight=new Set(),cancelled=[];
- page.on('request',r=>{if(/\/(clips|pose)\/\d+\.(mp4|js)/.test(r.url())){requests.push({url:r.url(),time:performance.now()});inflight.add(r);}});
+ page.on('request',r=>{if(/\/(clips|pose)\/\d+\.(mp4|js)/.test(r.url())){requests.push({url:r.url(),time:Date.now()});inflight.add(r);}});
  for(const event of ['requestfinished','requestfailed'])page.on(event,r=>inflight.delete(r));
  page.on('requestfailed',r=>{if(/\/(clips|pose)\/24\./.test(r.url()))cancelled.push(new URL(r.url()).pathname.includes('/pose/')?'pose':'clip');});
  if(slow)await page.route('**/sessions/synthetic/**',async route=>{if(/\/(clips|pose)\//.test(route.request().url()))await new Promise(r=>setTimeout(r,1200));await route.continue().catch(()=>{});});
  // 固定 300 ms 間隔在瀏覽器內執行，避免工具往返時間改變輸入。
- await page.evaluate(async()=>{window.rapidTitles=[];for(let i=0;i<18;i++){step(-1);rapidTitles.push({id:S.id,title:$('nowTitle').textContent,knee:$('mKnee').textContent});if(i<17)await new Promise(r=>setTimeout(r,300));}window.rapidStop=performance.now();});
+ await page.evaluate(async()=>{window.rapidTitles=[];for(let i=0;i<18;i++){step(-1);rapidTitles.push({id:S.id,title:$('nowTitle').textContent,knee:$('mKnee').textContent});if(i<17)await new Promise(r=>setTimeout(r,300));}window.rapidStop=Date.now();});
  await page.waitForFunction(()=>S.id===7&&v.readyState>=3&&S.frames&&[ALL[6],ALL[8]].every(s=>CLIPS.get(s.src)?.url),null,{timeout:10000});
  await page.waitForTimeout(200);
  const counts={};for(const r of requests){const match=/\/(clips|pose)\/(\d+)\./.exec(r.url);const k=match[2];counts[k]??={clip:0,pose:0};counts[k][match[1]==='clips'?'clip':'pose']++;}
- const state=await page.evaluate(()=>({id:S.id,ready:v.readyState,pose:!!S.frames,titles:rapidTitles,settleMs:performance.getEntriesByType('resource').find(e=>e.name.includes('/clips/7.mp4')&&e.startTime>=rapidStop)?.startTime-rapidStop}));
- const details={counts,inflight:inflight.size,pending:[...inflight].map(r=>({type:r.resourceType(),file:new URL(r.url()).pathname})),cancelled,final:state.id,ready:state.ready,pose:state.pose,settleMs:state.settleMs};console.log(JSON.stringify({measurement:details}));
+ const state=await page.evaluate(()=>({id:S.id,ready:v.readyState,pose:!!S.frames,titles:rapidTitles,stoppedAt:rapidStop}));
+ const settleMs=requests.find(r=>r.url.includes('/clips/7.mp4')&&r.time>=state.stoppedAt)?.time-state.stoppedAt;
+ const details={counts,inflight:inflight.size,pending:[...inflight].map(r=>({type:r.resourceType(),file:new URL(r.url()).pathname})),cancelled,final:state.id,ready:state.ready,pose:state.pose,settleMs};console.log(JSON.stringify({measurement:details}));
  assert(state.titles.every(s=>s.title.includes('#'+String(s.id+1).padStart(2,'0'))&&s.knee.includes(String(110+s.id))),'標題與數據立即更新');
  assert.equal(state.id,7);assert(state.ready>=2&&state.pose);
  const allowed=new Set([24,7,6,8]);assert(Object.keys(counts).every(id=>allowed.has(+id)),'只允許第一拍、最後一拍與最後鄰居');
- assert(state.settleMs>=300&&state.settleMs<750,'停下約 350 ms 才載入最後一拍');
+ assert(settleMs>=300&&settleMs<750,'停下約 350 ms 才載入最後一拍');
  assert(Object.values(counts).every(c=>c.pose<=1&&c.clip<=2),'骨架最多一次、影片最多兩次原生 Range 探測');
  assert.equal(inflight.size,0);
  if(slow)assert.deepEqual([...new Set(cancelled)].sort(),['clip','pose'],'已發出的第一拍影片與骨架都必須真的取消');
