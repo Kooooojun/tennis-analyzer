@@ -106,14 +106,24 @@ function contrast(fg, bg) {
       await page.waitForSelector("body.ready");
       await page.evaluate(() => go(DAY_KEYS[0], "stroke"));
       await page.waitForTimeout(200);
-      const tagPairs = await page.evaluate(() =>
-        ["FH", "BH", "SV"].map(k => {
+      const tagPairs = await page.evaluate(() => {
+        const pairs = ["FH", "BH", "SV"].map(k => {
           const el = document.querySelector(`.tag.${k}`);
           if (!el) return null;
           const cs = getComputedStyle(el);
           return { k, fg: cs.color, bg: cs.backgroundColor };
-        }).filter(Boolean)
-      );
+        }).filter(Boolean);
+        const oh = document.createElement("span");
+        oh.className = "tag OH";
+        oh.textContent = "OH";
+        const host = document.querySelector(".strokes button:not(.cur)") || document.body;
+        host.append(oh);
+        const fgOh = getComputedStyle(oh).color;
+        const bgOh = getComputedStyle(host).backgroundColor;
+        oh.remove();
+        pairs.push({ k: "OH", fg: fgOh, bg: bgOh });
+        return pairs;
+      });
       for (const p of tagPairs) {
         const ratio = contrast(parseRgb(p.fg), parseRgb(p.bg));
         assert(ratio >= 4.5, `${scheme} .tag.${p.k} contrast ${ratio.toFixed(2)} < 4.5`);
