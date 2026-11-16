@@ -11,7 +11,9 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
   const context=await browser.newContext(engine==='webkit'?devices['iPhone 13']:{}),page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
   try{
    await page.goto(process.env.SITE_E2E_URL);await page.evaluate(()=>go(DAY_KEYS[0],'video'));await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>[v,vA,vB].every(x=>x.readyState>=3));
-   await page.evaluate(()=>{[v,vA,vB].forEach((x,i)=>Object.assign(x.parentElement.style,{position:'fixed',top:'100px',left:(i*33)+'%',width:'33%',height:'160px',zIndex:'1000',aspectRatio:'auto'}));toggle();cmpStart();});await page.waitForFunction(()=>[v,vA,vB].every(x=>!x.paused&&x._want));
+   await page.evaluate(()=>{[v,vA,vB].forEach((x,i)=>Object.assign(x.parentElement.style,{position:'fixed',top:'100px',left:(i*33)+'%',width:'33%',height:'160px',zIndex:'1000',aspectRatio:'auto'}));});
+   await page.waitForFunction(()=>[v,vA,vB].every(x=>x.readyState>=3&&!x.seeking&&!x._align&&!x._reloading));
+   await page.evaluate(()=>{toggle();cmpStart();});await page.waitForFunction(()=>[v,vA,vB].every(x=>!x.paused&&x._want));
    await page.evaluate(()=>{window.hideCalls=[];window.updates=0;v.addEventListener('timeupdate',()=>updates++);for(const x of [v,vA,vB]){const native=x.pause.bind(x);x.pause=()=>{hideCalls.push({id:x.id,hidden:document.hidden});return native();};}});
    let front;
    if(mode==='continue-policy')await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
@@ -31,7 +33,7 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
    assert.equal(state.buttons[0].includes('⏸'),!state.paused[0]);assert.equal(state.buttons[1].includes('⏸'),!state.paused[1]);assert.equal(state.paused[1],state.paused[2]);
    if(mode==='native-pause')assert(state.paused.every(Boolean));
    assert.deepEqual(errors,[]);results.push({engine,mode,pass:true,beforePolicy,...state});
-  }catch(e){results.push({engine,mode,pass:false,error:e.message});}
+  }catch(e){results.push({engine,mode,pass:false,error:e.message,states:await page.evaluate(()=>[v,vA,vB].map(x=>({id:x.id,paused:x.paused,want:x._want,ready:x.readyState,seeking:x.seeking,align:!!x._align,reloading:!!x._reloading,error:x.error?.code})))});}
   console.log(JSON.stringify(results.at(-1)));await context.close();
  }
  await browser.close();

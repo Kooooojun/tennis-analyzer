@@ -29,19 +29,21 @@ try{
      await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
      await page.clock.runFor(20000);assert.equal(count,1);
      await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
-     await page.clock.runFor(5000);await page.waitForFunction(()=>!!S.frames);assert.equal(count,2);
+     await page.clock.runFor(5000);await page.waitForFunction(()=>!!S.frames,null,{timeout:1500});assert.equal(count,2);
     },
     async stall(page){return stalled(page,false,'once');},
     async missedVisibility(page){return stalled(page,true,'once');},
     async stallFailure(page){return stalled(page,false,'always');},
     async progressWithoutMedia(page){await page.evaluate(()=>setInterval(()=>v.dispatchEvent(new Event('progress')),2000));return stalled(page,false,'once');},
     async noSource(page){
-     await page.evaluate(()=>{load(4,false);v.removeAttribute('src');v.load();const m=v.parentElement.querySelector('.vid-msg');m.hidden=false;m.textContent='影片下載中…';});
+     await page.evaluate(()=>load(4,false));await page.waitForFunction(()=>v.readyState>=3&&!v.seeking);
+     await page.evaluate(()=>{resetClip(v,'');Object.defineProperty(v,'currentSrc',{configurable:true,value:''});});await page.waitForTimeout(100);
+     await page.evaluate(()=>{const m=v.parentElement.querySelector('.vid-msg');m.hidden=false;m.textContent='影片下載中…';});
      await page.clock.runFor(12000);await page.waitForFunction(()=>!!v.src||v.parentElement.querySelector('.vid-msg').hidden,null,{timeout:1000});
     },
-    async rapid(page){await rapid(page,false);},
-    async rapidH2(page){if(engine!=='webkit'){await page.goto(h2);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>S&&v.readyState>=3);return rapid(page,false);}},
-    async rapidSlow(page){await rapid(page,true);},
+    async rapid(page){return rapid(page,false);},
+    async rapidH2(page){await page.goto(h2);assert.equal(await page.evaluate(()=>performance.getEntriesByType('navigation')[0].nextHopProtocol),'h2');await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>S&&v.readyState>=3);return rapid(page,false);},
+    async rapidSlow(page){return rapid(page,true);},
     async single(page){
      await page.evaluate(()=>{cancelPrefetch();const list=visible(),i=list.indexOf(S);list[(i-1+list.length)%list.length].src+='?single';window.singleAt=performance.now();step(-1);});
      await page.waitForFunction(()=>performance.getEntriesByType('resource').some(e=>e.name.includes('?single')));const ms=await page.evaluate(()=>performance.getEntriesByType('resource').find(e=>e.name.includes('?single')).startTime-singleAt);
@@ -63,6 +65,7 @@ try{
      await page.evaluate(()=>load(8,false));await failed;
     },
    })){
+    if(name==='rapidH2'&&engine==='webkit')continue;
     if(process.env.SITE_CASES&&!process.env.SITE_CASES.split(',').includes(name))continue;
     const context=await browser.newContext({ignoreHTTPSErrors:true,...(engine==='webkit'?devices['iPhone 13']:{})}),page=await context.newPage(),errors=[];
     page.on('pageerror',e=>errors.push(e.message));
@@ -93,20 +96,28 @@ async function stalled(page,missed,mode){
  return {elapsedMs:Math.round(performance.now()-start),requests:requests.length};
 }
 async function rapid(page,slow){
+ await page.evaluate(()=>{go(DAY_KEYS[0],'video');scrollTo(0,0);});await page.waitForFunction(()=>TAB==='video');
  await page.evaluate(()=>{cancelPrefetch();CLIPS.clear();for(const s of ALL){delete s.frames;delete s.world;delete s._poseErr;}load(0,false);});
  await page.waitForFunction(()=>S.id===0&&v.readyState>=3);await page.waitForTimeout(700);
- const requests=[],inflight=new Set();
+ await page.evaluate(()=>{cancelPrefetch();const first=ALL[24],entry=CLIPS.get(first.src);if(entry?.url)URL.revokeObjectURL(entry.url);CLIPS.delete(first.src);delete first.frames;});
+ const requests=[],inflight=new Set(),cancelled=[];
  page.on('request',r=>{if(/\/(clips|pose)\/\d+\.(mp4|js)/.test(r.url())){requests.push({url:r.url(),time:performance.now()});inflight.add(r);}});
  for(const event of ['requestfinished','requestfailed'])page.on(event,r=>inflight.delete(r));
+ page.on('requestfailed',r=>{if(/\/(clips|pose)\/24\./.test(r.url()))cancelled.push(new URL(r.url()).pathname.includes('/pose/')?'pose':'clip');});
  if(slow)await page.route('**/sessions/synthetic/**',async route=>{if(/\/(clips|pose)\//.test(route.request().url()))await new Promise(r=>setTimeout(r,1200));await route.continue().catch(()=>{});});
  // 固定 300 ms 間隔在瀏覽器內執行，避免工具往返時間改變輸入。
- await page.evaluate(async()=>{window.rapidTitles=[];for(let i=0;i<18;i++){step(-1);rapidTitles.push({id:S.id,title:$('nowTitle').textContent,knee:$('mKnee').textContent});if(i<17)await new Promise(r=>setTimeout(r,300));}});
- await page.waitForTimeout(slow?5000:1800);
+ await page.evaluate(async()=>{window.rapidTitles=[];for(let i=0;i<18;i++){step(-1);rapidTitles.push({id:S.id,title:$('nowTitle').textContent,knee:$('mKnee').textContent});if(i<17)await new Promise(r=>setTimeout(r,300));}window.rapidStop=performance.now();});
+ await page.waitForFunction(()=>S.id===7&&v.readyState>=3&&S.frames&&[ALL[6],ALL[8]].every(s=>CLIPS.get(s.src)?.url),null,{timeout:10000});
+ await page.waitForTimeout(200);
  const counts={};for(const r of requests){const match=/\/(clips|pose)\/(\d+)\./.exec(r.url);const k=match[2];counts[k]??={clip:0,pose:0};counts[k][match[1]==='clips'?'clip':'pose']++;}
- const state=await page.evaluate(()=>({id:S.id,ready:v.readyState,pose:!!S.frames,titles:rapidTitles}));
- const details={counts,inflight:inflight.size,final:state.id,ready:state.ready,pose:state.pose};console.log(JSON.stringify({measurement:details}));
+ const state=await page.evaluate(()=>({id:S.id,ready:v.readyState,pose:!!S.frames,titles:rapidTitles,settleMs:performance.getEntriesByType('resource').find(e=>e.name.includes('/clips/7.mp4')&&e.startTime>=rapidStop)?.startTime-rapidStop}));
+ const details={counts,inflight:inflight.size,pending:[...inflight].map(r=>({type:r.resourceType(),file:new URL(r.url()).pathname})),cancelled,final:state.id,ready:state.ready,pose:state.pose,settleMs:state.settleMs};console.log(JSON.stringify({measurement:details}));
  assert(state.titles.every(s=>s.title.includes('#'+String(s.id+1).padStart(2,'0'))&&s.knee.includes(String(110+s.id))),'標題與數據立即更新');
  assert.equal(state.id,7);assert(state.ready>=2&&state.pose);
- const allowed=new Set([24,7,6,8]);assert(Object.keys(counts).every(id=>allowed.has(+id)),'只允許第一拍、最後一拍與最後鄰居');assert.equal(inflight.size,0);
+ const allowed=new Set([24,7,6,8]);assert(Object.keys(counts).every(id=>allowed.has(+id)),'只允許第一拍、最後一拍與最後鄰居');
+ assert(state.settleMs>=300&&state.settleMs<750,'停下約 350 ms 才載入最後一拍');
+ assert(Object.values(counts).every(c=>c.pose<=1&&c.clip<=2),'骨架最多一次、影片最多兩次原生 Range 探測');
+ assert.equal(inflight.size,0);
+ if(slow)assert.deepEqual([...new Set(cancelled)].sort(),['clip','pose'],'已發出的第一拍影片與骨架都必須真的取消');
  return details;
 }

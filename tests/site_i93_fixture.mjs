@@ -8,13 +8,14 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 export async function fixture(ref=process.env.SITE_REF){
- const scratch=fs.mkdtempSync(path.join(os.tmpdir(),'site-i93-'));
- const clip=path.join(scratch,'clip.mp4');
- execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','testsrc2=s=640x360:r=60:d=3','-an','-c:v','libx264','-threads','1','-preset','ultrafast','-pix_fmt','yuv420p','-movflags','+faststart',clip]);
+ const seconds=Number(process.env.SITE_CLIP_SECONDS||3);
+ if(!Number.isInteger(seconds)||seconds<3||seconds>10)throw new Error('合成片長度須為 3–10 秒整數');
+ const scratch=fs.mkdtempSync(path.join(os.tmpdir(),'site-i93-')),clip=path.join(scratch,'clip.mp4');
+ execFileSync('ffmpeg',['-v','error','-f','lavfi','-i',`testsrc2=s=640x360:r=60:d=${seconds}`,'-an','-c:v','libx264','-threads','1','-preset','ultrafast','-pix_fmt','yuv420p','-movflags','+faststart',clip]);
  const media=fs.readFileSync(clip),html=()=>ref?execFileSync('git',['show',`${ref}:web/index.html`]):fs.readFileSync(new URL('../web/index.html',import.meta.url));
- const strokes=Array.from({length:25},(_,id)=>({id,video:'synthetic',src:`sessions/synthetic/clips/${id}.mp4`,n:180,kind:id%3===0?'BH':'FH',drill:'rally',player:'me',clock:`0:${String(id).padStart(2,'0')}`,contact:90,knee:110+id,prep:.5,size:[640,360],open_min:30,contact_h:50}));
+ const strokes=Array.from({length:25},(_,id)=>({id,video:'synthetic',src:`sessions/synthetic/clips/${id}.mp4`,n:seconds*60,kind:id%3===0?'BH':'FH',drill:'rally',player:'me',clock:`0:${String(id).padStart(2,'0')}`,contact:90,knee:110+id,prep:.5,size:[640,360],open_min:30,contact_h:50}));
  const session={id:'synthetic',label:'合成場次',date:'2026-01-01',players:['me'],sub:'合成資料',camera:'側面',showOpen:true,findings:[],presets:[],strokes};
- const pose=JSON.stringify({frames:Array.from({length:180},()=>Array.from({length:17},(_,i)=>[.3+(i%3)*.1,.2+i*.025,.99]))});
+ const pose=JSON.stringify({frames:Array.from({length:seconds*60},()=>Array.from({length:17},(_,i)=>[.3+(i%3)*.1,.2+i*.025,.99]))});
  const events=[];
  if(process.env.SITE_FIXTURE_ROOT){
   const root=process.env.SITE_FIXTURE_ROOT,day=path.join(root,'sessions','synthetic');fs.mkdirSync(path.join(day,'pose'),{recursive:true});fs.mkdirSync(path.join(day,'clips'),{recursive:true});
