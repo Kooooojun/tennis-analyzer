@@ -82,6 +82,11 @@ def _change_errors(finding, scores, runs):
                and not re.search(r"下次|下一次|未來|建議|試著|希望|目標|請|先.*改善", c)
                and not (not cross_session and len(drills) >= 2 and re.search(r"自拋|對打|高拋", c))]
     if not clauses: return []
+    split_clauses = []
+    for clause in clauses:
+        parts = re.split(r"而且|並且|但是|同時|以及|且|但|而|與|及|、", clause)
+        split_clauses.extend(parts if len(parts) > 1 and all(re.search(up + "|" + down, p) for p in parts) else [clause])
+    clauses = split_clauses
     identities = {(c.get("player") or "me", c.get("kind")) for c in finding.get("cite", []) if isinstance(c, dict) and "kind" in c}
     if not identities: return ["進退步宣稱缺少球員與拍種的群組引用"]
 
@@ -117,7 +122,14 @@ def _change_errors(finding, scores, runs):
             if not items or items == ["consistency"] and len(cited_items) == 1 and cited_items[0].endswith(".cons"):
                 items = cited_items
             if re.search(r"穩|一致", clause):
-                items = [m if m.endswith(".cons") else m + ".cons" for m in items if m.removesuffix(".cons") in group["metrics"]] or ["consistency"]
+                metric_items = [m for m in items if m.removesuffix(".cons") in group["metrics"]]
+                if re.search(r"進步|退步|改善|變好|變差", clause):
+                    specific = [m for m in metric_items if m.endswith(".cons") or re.search(re.escape(names.get(m, m)) + r"(?:的|變得)?(?:一致性|更穩|比較穩)", clause)]
+                    items = [m for m in items if m not in specific and not (m == "consistency" and specific)]
+                else:
+                    specific, items = metric_items, []
+                items += [m if m.endswith(".cons") else m + ".cons" for m in specific]
+                items = items or ["consistency"]
             for item in set(items or ["total"]):
                 name = names.get(item.removesuffix(".cons"), item) + ("一致性" if item.endswith(".cons") else "")
                 flag = flags.get(item)

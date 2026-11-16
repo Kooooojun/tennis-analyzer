@@ -148,6 +148,27 @@ changed_right['groups'][0]['metrics']['wrist_speed']=dict(score=4,cons=None)
 assert check(dict(findings=[dict(title='技術分退步',cite=[dict(kind='FH',metric='form',value=8)])]),strokes,changed_right,runs=[changed_left,changed_right]) == []
 changed_left['groups'][0]['metrics']['contact_h']['cons']=None
 assert check(dict(findings=[dict(title='未壓前總分進步',cite=[dict(kind='FH',metric='uncapped',value=9.8)])]),strokes,changed_right,runs=[changed_left,changed_right])
+# 複合句不得讓一致性詞彙蓋掉另一個具名分數的錯誤方向。
+compound_left,compound_right=[copy.deepcopy(left),copy.deepcopy(right)]
+for r,total,cons in [(compound_left,9,3),(compound_right,6,8)]:
+    r['groups'][0].update(total=total,consistency=cons)
+    r['groups'][0]['uncertainty']['consistency']={'sem':0.1,'ci':[1,10]}
+def compound_claim(title):
+    return check(dict(findings=[dict(title=title,cite=[dict(kind='FH',metric='total',value=6)])]),strokes,compound_right,runs=[compound_left,compound_right])
+assert compound_claim('總分進步且一致性改善')
+assert compound_claim('總分進步且膝蓋更穩')
+assert compound_claim('總分與一致性進步')
+assert compound_claim('總分退步但一致性改善') == []
+for r,knee,cons in [(compound_left,7,5),(compound_right,9,5)]:
+    r['groups'][0]['metrics']['knee'].update(score=knee,cons=cons)
+    r['groups'][0]['metrics']['knee']['uncertainty']={'score':{'sem':0.1,'ci':[1,10]},'cons':{'sem':0.1,'ci':[1,10]}}
+assert compound_claim('膝蓋與一致性改善') == []
+compound_right['groups'][0]['metrics']['knee']['score']=7
+assert compound_claim('膝蓋與一致性改善')
+compound_right['groups'][0]['metrics']['knee']['cons']=9
+compound_right['groups'][0]['consistency']=3
+assert compound_claim('膝蓋一致性改善') == []
+
 # 不具名宣稱只取同球員、拍種的引用；無效引用須回報而非拋例外。
 assert check(dict(findings=[dict(title='這個分數退步',cite=[dict(kind='FH',metric=1,value=8)])]),strokes,right,runs=[left,right])
 print('場內區間、差值門檻與建議核對測試通過')
