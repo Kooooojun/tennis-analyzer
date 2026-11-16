@@ -6,7 +6,7 @@ import numpy as np
 sys.path[:0] = [str(Path(__file__).resolve().parents[1] / "docs/research/caltennis"),
                str(Path(__file__).resolve().parents[1] / "tools")]
 from ct_lr import SW, orientation, label_pose, triangulate, candidate
-from metrics import _knee, FULL
+from metrics import _knee, _angle, FULL
 
 
 def body():
@@ -68,7 +68,11 @@ assert np.nanmax(err) < 1e-8 and margin[0] < 1e-8
 
 # 完整兩腿交換保留 metrics._knee 的值；不是假設單側膝不變。
 q = np.repeat(X, 100, axis=0)
+q[:, 25, 1] += .3
+assert abs(_angle(q, 60, 23, 25, 27) - _angle(q, 60, 24, 26, 28)) > 5
 assert _knee(q, FULL, 60) == _knee(q[:, SW], FULL, 60)
+q[:, 13, 1] += .4
+assert abs(_angle(q, 60, 12, 14, 16) - _angle(q[:, SW], 60, 12, 14, 16)) > 10
 
 # 凍結的單機規則：至少連續 12 格、鼻與腳點可見；不足或局部翻轉不動。
 P = np.ones((20, 33, 3))

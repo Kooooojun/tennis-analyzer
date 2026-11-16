@@ -136,6 +136,7 @@ def main():
         A, B = dict(np.load(refdir / f"c{a}.npz")), dict(np.load(refdir / f"c{b}.npz"))
         assert len(P) == len(A["t"]) and np.array_equal(np.load(dest / "t.npy"), A["t"])
         px = map_pose(P, 1920, 1088, inverse=True)[..., :2] * (1920, 1088)
+        # shortcut: 快取以輸出目錄隔離，輸入或研究規則改變時必須使用新目錄。
         if checkpoint.exists():
             Z = dict(np.load(checkpoint))
         else:

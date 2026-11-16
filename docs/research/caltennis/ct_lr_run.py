@@ -1,6 +1,5 @@
 """逐機以正式 METHOD 4 重算：ct_lr_run.py <cam> <參考 npz 目錄> <本機輸出目錄>。"""
 import datetime
-import glob
 import json
 from pathlib import Path
 import re
@@ -13,6 +12,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools"))
 from pose_full import METHOD
 from proxy import video_filter
+from ct_tri import CAL
 
 
 def memory():
@@ -26,8 +26,8 @@ def main():
     cam, refdir, outdir = int(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
     assert cam in (1, 2, 3, 4) and METHOD == "4"
     ref = np.load(refdir / f"c{cam}.npz")
-    src = Path(glob.glob(f"testset/raw/datasets/caltennis/01_28_2026_19_00_ath/*_X_{cam}_*.mp4")[0])
-    h, m, s = map(int, re.search(r"01_28_2026_(\d+)_(\d+)_(\d+)_000", src.name).groups())
+    src = next((Path(CAL).parents[1] / Path(CAL).name).glob(f"*_X_{cam}_*.mp4"))
+    h, m, s = map(int, src.stem.split("_")[3:6])
     ts = np.load(src.with_name(src.stem + "_timestamps.npy")) / 1000 + (h - 19) * 3600 + (m - 49) * 60 + s
     start = int(np.searchsorted(ts, ref["t"][0]))
     n = len(ref["t"])
