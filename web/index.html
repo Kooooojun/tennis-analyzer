@@ -572,7 +572,8 @@ function fitCanvas(cv){ const dpr=devicePixelRatio||1, r=cv.getBoundingClientRec
 function paint(cv, vid, s, f, opt){
   const {g,W,H}=fitCanvas(cv); g.clearRect(0,0,W,H);
   if(s&&!s.frames&&shown(vid)) needPose(s);
-  const msg=cv.parentElement.querySelector(".pose-msg"); msg.hidden=!s||!!s.frames; if(s&&!s.frames) msg.textContent=s._poseFails>=4?"骨架載不到，影片照常播放":"骨架載入中…";
+  const msg=cv.parentElement.querySelector(".pose-msg"); msg.hidden=!s||!!s.frames; if(s&&!s.frames) msg.textContent=s._poseFails>=4?"骨架載不到，影片照常播放":s._poseFails?`骨架載不到，重試中（${s._poseFails}/3）`:"骨架載入中…";
+  const live=cv.parentElement.querySelector(".pose-live"), status=s&&!s.frames&&s._poseFails&&shown(vid)?msg.textContent:""; if(live&&live.textContent!==status) live.textContent=status;
   if(!s) return;
   const vw=vid.videoWidth||(s.size||[540,960])[0], vh=vid.videoHeight||(s.size||[540,960])[1];
   if(!s.frames){  // no skeleton yet: still show the clip (compare stages hide the <video> and draw it here)
@@ -951,7 +952,8 @@ function stopDead(vid,preserve=false){
 function watchStall(vid){
   const m=document.createElement("button"); m.type="button"; m.className="vid-msg"; m.tabIndex=0; m.hidden=true; m.disabled=true;
   const live=document.createElement("span"); live.className="sr-only vid-live"; live.setAttribute("role","status"); live.setAttribute("aria-live","polite");
-  vid.parentElement.append(m,live);
+  const poseLive=live.cloneNode(); poseLive.className="sr-only pose-live";
+  vid.parentElement.append(m,live,poseLive);
   let loadingToken=null;
   const setMsg=(text,announceText=text)=>{
     if(m.textContent!==text) m.textContent=text;
@@ -1005,7 +1007,7 @@ function watchStall(vid){
     resume(Date.now());
     if(m.dataset.fail) retry(false,true);
   });
-  vid.addEventListener("progress",()=>{ progress++; });
+  vid.addEventListener("progress",e=>{ if(e.isTrusted) progress++; });
   vid.addEventListener("error",()=>{
     errorSince=Date.now();
     if(vid.src.startsWith("blob:")){
@@ -1042,7 +1044,8 @@ function watchStall(vid){
     if(!wait){ wait=since=mediaSince=now; sig=k; mediaSig=media; }
     if(media!==mediaSig){ mediaSig=media; mediaSince=now; }
     if(k!==sig){ sig=k; since=now; }
-    if(now-mediaSince>=10000||now-since>=10000){ tries<1?reload():fail(); return; }
+    if(now-mediaSince>=30000){ fail(); return; }
+    if(now-since>=10000){ tries<1?reload():fail(); return; }
     if(now-wait>=1000) setMsg("影片下載中…");
   },500);
 }

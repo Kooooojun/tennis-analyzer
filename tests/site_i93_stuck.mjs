@@ -18,6 +18,34 @@ try{
      await page.waitForFunction(()=>!!S.frames,null,{timeout:15500});
      assert.equal(requests.length,2);assert(new URL(requests[1]).searchParams.has('_retry'));
     },
+    async poseLongRetryStatus(page){
+     let allow=false,count=0;await page.route('**/pose/4.js*',route=>{count++;if(allow)return route.continue();});
+     const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>{
+      window.poseDraws=0;const ctx=$('cv').getContext('2d'),stroke=ctx.stroke.bind(ctx);ctx.stroke=()=>{if(S.id===4&&S.frames)poseDraws++;stroke();};load(4,false);
+     });await started;
+     await page.clock.runFor(8500);
+     assert.equal(await page.locator('#stage .pose-msg').isVisible(),true);
+     const text=await page.locator('#stage .pose-msg').textContent();assert.match(text,/骨架載不到，重試中（1\/3）/);
+     const live=page.locator('#stage .pose-live');assert.equal(await live.textContent(),text);assert.equal(await live.getAttribute('role'),'status');assert.equal(await live.getAttribute('aria-live'),'polite');
+     await page.clock.runFor(27000);allow=true;await page.clock.runFor(5500);
+     await page.waitForFunction(()=>!!S.frames&&poseDraws>0,null,{timeout:1500});
+     assert.equal(count,4);assert.equal(await page.locator('#stage .pose-msg').isVisible(),false);assert.equal(await live.textContent(),'');
+     return {firstRetryStatusMs:8500,recoveredByMs:41000,requests:count};
+    },
+    async slowByteProgress(page){
+     const before=f.events.length;
+     await page.evaluate(url=>{
+      window.slowProgress=0;window.slowMetadataMs=0;const started=performance.now();
+      v.addEventListener('progress',e=>{if(e.isTrusted)slowProgress++;});v.addEventListener('loadedmetadata',()=>slowMetadataMs=performance.now()-started,{once:true});
+      ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=20&case='+Date.now();load(4,false);
+     },f.url);
+     await page.waitForFunction(()=>v.readyState>=3&&!v.seeking,null,{timeout:27500});
+     const state=await page.evaluate(()=>({metadataMs:Math.round(slowMetadataMs),progress:slowProgress}));
+     const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4')),retries=requests.filter(e=>e.query.includes('_retry')).length;
+     assert(state.metadataMs>=18000,`metadata 過早：${state.metadataMs}`);assert(state.progress>0);assert(requests.reduce((n,e)=>n+e.chunks,0)>=40);
+     console.log(JSON.stringify({measurement:{...state,retries,requests:requests.length,chunks:requests.map(e=>e.chunks)}}));
+     assert.equal(retries,0,'持續有原生下載進展時不得重載');return {...state,retries,requests:requests.length,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
+    },
     async poseFailure(page){
      let count=0;await page.route('**/pose/4.js*',()=>{count++;});
      const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>load(4,false));await started;
@@ -140,12 +168,12 @@ try{
      await page.evaluate(()=>load(8,false));await failed;
     },
    })){
-    if(name==='rapidH2'&&engine==='webkit')continue;
+    if(['rapidH2','slowByteProgress'].includes(name)&&engine==='webkit')continue;
     if(process.env.SITE_CASES&&!process.env.SITE_CASES.split(',').includes(name))continue;
     const context=await browser.newContext({ignoreHTTPSErrors:true,...(engine==='webkit'?devices['iPhone 13']:{})}),page=await context.newPage(),errors=[];
     page.on('pageerror',e=>errors.push(e.message));
     try{
-     if(['poseFailure','poseVisibleTime','noSource','poseLeaveOverview','poseLeaveHome','poseCompareVisibleTime','poseCompareRouteRetry','poseScrollRetry','poseRetryBudget','poseBackgroundTimeout'].includes(name))await page.clock.install();
+     if(['poseLongRetryStatus','poseFailure','poseVisibleTime','noSource','poseLeaveOverview','poseLeaveHome','poseCompareVisibleTime','poseCompareRouteRetry','poseScrollRetry','poseRetryBudget','poseBackgroundTimeout'].includes(name))await page.clock.install();
      await page.goto(f.url);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>S&&v.readyState>=3&&!v.seeking);
      await page.waitForTimeout(650);const details=await test(page);assert.deepEqual(errors,[]);results.push({engine,case:name,pass:true,...details});
     }catch(e){results.push({engine,case:name,pass:false,error:e.message,errors});}
