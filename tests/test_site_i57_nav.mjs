@@ -43,8 +43,8 @@ async function checkProgressAndFilter(page, label) {
   // 1b. If we filter to a kind that excludes the current stroke, title must NOT show a wrong "第 X／共 Y 拍"
   const excludedCheck = await page.evaluate(() => {
     const curKind = S?.kind;
-    const btns = [...document.querySelectorAll("#tabs button")];
-    const other = btns.find((b, i) => i > 0 && !b.textContent.includes(NAMES[curKind] || curKind) && /\d+/.test(b.textContent) && parseInt(b.textContent.match(/(\d+)/)[1], 10) >= 1);
+    const kindBtns = [...document.querySelectorAll("#tabs button")].filter(b => /^(正拍|反拍|發球)\s+\d+$/.test(b.textContent));
+    const other = kindBtns.find(b => !b.textContent.includes(NAMES[curKind] || curKind) && parseInt(b.textContent.match(/(\d+)/)[1], 10) >= 1);
     if (!other) return null;
     other.click();
     return {
@@ -59,11 +59,11 @@ async function checkProgressAndFilter(page, label) {
     assert(!/第 \d+／共/.test(excludedCheck.detail), `${label}: excluded stroke #detailTitle must not show progress, got "${excludedCheck.detail}"`);
   }
 
-  // 2. Filter to a single stroke kind (pick first non-ALL tab with count >= 2, or >= 1) and click #nextS
+  // 2. Filter to a single stroke kind (pick first kind tab with count >= 2, or >= 1) and click #nextS
   const filterInfo = await page.evaluate(() => {
-    const btns = [...document.querySelectorAll("#tabs button")];
-    const target = btns.find((b, i) => i > 0 && /\d+/.test(b.textContent) && parseInt(b.textContent.match(/(\d+)/)[1], 10) >= 2)
-      || btns.find((b, i) => i > 0 && /\d+/.test(b.textContent) && parseInt(b.textContent.match(/(\d+)/)[1], 10) >= 1);
+    const kindBtns = [...document.querySelectorAll("#tabs button")].filter(b => /^(正拍|反拍|發球)\s+\d+$/.test(b.textContent));
+    const target = kindBtns.find(b => parseInt(b.textContent.match(/(\d+)/)[1], 10) >= 2)
+      || kindBtns.find(b => parseInt(b.textContent.match(/(\d+)/)[1], 10) >= 1);
     if (!target) return null;
     target.click();
     return {
