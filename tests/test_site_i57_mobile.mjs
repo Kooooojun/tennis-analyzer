@@ -38,6 +38,40 @@ function contrast(fg, bg) {
     await page.evaluate(() => go(DAY_KEYS[0], "video"));
     await page.waitForFunction(() => S && v.readyState >= 2);
 
+    // Portrait .controls: all visible buttons fit within viewport without horizontal scroll, and speed cycle button works (4 clicks = back to start)
+    const ctlCheck = await page.evaluate(() => {
+      const ctl = document.querySelector(".player .controls");
+      const btns = [...ctl.querySelectorAll("button")].filter(b => getComputedStyle(b).display !== "none" && b.offsetParent !== null);
+      const out = btns.map(b => {
+        const r = b.getBoundingClientRect();
+        return { id: b.id || b.textContent, left: r.left, right: r.right, width: r.width };
+      }).filter(x => x.left < -0.5 || x.right > window.innerWidth + 0.5);
+      return {
+        scrollW: ctl.scrollWidth,
+        clientW: ctl.clientWidth,
+        outOfView: out,
+        btnCount: btns.length,
+      };
+    });
+    assert(ctlCheck.scrollW <= ctlCheck.clientW,
+      `portrait .controls must not scroll horizontally: scrollWidth=${ctlCheck.scrollW} > clientWidth=${ctlCheck.clientW}`);
+    assert.equal(ctlCheck.outOfView.length, 0,
+      `portrait .controls buttons must all be inside viewport: ${JSON.stringify(ctlCheck.outOfView)}`);
+
+    const speedCyc = page.locator("#speedCyc");
+    assert.equal(await speedCyc.count(), 1, "#speedCyc button must exist");
+    assert(await speedCyc.isVisible(), "#speedCyc must be visible in mobile portrait");
+    const initRate = await page.evaluate(() => v.playbackRate);
+    const initLabel = await speedCyc.textContent();
+    const seenRates = [];
+    for (let i = 0; i < 4; i++) {
+      await speedCyc.click();
+      seenRates.push(await page.evaluate(() => v.playbackRate));
+    }
+    assert.equal(new Set(seenRates).size, 4, `4 clicks on #speedCyc must visit 4 distinct rates, got ${JSON.stringify(seenRates)}`);
+    assert.equal(seenRates[3], initRate, `4th click must return playbackRate to ${initRate}, got ${seenRates[3]}`);
+    assert.equal(await speedCyc.textContent(), initLabel, `4th click must return #speedCyc label to ${initLabel}`);
+
     // Scroll to compare section (#selA / #vA)
     await page.evaluate(() => document.getElementById("selA").closest(".card").scrollIntoView({ block: "start" }));
     await page.waitForTimeout(200);
@@ -150,7 +184,9 @@ function contrast(fg, bg) {
     // 3 & 4. Check #selA/#selB optgroups & "帶入目前這一拍" buttons on mobile
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => go(DAY_KEYS[0], "video"));
-    await page.waitForFunction(() => S && v.readyState >= 2 && vA.readyState >= 2 && vB.readyState >= 2);
+    await page.waitForFunction(() => S && v.readyState >= 2);
+    await page.locator("#vA").scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => vA.readyState >= 2 && vB.readyState >= 2);
 
     const selInfo = await page.evaluate(() => {
       const expected = DAY_KEYS.map(k => ({

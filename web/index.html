@@ -52,6 +52,7 @@ main.wideplayer{grid-template-columns:minmax(0,1fr)}  /* landscape clip: player 
 .now .title{flex:1;min-width:0;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
 .ctl-break{flex-basis:100%;height:0;margin:-2px 0}
+#speedCyc{display:none}
 button,select{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 11px;border-radius:8px;cursor:pointer}
 select{max-width:100%;min-width:0}
 button:hover{border-color:var(--muted)}
@@ -151,7 +152,8 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   .controls button,.now button{padding:7px 7px;font-size:12.5px;white-space:nowrap;flex:none}
   .phase-badge{top:auto;bottom:8px;right:8px}
   .controls .sep,.controls .hint{display:none}
-  #speeds,#cmpSpeeds{display:flex;gap:4px;flex:none;margin-left:auto}
+  #speeds,#cmpSpeeds{display:flex;gap:4px;flex:none}
+  #cmpSpeeds{margin-left:auto}
   .player .hint.kbd-hint{display:none}
   .card{padding:12px 14px}
   .badge,.phase-badge{font-size:11px;padding:4px 6px}
@@ -162,6 +164,10 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   .player .stage,.player .stage.wide{width:auto;height:clamp(108px, calc(40vh - 152px), 24vh);height:clamp(108px, calc(40svh - 152px), 24svh);max-width:100%;margin:0 auto}
   input[type=range]{margin:2px 0 0}
   .now,.controls{margin-top:2px}
+  .controls{gap:2px}
+  .controls button{min-width:0;padding:6px 4px;font-size:11.5px}
+  #speeds{display:none}
+  #speedCyc{display:inline-flex;align-items:center;justify-content:center}
   .player .touch-hint{display:none}
 }
 .days{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
@@ -255,6 +261,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
       <span class="sep"></span>
       <span class="hint">速度</span>
       <span id="speeds"></span>
+      <button type="button" id="speedCyc" title="切換播放速度"></button>
       <span class="ctl-break"></span>
       <button id="skel" class="on">骨架</button>
       <button id="guides" class="on">輔助線</button>
@@ -1061,8 +1068,13 @@ $("play").onclick=toggle; $("prev").onclick=()=>goto(cur-1); $("next").onclick=(
 seek.oninput=()=>goto(+seek.value);
 function step(d){ const list=visible(); if(!list.length) return; let i=list.findIndex(s=>s.id===S.id); if(i<0) i=0; load(list[(i+d+list.length)%list.length].id,false); }
 $("prevS").onclick=()=>step(-1); $("nextS").onclick=()=>step(1);
-function speedButtons(box,get,set){ for(const s of [0.1,0.25,0.5,1]){ const b=document.createElement("button"); b.textContent=s+"×"; b.onclick=()=>{ set(s); [...box.children].forEach(x=>x.classList.toggle("on",x===b)); }; if(s===get()) b.classList.add("on"); box.append(b); } }
-speedButtons($("speeds"),()=>rate,s=>{rate=s;v.playbackRate=s;});
+const RATES=[0.1,0.25,0.5,1];
+function speedButtons(box,get,set){ for(const s of RATES){ const b=document.createElement("button"); b.textContent=s+"×"; b.onclick=()=>{ set(s); [...box.children].forEach(x=>x.classList.toggle("on",x===b)); }; if(s===get()) b.classList.add("on"); box.append(b); } }
+function syncSpeedCyc(){ const b=$("speedCyc"); if(!b) return; b.textContent=rate+"×"; b.setAttribute("aria-label",`播放速度 ${rate} 倍，點一下切換`); }
+function setRate(s){ rate=s; v.playbackRate=s; [...$("speeds").children].forEach((x,i)=>x.classList.toggle("on",RATES[i]===s)); syncSpeedCyc(); }
+speedButtons($("speeds"),()=>rate,setRate);
+$("speedCyc").onclick=()=>setRate(RATES[(RATES.indexOf(rate)+1)%RATES.length]);
+syncSpeedCyc();
 const tg=(id,key)=>{ $(id).setAttribute("aria-pressed",OPT[key]); $(id).onclick=()=>{ $(id).classList.toggle("on"); OPT[key]=$(id).classList.contains("on"); $(id).setAttribute("aria-pressed",OPT[key]); render(cur); cmpRender(cmpCur); };};
 tg("skel","skel"); tg("guides","guides"); tg("trail","trail");
 $("theme").onclick=()=>{ const r=document.documentElement, dark=matchMedia("(prefers-color-scheme: dark)").matches; const now=r.dataset.theme||(dark?"dark":"light"); r.dataset.theme=now==="dark"?"light":"dark"; document.querySelectorAll('meta[name="theme-color"]').forEach(m=>m.content=css("--bg")); render(cur); };
