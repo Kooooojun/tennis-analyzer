@@ -169,3 +169,5 @@ if os.environ.get("SITE_E2E_URL"):
                    env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-keyboard"))} if os.environ.get("SITE_RESULTS") else {})})
     subprocess.run(["node", str(R / "tests" / "test_site_i57_mobile.mjs")], check=True)
     subprocess.run(["node", str(R / "tests" / "site_contact_height.mjs")], check=True)
+    subprocess.run(["node", str(R / "tests" / "site_i57_final.mjs")], check=True,
+                   env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-i57-final"))} if os.environ.get("SITE_RESULTS") else {})})
