@@ -154,3 +154,4 @@ if os.environ.get("SITE_E2E_URL"):
 
 if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "test_site_i57_css.mjs")], check=True)
+    subprocess.run(["node", str(R / "tests" / "test_site_i57_nav.mjs")], check=True)
