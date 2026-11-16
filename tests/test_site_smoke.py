@@ -164,3 +164,5 @@ if os.environ.get("SITE_E2E_URL"):
 if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "site_i93_stuck.mjs")], check=True,
                    env={**os.environ, "SITE_ENGINES": "chromium,webkit", **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-i93"))} if os.environ.get("SITE_RESULTS") else {})})
+    subprocess.run(["node", str(R / "tests" / "site_cache_keyboard.mjs")], check=True,
+                   env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-keyboard"))} if os.environ.get("SITE_RESULTS") else {})})
