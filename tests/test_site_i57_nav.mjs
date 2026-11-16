@@ -82,15 +82,20 @@ async function checkProgressAndFilter(page, label) {
     filteredCount: document.querySelectorAll("#strokes button").length,
   }));
   // After clicking #nextS while filtered, we must be in the filtered list with X / filteredCount
-  const expectedAfterNext = new RegExp(`第 [1-${afterNext.filteredCount}]／共 ${afterNext.filteredCount} 拍`);
-  assert(expectedAfterNext.test(afterNext.now),
-    `${label}: after filter (${filterInfo.label}) + #nextS, #nowTitle "${afterNext.now}" did not match ${expectedAfterNext}`);
-  assert(expectedAfterNext.test(afterNext.detail),
-    `${label}: after filter (${filterInfo.label}) + #nextS, #detailTitle "${afterNext.detail}" did not match ${expectedAfterNext}`);
+  const parseProg = text => {
+    const m = text.match(/第 (\d+)／共 (\d+) 拍/);
+    return m ? { x: Number(m[1]), y: Number(m[2]) } : null;
+  };
+  const nowProg = parseProg(afterNext.now);
+  assert(nowProg && nowProg.y === afterNext.filteredCount && nowProg.x >= 1 && nowProg.x <= afterNext.filteredCount,
+    `${label}: after filter (${filterInfo.label}) + #nextS, #nowTitle "${afterNext.now}" invalid for count ${afterNext.filteredCount}`);
+  const detailProg = parseProg(afterNext.detail);
+  assert(detailProg && detailProg.y === afterNext.filteredCount && detailProg.x >= 1 && detailProg.x <= afterNext.filteredCount,
+    `${label}: after filter (${filterInfo.label}) + #nextS, #detailTitle "${afterNext.detail}" invalid for count ${afterNext.filteredCount}`);
 
   // If filteredCount >= 2, clicking #nextS again should advance X by 1 (wrapping mod filteredCount)
   if (afterNext.filteredCount >= 2) {
-    const firstX = parseInt(afterNext.now.match(/第 (\d+)／共/)[1], 10);
+    const firstX = nowProg.x;
     await page.click("#nextS");
     await page.waitForTimeout(150);
     const secondTitle = await page.evaluate(() => document.getElementById("nowTitle").textContent);
