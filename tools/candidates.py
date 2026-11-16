@@ -12,6 +12,7 @@ from profiles import load_session_profiles
 from kind import classify, prefill
 from crop import square, wide, cut, brighten
 from attrib import matched, wrist_hands, who_hit, unnamed
+from match import edge_skipped, HEAD, TAIL
 from assemble import cands_fp
 from platform_util import imwrite, read_text, unlink, write_text
 
@@ -127,6 +128,11 @@ for vi, v in enumerate(V):
     if not ks: continue
     Ps = {k: np.load(track_file(Wd / v, "pose", k)).astype(float) for k in ks}; prof = {k: hand(names[(vi + 1, k)]) for k in ks}
     wh = np.array(size(Wd / v / "proxy.mp4"), float) / 540; E = np.load(Wd / v / "events.npy")
+    nframes = len(next(iter(Ps.values())))
+    skipped = edge_skipped(E, nframes)
+    if skipped:
+        print(f"影片 {vi + 1}：頭 {HEAD / FPS:g} 秒／尾 {TAIL / FPS:g} 秒內有 {skipped} 個擊球沒算（影片太靠近邊界"
+              + ("，影片太短" if nframes < HEAD + TAIL else "") + "）", file=sys.stderr)
     Hd = wrist_hands(Ps, prof, E, wh, size(Wd / v / "proxy.mp4"))
     M = {k: matched(Ps[k], E, wh, Hd[k]) for k in ks}
     for t in sorted({t for m in M.values() for t in m}):

@@ -76,6 +76,14 @@ def probe_rate(v):
     return w, h, fps
 
 
+def finite_seconds(value):
+    try:
+        seconds = float(value)
+        return seconds if math.isfinite(seconds) else None
+    except (TypeError, ValueError):
+        return None
+
+
 @lru_cache(None)
 def gpu():
     import torch  # ball.py picks mps > cuda > cpu the same way
@@ -125,12 +133,34 @@ def main(argv):
         if fps: write_text(D / "src_fps.txt", f"{fps}\n")
         else: delete(D / "src_fps.txt")  # unreadable: no stale value from an earlier video
         if fps and fps < 50: print(f"警告：{n} 來源 {fps} fps，proxy 會補成 60 fps（重複影格；姿態用原始 fps 跑再內插），速度類數字（手速、準備時間）沒驗證過", file=sys.stderr)
-        # shortcut: assumes 16:9 sources (phone video); other ratios get stretched, as before
+        # shortcut: other ratios stay stretched until pose/source crop coordinates also support padding
         pw, ph = (960, 540) if w > h else (540, 960)
+        # Integer arithmetic keeps exactly +/-1% inside the tolerance.
+        if 100 * abs(w * ph - h * pw) > h * pw:
+            g = math.gcd(w, h)
+            print(f"來源比例 {w // g}:{h // g}，會被拉成 16:9，角度與擊球高度會變形", file=sys.stderr)
         if stale(D / "proxy.mp4", V):
             ffmpeg(V, D / "proxy.mp4", "-an", "-vf", f"scale={pw}:{ph},fps=60", *enc, "-g", "30", "-f", "mp4")
-        if stale(D / "audio_hp.f32", V): ffmpeg(V, D / "audio_hp.f32", "-vn", "-ac", "1", "-ar", "16000", "-af", "highpass=f=1500", "-f", "f32le")
-        if stale(D / "audio.f32", V): ffmpeg(V, D / "audio.f32", "-vn", "-ac", "1", "-ar", "16000", "-f", "f32le")
+        if any(stale(D / name, V) for name in ("audio_hp.f32", "audio.f32")):
+            r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,duration:format=duration", "-of", "json", str(V)],
+                               capture_output=True, text=True, encoding="utf-8")
+            try:
+                audio_info = json.loads(r.stdout)
+                streams = audio_info["streams"]
+                audio_durations = [finite_seconds(s.get("duration")) for s in streams if s.get("codec_type") == "audio"]
+                silent = not any(d is None or d > 0 for d in audio_durations)
+                if silent:
+                    video = next(s for s in streams if s.get("codec_type") == "video")
+                    duration = next(d for d in map(finite_seconds, (video.get("duration"), audio_info.get("format", {}).get("duration")))
+                                    if d is not None and d > 0)
+            except (ValueError, KeyError, TypeError, StopIteration):
+                sys.exit(f"ffprobe could not read audio/duration for {V}: {r.stderr.strip() or 'invalid streams or duration'}")
+            audio_src = []
+            if silent:
+                print("這支影片沒有聲音：擊球偵測要靠聲音，這支可能抓不到任何擊球", file=sys.stderr)
+                audio_src = ["-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono", "-map", "1:a:0", "-t", str(duration)]
+            for name, filt in (("audio_hp.f32", ["-af", "highpass=f=1500"]), ("audio.f32", [])):
+                if stale(D / name, V): ffmpeg(V, D / name, *audio_src, "-vn", "-ac", "1", "-ar", "16000", *filt, "-f", "f32le")
         # a different people count means a different pose run; no people.txt (older work dir) = trust what is there
         pt, pose = D / "people.txt", D / "pose.npy"
         if pt.is_file() and pose.is_file() and pt.read_text(encoding="utf-8").strip() != str(N): delete(pose)
@@ -141,7 +171,18 @@ def main(argv):
             k = t.stem.rsplit("_t", 1)[1]
             if k.isdigit() and int(k) >= N: delete(t)
         if stale(pose, D / "proxy.mp4"): py("pose_full.py", D / "proxy.mp4", R / "models" / "pose_heavy.task", pose, N, V, log=D / "pose.log")
+        elif not pt.is_file(): print("舊 work 目錄沒有人數紀錄，沿用現有姿態；要重跑請刪 pose.npy", file=sys.stderr)
         write_text(pt, f"{N}\n"); write_text(pm, f"{POSE_METHOD}\n")
+        missing_world = [p.name for p in sorted(D.glob("pose*.npy"))
+                         if (p == pose or (p.stem.startswith("pose_t") and p.stem[6:].isdigit()))
+                         and not p.with_name(p.name.replace("pose", "pose_world", 1)).is_file()]
+        note = D / "pose_world_missing.txt"
+        if missing_world:
+            record = "\n".join(missing_world) + "\n"
+            if not note.is_file() or note.read_text(encoding="utf-8") != record:
+                print("沒有 3D 姿態，膝角只有 2D、拍種多半是 ?；要補請刪 pose.npy 重跑（很慢）", file=sys.stderr)
+                write_text(note, record)
+        else: delete(note)
         if stale(D / "sounds.npy", D / "audio_hp.f32", D / "audio.f32"): py("hits.py", D / "audio_hp.f32", D / "audio.f32", D / "sounds.npy")
         if stale(D / "ball.npy", D / "proxy.mp4"):
             ball_note(D / "proxy.mp4", pw, ph)

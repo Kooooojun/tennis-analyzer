@@ -4,9 +4,64 @@
 # Checks: outputs complete, second run does no work (mtimes unchanged), people count changes, exit codes pass through.
 import os, shutil, site, subprocess, sys, tempfile, venv
 from pathlib import Path
+import contextlib, io, json
+from unittest.mock import patch
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "tools"))
+import prep as prep_module
+
+# Inspect real prep command construction without running models; rotation is already applied by probe().
+with tempfile.TemporaryDirectory() as d:
+    root = Path(d); (root / "videos" / "ratios").mkdir(parents=True)
+    (root / "videos" / "ratios" / "clip.mp4").touch()
+    for wh, warned in (((1920, 1080), False), ((1080, 1920), False), ((1904, 1080), False),
+                       ((1760, 1000), False), ((1616, 900), False), ((891, 1600), False), ((909, 1600), False),
+                       ((1888, 1080), True), ((640, 480), True), ((480, 640), True)):
+        calls = []; err = io.StringIO()
+        with patch.object(prep_module, "R", root), patch.object(prep_module, "need_ffmpeg"), \
+             patch.object(prep_module, "probe", return_value=(*wh, 60)), patch.object(prep_module, "h264_args", return_value=[]), \
+             patch.object(prep_module, "stale", side_effect=lambda p, *a: p.name == "proxy.mp4"), \
+             patch.object(prep_module, "ffmpeg", side_effect=lambda *a: calls.append(a)), contextlib.redirect_stderr(err):
+            prep_module.main(["ratios", "1"])
+        assert ("來源比例" in err.getvalue()) == warned, (wh, err.getvalue())
+        pw, ph = (960, 540) if wh[0] > wh[1] else (540, 960)
+        assert calls[0][2:] == ("-an", "-vf", f"scale={pw}:{ph},fps=60", "-g", "30", "-f", "mp4"), calls
+
+def audio_commands(streams):
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d); (root / "videos" / "audio").mkdir(parents=True)
+        (root / "videos" / "audio" / "clip.mp4").touch()
+        result = subprocess.CompletedProcess([], 0, stdout=json.dumps({"streams": streams, "format": {"duration": "1.25"}}), stderr="")
+        calls = []; err = io.StringIO()
+        with patch.object(prep_module, "R", root), patch.object(prep_module, "need_ffmpeg"), \
+             patch.object(prep_module, "probe", return_value=(1920, 1080, 60)), patch.object(prep_module, "h264_args", return_value=[]), \
+             patch.object(prep_module, "stale", side_effect=lambda p, *a: p.name in ("audio.f32", "audio_hp.f32")), \
+             patch.object(prep_module.subprocess, "run", return_value=result), \
+             patch.object(prep_module, "ffmpeg", side_effect=lambda *a: calls.append(a)), contextlib.redirect_stderr(err):
+            prep_module.main(["audio", "1"])
+        return calls, err.getvalue()
+
+
+def test_empty_audio():
+    for value in ("0", "-1", "N/A", None):
+        calls, err = audio_commands([{"codec_type": "video", "duration": "1.25"}, {"codec_type": "audio", "duration": value}])
+        silent = value in ("0", "-1")
+        assert ("這支影片沒有聲音" in err) == silent, (value, err)
+        assert len(calls) == 2 and all(("anullsrc=r=16000:cl=mono" in c) == silent for c in calls), calls
+
+
+def test_duration_fallback():
+    for value in ("N/A", None, "0", "nan"):
+        calls, err = audio_commands([{"codec_type": "video", "duration": value}])
+        assert "這支影片沒有聲音" in err and len(calls) == 2, (value, err)
+        assert all(c[c.index("-t") + 1] == "1.25" for c in calls), calls
+
+
+test_empty_audio()
+test_duration_fallback()
+
 tmp = Path(tempfile.mkdtemp(prefix="prep_e2e_")); R = tmp / "repo"
 shutil.copytree(REPO / "tools", R / "tools", ignore=shutil.ignore_patterns("__pycache__"))
 (R / "models").mkdir(parents=True)
@@ -33,6 +88,7 @@ def prep(*a):
 
 W = R / "work" / "synth"
 r = prep("synth", "2"); assert r.returncode == 0
+assert "來源比例" not in r.stderr and "沒有 3D 姿態" not in r.stderr and "舊 work" not in r.stderr
 assert r.stdout.splitlines()[-1] == "ready: 2 videos -> work/synth", r.stdout
 assert (W / "videos.json").read_text(encoding="utf-8") == '["A x", "b"]\n'  # case-insensitive name order; a space stays inside one name
 want = {"proxy.mp4", "audio.f32", "audio_hp.f32", "pose.npy", "pose_world.npy", "people.txt", "sounds.npy", "ball.npy", "events.npy", "src_fps.txt", "pose_method.txt", "pose.log", "ball.log"}
@@ -51,6 +107,22 @@ before = mt()
 assert prep("synth", "2").returncode == 0
 assert mt() == before, "second run must do no work"
 
+# Missing legacy metadata never invalidates a current-method pose, and warnings appear only once.
+pose = W / "b" / "pose.npy"; t = pose.stat().st_mtime_ns; data = pose.read_bytes()
+(W / "b" / "people.txt").unlink()
+r = prep("synth", "2")
+assert r.returncode == 0 and r.stderr.count("舊 work 目錄沒有人數紀錄") == 1, r.stderr
+assert pose.stat().st_mtime_ns == t and pose.read_bytes() == data
+assert "舊 work" not in prep("synth", "2").stderr
+world = W / "b" / "pose_world.npy"; saved_world = world.read_bytes(); world.unlink()
+r = prep("synth", "2")
+assert r.returncode == 0 and r.stderr.count("沒有 3D 姿態") == 1, r.stderr
+assert pose.stat().st_mtime_ns == t and pose.read_bytes() == data
+assert "沒有 3D 姿態" not in prep("synth", "2").stderr
+world.write_bytes(saved_world)
+assert prep("synth", "2").returncode == 0
+assert not (W / "b" / "pose_world_missing.txt").exists()
+
 # pose from an older algorithm (other version, or no pose_method.txt as before versions existed) is redone, once
 pose = W / "b" / "pose.npy"
 for stale_method in ("1\n", None):
@@ -58,7 +130,9 @@ for stale_method in ("1\n", None):
     if stale_method: pm.write_text(stale_method, encoding="utf-8")
     else: pm.unlink()
     t = pose.stat().st_mtime_ns
-    assert prep("synth", "2").returncode == 0 and pose.stat().st_mtime_ns != t, stale_method
+    r = prep("synth", "2")
+    assert r.returncode == 0 and pose.stat().st_mtime_ns != t and "重算" in r.stdout, stale_method
+    assert "沒有 3D 姿態" not in r.stderr and "舊 work" not in r.stderr, r.stderr
     t = pose.stat().st_mtime_ns
     assert prep("synth", "2").returncode == 0 and pose.stat().st_mtime_ns == t
 
@@ -75,6 +149,45 @@ assert prep("synth", "2").returncode == 0
 names = {p.name for p in (W / "b").glob("pose*_t*.npy")}
 assert names == {"pose_t1.npy", "pose_world_t1.npy"}, names  # k >= 2 deleted by prep, k = 1 kept, pose.npy not re-run
 assert pose.stat().st_mtime_ns == t
+
+# A missing world for any existing secondary track is reported once too.
+(W / "b" / "pose_world_t1.npy").unlink()
+r = prep("synth", "2")
+assert r.returncode == 0 and r.stderr.count("沒有 3D 姿態") == 1, r.stderr
+assert pose.stat().st_mtime_ns == t
+assert "沒有 3D 姿態" not in prep("synth", "2").stderr
+
+# Real ffmpeg, pose, hits and events on a silent 4:3 clip; no fake audio/model outputs.
+silent = R / "videos" / "silent"; silent.mkdir()
+subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=640x480:r=60:d=1",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", str(silent / "clip.mp4")], check=True)
+os.utime(silent / "clip.mp4", (old, old))
+r = prep("silent", "1")
+assert r.returncode == 0 and r.stderr.count("這支影片沒有聲音：擊球偵測要靠聲音，這支可能抓不到任何擊球") == 1, r.stderr
+assert "來源比例 4:3" in r.stderr
+D = R / "work" / "silent" / "clip"
+for name in ("audio.f32", "audio_hp.f32"):
+    audio = np.fromfile(D / name, dtype=np.float32)
+    assert len(audio) == 16000 and not audio.any(), (name, audio.shape)
+assert np.load(D / "sounds.npy").shape == (0, 4) and np.load(D / "events.npy").shape == (0, 3)
+assert not list(D.glob("*.part"))
+before = {p: p.stat().st_mtime_ns for p in D.iterdir() if p.name not in ALWAYS}
+assert prep("silent", "1").returncode == 0
+assert before == {p: p.stat().st_mtime_ns for p in D.iterdir() if p.name not in ALWAYS}
+
+# Candidate CLI reports once per video even with two tracks and both wrists, never for empty events.
+np.save(D / "pose_t1.npy", np.load(D / "pose.npy"))
+(D.parent / "players.txt").write_text("1 0 alpha\n1 1 beta\n", encoding="utf-8")
+def candidates(e):
+    np.save(D / "events.npy", e)
+    return subprocess.run([str(pyv), str(R / "tools" / "candidates.py"), "silent"], capture_output=True, text=True, encoding="utf-8")
+r = candidates(np.array([[0.1, -20, 12], [0.9, -20, 12]]))
+assert r.returncode == 0 and r.stderr.count("2 個擊球沒算") == 1, (r.stdout, r.stderr)
+assert "影片太短" in r.stderr
+cands = (D.parent / "cands.json").read_bytes()
+r = candidates(np.zeros((0, 3)))
+assert r.returncode == 0 and "擊球沒算" not in r.stderr, r.stderr
+assert (D.parent / "cands.json").read_bytes() == cands
 
 # a failing step stops prep with that step's exit code, through the re-run-under-venv hop too
 (R / "tools" / "hits.py").write_text("import sys; sys.exit(7)\n", encoding="utf-8")
