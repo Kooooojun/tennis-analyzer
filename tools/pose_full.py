@@ -73,7 +73,7 @@ def describe(lm, img):
     return dict(pos=(hp[0] / H, hp[1] / H), scale=L / H, color=lab)
 
 
-METHOD = "3"  # bump when the pose algorithm changes: prep.py re-runs pose when work/<video>/pose_method.txt differs
+METHOD = "4"  # bump when the pose algorithm changes: prep.py re-runs pose when work/<video>/pose_method.txt differs
 CROP_SIDE, CROP_MIN, TILE, TILE_EVERY = 640, 360, 600, 5  # crop scaled to 640 px; box >= 360 px; 600 px search tiles, searched every 5th frame
 
 
@@ -151,6 +151,44 @@ def jumps(P, aspect, k=0.8):
     h, L = hip_torso(np.asarray(P, float), aspect)
     with np.errstate(invalid="ignore"):
         return np.hypot(*(h[1:] - h[:-1]).T) > k * np.fmax(L[1:], L[:-1])
+
+
+def correct_lr(P, W, aspect, fps=60):
+    """Repair brief elbow/hand label reversals with reliable image poses on both sides, before fps interpolation.
+    World labels change only when that independently estimated sequence also fits better at both boundaries.
+    Long intervals and whole-body reversals have no trustworthy absolute reference and are left alone."""
+    p, w = P.copy(), W.copy()
+    limit = max(1, round(0.2 * fps))
+    _, L = hip_torso(P, aspect); cut = jumps(P, aspect)
+    def distance(a, b): return np.linalg.norm(a - b, axis=-1).sum(axis=-1)
+    body_flip = np.zeros(max(0, len(P) - 1), bool)
+    for xyz, scale in ((P[:, :, :2] * (aspect, 1), L),
+                       (W, np.linalg.norm(W[:, [11, 12]].mean(1) - W[:, [23, 24]].mean(1), axis=1))):
+        q = xyz[:, [11, 12, 23, 24]]
+        gap = np.linalg.norm(q[:, [0, 2]] - q[:, [1, 3]], axis=2).mean(1)
+        body_flip |= (distance(q[1:, [1, 0, 3, 2]], q[:-1]) < 0.5 * distance(q[1:], q[:-1])) & (gap[:-1] > 0.3 * scale[:-1])
+    for left, right in (([13], [14]), ([15, 17, 19, 21], [16, 18, 20, 22])):
+        q = P[:, [left[0], right[0]], :2] * (aspect, 1)
+        same = distance(q[1:], q[:-1]); swap = distance(q[1:, ::-1], q[:-1])
+        gap = np.linalg.norm(q[:, 0] - q[:, 1], axis=1)
+        flip = (swap < 0.5 * same) & (gap[:-1] > 0.3 * L[:-1]) & (gap[1:] > 0.3 * L[1:])
+        edges = np.flatnonzero(flip) + 1
+        for k, (a, b) in enumerate(zip(edges[:-1], edges[1:])):
+            if b - a > limit or a < 2 or b + 1 >= len(P): continue
+            if (k and a - edges[k - 1] <= limit) or (k + 2 < len(edges) and edges[k + 2] - b <= limit): continue
+            if cut[a - 1:b].any(): continue
+            if body_flip[a - 1:b].any(): continue
+            if not np.isfinite(q[a - 1:b + 1]).all() or not np.all(L[a - 1:b + 1] > 0): continue
+            vis = P[[a - 1, b]][:, [left[0], right[0]], 2]
+            if not np.all(vis.max(1) >= 0.5): continue
+            if distance(q[a - 1], q[b]) >= distance(q[a - 1], q[b, ::-1]): continue
+            p[a:b, left + right] = P[a:b, right + left]
+            z = W[:, [left[0], right[0]]]
+            if not np.isfinite(z[a - 1:b + 1]).all(): continue
+            # Image and world estimates can disagree about which frames have reversed labels.
+            if all(distance(z[i - 1], z[i, ::-1]) < 0.5 * distance(z[i - 1], z[i]) for i in (a, b)):
+                w[a:b, left + right] = W[a:b, right + left]
+    return p, w
 
 
 def use_crop(found):
@@ -261,6 +299,7 @@ def main():
         p, w = P[:, g[0]].copy(), Wl[:, g[0]].copy()
         for k in g[1:]: m = np.isnan(p[:, 0, 0]) & S[:, k]; p[m], w[m] = P[m, k], Wl[m, k]
         tr.append((p, w))
+    tr = [correct_lr(p, w, SW / SH if crop else W / H, fps) for p, w in tr]
     if fps < 50 or crop:  # back on the proxy's 60 fps frame numbers, which every later step indexes by; after merge(), so one
         # person moving between slots is joined first, and never across a frame where the track jumped to someone else
         tr = [(to60(p, fps, n60, c), to60(w, fps, n60, c)) for p, w in tr for c in [jumps(p, SW / SH)]]; n = n60
