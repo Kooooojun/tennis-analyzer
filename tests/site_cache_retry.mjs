@@ -53,6 +53,7 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
     await page.waitForFunction(()=>v.readyState>=3&&!v.error&&!v.seeking&&!v._reloading&&fullyBuffered(v),null,{timeout:7000});
     if(!manual)await page.evaluate(()=>{if(v.paused)toggle();});
     await page.waitForFunction(()=>!v.paused,null,{timeout:3000});
+    await page.evaluate(()=>{v.playbackRate=1;});
     const t=await page.evaluate(()=>v.currentTime);await page.waitForTimeout(250);
     assert(await page.evaluate(t=>v.currentTime>t+.05,t),'重試後必須實際播放');
     assert.equal(await page.evaluate(()=>new URL(v.src).searchParams.get('original')),'kept','保留來源查詢參數');
