@@ -42,13 +42,13 @@ py -3.12 setup.py
 - 沒有 GPU 時追球很慢：CPU 約每秒影片 60–70 秒（橫式；直式約 4 倍；只在 CI 機器量過），前處理開始前會印預估時間。
 - clone 到短路徑（如 `C:\dev\tennis-analyzer`）；路徑太長時 prep 會先報錯。必要時開啟 Windows 的 LongPathsEnabled。
 - 匯入 mediapipe 失敗時：`winget install Microsoft.VCRedist.2015+.x64`。
-- 前處理：`python tools/run.py prep.py wall-1`；看結果：`python tools/run.py open web/index.html`。
+- 前處理：`python tools/run.py prep.py 2026-11-20`；看結果：`python tools/run.py open web/index.html`。
 
 ## 使用
 
 1. 把一次練習的影片放進 `videos/<日期>/`，例如 `videos/2026-11-20/`。一次練習可以有好幾支影片。
 2. 在這個資料夾開 Claude Code，說「幫我分析 videos/2026-11-20」。
-3. 前處理（影片縮放、姿勢、擊球聲、追球）要的時間比影片長。實測：Mac mini M 系列、橫拍 1080p60、wall-1 三支共 308 秒，`time tools/prep.sh wall-1`（Windows PowerShell 可用 `Measure-Command { python tools/run.py prep.py wall-1 }`）從空的 work 目錄跑完是 16 分 52 秒（約影片長度的 3.3 倍；CPU 時間約 8.6 分；當時機器同時有很多工作在跑，只測了這一次，僅供參考）。跑完後 Claude 會看縮圖、標註、修正擊球瞬間，最後寫重點。
+3. 前處理（影片縮放、姿勢、擊球聲、追球）要的時間比影片長。實測：Apple M 系列、使用者的對牆影片 A 共 308 秒，`time tools/prep.sh 2026-11-20`（Windows PowerShell 可用 `Measure-Command { python tools/run.py prep.py 2026-11-20 }`）從空的 work 目錄跑完是 16 分 52 秒（約影片長度的 3.3 倍；CPU 時間約 8.6 分；當時機器同時有很多工作在跑，只測了這一次，僅供參考）。跑完後 Claude 會看縮圖、標註、修正擊球瞬間，最後寫重點。
 4. 打開 `web/index.html`（`python tools/run.py open web/index.html`）就能看結果，不需要開 server。首頁依玩家列出所有場次和分數走勢；點進一場後分成總覽、影片、圖表、每一拍、建議五個分頁。
 
 之後可以直接問：「#12 是幾分幾秒」、「有沒有比較長的來回」、「幫我做精華」。

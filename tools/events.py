@@ -1,7 +1,7 @@
 # events.py <sounds.npy> <ball.npy> <pose.npy> <events.npy> — which sound candidates (hits.py) are racket hits.
 # A candidate is a hit when the tracked player's wrist is moving fast at that moment (HAND torso lengths/s relative to the
 # hip, so camera distance and portrait/landscape do not matter) and the sound is broadband (BB, see hits.py).
-# Within SAME seconds only the loudest stays (on wall-1 loudness ranked better than broadband SNR or onset sharpness):
+# Within SAME seconds only the loudest stays (on 對牆影片 A loudness ranked better than broadband SNR or onset sharpness):
 # one player cannot hit twice that fast, and the ball bouncing before the hit or hitting the wall after it is the usual
 # runner-up. There is no cooldown beyond that.
 # Two candidates 0.6-0.9 s apart are a hit and its bounce or wall echo: the one with more low band and a faster hand stays.
@@ -17,13 +17,13 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import FPS, size
 
-HAND = 6.0     # torso lengths/s; wall-1 hits 6-30 (median 15), sounds with the hand still ~2, wall echoes ~5
-BB = 4.0       # dB; wall-1 hits median 11, ground bounces 2
+HAND = 6.0     # torso lengths/s; 對牆影片 A hits 6-30 (median 15), sounds with the hand still ~2, wall echoes ~5
+BB = 4.0       # dB; 對牆影片 A hits median 11, ground bounces 2
 SAME = 0.6     # s
-PAIR = 0.9     # s; wall-1 hits are >=1.2 s apart, bounce/echo pairs 0.6-0.9
-HAND_LO, BB_LO = 3.5, 6.0  # slow-swing tier: wall-1 scoops 4.3-4.6 with bb 7-9
+PAIR = 0.9     # s; 對牆影片 A hits are >=1.2 s apart, bounce/echo pairs 0.6-0.9
+HAND_LO, BB_LO = 3.5, 6.0  # slow-swing tier: 對牆影片 A scoops 4.3-4.6 with bb 7-9
 RALLY = (1.2, 3.0)         # s from the nearest normal hit, one rally beat
-HIP = 25.0     # torso lengths/s; wall-1 hits <=4.4 and wall-1 false hits 25-90 (pose model hopping), far serves up to ~20
+HIP = 25.0     # torso lengths/s; 對牆影片 A hits <=4.4 and 對牆影片 A false hits 25-90 (pose model hopping), far serves up to ~20
 JUMP_R = 10    # frames on each side of a hip jump where the wrist is not trusted
 LAG = 0        # frames from contact to the sound onset, used when the ball track cannot measure it (see estimate_lag)
 GAP, K = 4, 4  # ball turns: fill ball gaps up to 4 frames; velocity compared over 4 frames each side

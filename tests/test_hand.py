@@ -14,7 +14,7 @@ VIDS = PN.get("wall_a") or ["?"]; V0 = VIDS[0]; WD = ROOT / PN.get("wall_dir", "
 NEED = [NAMES, STROKES, WD / V0 / "pose_t1.npy", WD / V0 / "events.npy", ROOT / f"testset/labels/hits_{V0}.csv"]
 NEED += [WD / v / f for v in VIDS for f in ("pose.npy", "pose_world.npy")]
 if not all(p.exists() for p in NEED):  # private footage-derived data, only on the owner's machine
-    print("skip: test_hand needs local wall-1 data"); sys.exit(0)
+    print("略過：test_hand 需要本機對牆影片 A 的資料"); sys.exit(0)
 
 # MediaPipe 33 點、web 用的 17 點（common.KEEP 順序）裡的左右對換表
 SW33 = list(range(33)); SW17 = list(range(17))
@@ -34,7 +34,7 @@ def close(a, b, tol, tag):
         if x != x and y != y: continue  # NaN 對 NaN
         assert abs(x - y) <= tol.get(k, 0.011), (tag, k, x, y)
 
-# 1. clip 版：35 拍 wall-1（含 3D world）
+# 1. clip 版：35 拍 對牆影片 A（含 3D world）
 S = json.load(open(STROKES, encoding="utf-8")); off = 0
 for s in S:
     fr = s["frames"]; wd = s.get("world")

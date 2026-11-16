@@ -1,5 +1,5 @@
 # kind_eval.py — 擊球種類混淆矩陣。從 repo 根目錄跑：.venv/bin/python -I docs/research/kind_eval.py
-# 標準答案：work/kind/labels.txt（「<影片> <幀> <FH|BH|BH1|BH2|SV|OH>」，眼睛標，標時不看模型輸出）＋ wall-1 的人工標籤（archive 各卡 labels.txt 的 FH）。
+# 標準答案：work/kind/labels.txt（「<影片> <幀> <FH|BH|BH1|BH2|SV|OH>」，眼睛標，標時不看模型輸出）＋ 對牆影片 A 的人工標籤（場次從 testset/labels/private_names.json 的 wall_dir 讀取）（archive 各卡 labels.txt 的 FH）。
 import sys, json, glob, collections, numpy as np
 from pathlib import Path
 sys.path.insert(0, "tools")
@@ -17,7 +17,8 @@ for l in Path("work/kind/labels.txt").read_text().split("\n"):
     if l.strip():
         v, f, k = l.split(); G.append((v, int(f), k[:2], k))
 seen = set()
-for p in glob.glob("testset/archive/*/work/wall-1/labels.txt"):
+session = Path(json.loads(Path("testset/labels/private_names.json").read_text(encoding="utf-8"))["wall_dir"]).name
+for p in glob.glob(f"testset/archive/*/work/{glob.escape(session)}/labels.txt"):
     C = json.load(open(Path(p).parent / "cands.json"))
     for r in (x.split() for x in open(p) if x.strip() and not x.startswith("#")):
         if r[1] == "FH":

@@ -139,11 +139,11 @@ def kinematics(xy, J, c, hand="R", start=None):
         h = np.nanmax(X[:, [J['la'], J['ra']], 1], axis=1) - hip[:, 1]
     if np.isfinite(h[c0 - 48:c0 + 1]).any() and np.isfinite(h[c0 - 2:c0 + 3]).any():
         stand = np.nanmax(h); low = np.nanmin(h[c0 - 48:c0 + 1])
-        # no "equivalent knee angle": on wall-1 the drop did not follow knee3d (wide stances lower the hip too), docs/research/body-kinematics.md
+        # no "equivalent knee angle": on 對牆影片 A the drop did not follow knee3d (wide stances lower the hip too), docs/research/body-kinematics.md
         out.update(leg_load=round(float((stand - low) / stand), 3), leg_drive=round(float((np.nanmedian(h[c0 - 2:c0 + 3]) - low) / stand), 3))
     # speeds of the racket wrist and shoulder relative to the hip centre, torso lengths / s, peak in the forward swing (0.25 s before contact
     # to contact). Raw frames, then a median on the speed (a one-frame glitch makes two spikes, both dropped); the 0.4 s window first
-    # tried caught 3-4 frame wrist glitches in the backswing on wall-1 (62-98 torso/s)
+    # tried caught 3-4 frame wrist glitches in the backswing on 對牆影片 A (62-98 torso/s)
     R = xy[a:b]; rhip = (R[:, J['lh']] + R[:, J['rh']]) / 2; p0 = max(0, c0 - 25)
     sp = lambda j: _smooth(np.linalg.norm(np.diff(R[p0:c0 + 8, j] - rhip[p0:c0 + 8], axis=0), axis=1))[c0 - 15 - p0:c0 + 3 - p0] * FPS / L
     vw, vs = sp(w), sp(s)
@@ -279,7 +279,7 @@ def measure_clip(frames, c, size=None, world=None, hand="R", prev=None):
 
 GUESS_MIN = 30  # sharp wrist-speed samples (0.5 s at 60 fps) needed per wrist before guessing a hand
 GUESS_WIN = (24, 12)  # frames before / after a hit that count as "swinging"
-GUESS_VIS = 0.9  # a hidden wrist jumps 3x faster than a real swing; only sharp frames count (0.5 picked the wrong hand on the mirrored wall-1 video)
+GUESS_VIS = 0.9  # a hidden wrist jumps 3x faster than a real swing; only sharp frames count (0.5 picked the wrong hand on the mirrored 對牆影片 A video)
 
 
 def _swing_mask(n, hit_times):
@@ -294,7 +294,7 @@ def _swing_mask(n, hit_times):
 def guess_hand(poses, size=None, times=None):
     """Racket hand from the video: the wrist whose image speed (per torso length) has the higher 98th percentile (idea from
     Logan-Huang/Tennis-AI-Coach). poses: pose arrays (frames,33,3) of ONE player; times: per array the hit times in seconds, so only
-    swings count (testset/results/player-profile.md: over a whole wall-1 video the percentile picked the wrong hand for a right-hander,
+    swings count (testset/results/player-profile.md: over a whole 對牆影片 A video the percentile picked the wrong hand for a right-hander,
     because a hand-held phone moved close to the legs and the skeleton jumped); None = whole video.
     Returns (hand, ratio), ratio = faster / slower percentile (close to 1 = unsure), or (None, None) with too few visible frames.
     Still a guess: a two-hander's helper hand or a mirrored phone video can fool it."""

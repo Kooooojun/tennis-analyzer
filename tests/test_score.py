@@ -204,7 +204,7 @@ run = lambda name: dict(session=name, date="2026-11-0" + str(len(name)), camera=
 assert compare([_entry(run("a"), A), _entry(run("b"), B)]) == []
 # 6: comparable / series_key
 e = _entry(run("a"), A); assert e["comparable"] and e["series_key"] == ["c", A["knee_src"], SCORE_VERSION]
-assert not _entry(dict(run("a"), camera=""), A)["comparable"] and not _entry(dict(run("a"), date="wall-1"), A)["comparable"]
+assert not _entry(dict(run("a"), camera=""), A)["comparable"] and not _entry(dict(run("a"), date="practice-a"), A)["comparable"]
 assert not _entry(run("a"), grp(score_session([st()] * 6, False)))["comparable"]
 print("score-groups-consistency tests ok")
 
