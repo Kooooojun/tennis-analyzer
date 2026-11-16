@@ -1,5 +1,6 @@
 """逐機以正式 METHOD 4 重算：ct_lr_run.py <cam> <參考 npz 目錄> <本機輸出目錄>。"""
 import datetime
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import re
@@ -22,6 +23,23 @@ def memory():
     return sum(int(re.search(rf"Pages {k}:\s+(\d+)", s)[1]) for k in ("free", "inactive")) * page / 2**30
 
 
+@contextmanager
+def heavy_lock(lock):
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.mkdir()  # 已有人持鎖就失敗，不清理別人的鎖。
+    try:
+        yield
+    finally:
+        try:
+            (lock / "owner.txt").unlink(missing_ok=True)
+        except OSError as e:
+            print(f"無法刪除重運算鎖 owner：{e}", file=sys.stderr)
+        try:
+            lock.rmdir()
+        except OSError as e:
+            print(f"無法移除重運算鎖目錄，請檢查後清理：{e}", file=sys.stderr)
+
+
 def main():
     cam, refdir, outdir = int(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
     assert cam in (1, 2, 3, 4) and METHOD == "4"
@@ -39,8 +57,7 @@ def main():
     if busy.returncode != 1:
         sys.exit("重運算尚未清空：" + busy.stdout + busy.stderr)
     lock = Path("testset/results/heavy.lock")
-    lock.mkdir()  # 已有人持鎖就失敗，不繞過。
-    try:
+    with heavy_lock(lock):
         (lock / "owner.txt").write_text(f"#61 side / CalTennis c{cam} / {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).isoformat()}\n", encoding="utf-8")
         low = memory()
         if low < 8: sys.exit("記憶體不足 8 GiB")
@@ -74,9 +91,6 @@ def main():
         (out / "run.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         np.save(out / "t.npy", ref["t"])
         print(json.dumps(result, ensure_ascii=False), flush=True)
-    finally:
-        subprocess.run(["trash", str(lock / "owner.txt")], check=True)
-        lock.rmdir()
 
 
 if __name__ == "__main__":

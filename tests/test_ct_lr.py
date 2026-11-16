@@ -1,12 +1,17 @@
 """多機位左右參考的失敗案例；不需要資料集或模型。"""
 from pathlib import Path
+from contextlib import redirect_stderr
+import io
 import sys
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 import numpy as np
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1] / "docs/research/caltennis"),
                str(Path(__file__).resolve().parents[1] / "tools")]
 from ct_lr import SW, orientation, label_pose, triangulate, candidate
 from metrics import _knee, _angle, FULL
+from ct_lr_run import heavy_lock
 
 
 def body():
@@ -85,3 +90,30 @@ assert not candidate(low, world[:, SW]).any()
 partial = world.copy(); partial[:, [23, 24]] = partial[:, [24, 23]]
 assert not candidate(P, partial).any()
 print("多機位左右參考：合成失敗案例與交換不變量通過")
+
+# 只用臨時目錄：建立父目錄、寫 owner 前失敗及 marker 清理失敗都不能漏掉釋鎖。
+with TemporaryDirectory() as tmp:
+    lock = Path(tmp) / "results" / "heavy.lock"
+    for owner in (False, True):
+        with heavy_lock(lock):
+            assert lock.is_dir()
+            if owner: (lock / "owner.txt").write_text("測試", encoding="utf-8")
+        assert not lock.exists()
+    try:
+        with heavy_lock(lock):
+            raise RuntimeError("寫入 owner 前失敗")
+    except RuntimeError as e:
+        assert str(e) == "寫入 owner 前失敗"
+    else: raise AssertionError("原始錯誤遭遮蔽")
+    assert not lock.exists()
+    error = io.StringIO()
+    with redirect_stderr(error), patch.object(Path, "unlink", side_effect=PermissionError("模擬刪除失敗")):
+        with heavy_lock(lock): pass
+    assert not lock.exists() and "模擬刪除失敗" in error.getvalue()
+    with heavy_lock(lock):
+        try:
+            with heavy_lock(lock): raise AssertionError("不應取得別人的鎖")
+        except FileExistsError: pass
+        assert lock.is_dir()
+    assert not lock.exists()
+print("重運算鎖：缺父目錄、缺 owner、刪除例外與互斥保護通過")
