@@ -41,12 +41,35 @@ const cases={
   let broken=true;
   await page.route('**/manifest.js*',route=>route.fulfill({contentType:'text/javascript',body:'window.SESSION_IDS=["synthetic","missing"];'}));
   await page.route('**/missing/data.js*',route=>route.fulfill({contentType:'text/javascript',body:broken?'':`window.SESSIONS.push({...window.SESSIONS[0],id:'missing',label:'恢復場次'});`,status:broken?503:200}));
+  await page.route('**/synthetic/data.js*',async route=>{
+   const response=await route.fetch();
+   await route.fulfill({response,body:(await response.text())+`for(let i=0;i<15;i++)window.SESSIONS.push({...window.SESSIONS[0],id:'sample-'+i,label:'合成場次 '+i});`});
+  });
   await page.goto(f.url);
-  assert.equal(await page.locator('#home .sess a').count(),1,'部分載入失敗仍須顯示可用場次');
+  assert.equal(await page.locator('#home .sess a').count(),16,'部分載入失敗仍須顯示可用場次');
+  const firstScreen=()=>page.getByRole('alert').evaluate(e=>{const b=e.getBoundingClientRect();return b.top>=0&&b.bottom<=innerHeight;});
+  assert(await firstScreen(),'長首頁的失敗提示須在首屏完整可見');
+  await page.evaluate(()=>{go(DAY_KEYS[0],'overview');scrollTo(0,0);});
+  await page.waitForFunction(()=>!document.querySelector('main').hidden);
+  assert(await firstScreen(),'場次頁的失敗提示須在首屏完整可見');
   const retry=page.getByRole('alert').getByRole('button',{name:'重試'});
   assert.equal(await retry.count(),1,'部分失敗須可重試');
   broken=false;await retry.click();
-  await page.waitForFunction(()=>document.querySelectorAll('#home .sess a').length===2);
+  await page.waitForFunction(()=>window.SESSIONS?.length===17);
+  assert.equal(await page.getByRole('alert').count(),0,'場次頁重試成功須移除失敗提示');
+ },
+ async trendLoadFailure(page){
+  let broken=true;
+  await page.route('**/trend.js*',route=>route.fulfill({status:broken?503:200,contentType:'text/javascript',body:broken?'':`window.TREND=[${JSON.stringify({player:'me',kind:'FH',history:history(['2026-01-01','2026-01-02']),flags:[]})}];`}));
+  await page.goto(f.url);
+  const alert=page.getByRole('alert');
+  assert.equal(await alert.count(),1,'走勢腳本失敗須沿用唯一 alert');
+  assert.match(await alert.textContent(),/走勢/);
+  assert(await alert.evaluate(e=>{const b=e.getBoundingClientRect();return b.top>=0&&b.bottom<=innerHeight;}),'走勢失敗須在首屏可見');
+  assert(!(await page.locator('#home').textContent()).includes('還沒有評分趨勢'),'走勢載入失敗不可誤報沒有資料');
+  broken=false;await alert.getByRole('button',{name:'重試'}).click();
+  await page.locator('svg.spark circle').first().waitFor();
+  assert.equal(await alert.count(),0,'走勢重試成功須移除失敗提示');
  },
  async poseAnnouncement(page){
   await page.route('**/pose/*.js*',route=>route.fulfill({status:503,body:''}));
@@ -80,9 +103,19 @@ const cases={
  async nearbySameDate(page){
   const c=await chart(page,['2026-01-01','2026-01-01','2026-01-02','2026-04-01'],300);
   assert(c.dots.every((x,i)=>!i||x>c.dots[i-1]),'同日偏移不可越過隔日');
-  assert(c.dots.every((x,i)=>!i||x-c.dots[i-1]>=c.radii[i]+c.radii[i-1]),'密集同分圓點不可重疊');
+  assert(c.radii.every(r=>r>=2),'相鄰日期圓點半徑須至少 2 px');
   const first=(c.dots[0]+c.dots[1])/2;
   assert(Math.abs((c.dots[2]-first)/(c.dots[3]-first)-1/90)<.001,'同日偏移須保留日期中心的日數比例');
+ },
+ async denseSameDate(page){
+  const c=await chart(page,['2026-01-01',...Array(20).fill('2026-01-02'),'2026-04-01'],300);
+  assert(c.dots.every((x,i)=>!i||x>c.dots[i-1]),'密集同日場次仍須保持日期順序');
+  assert(c.dots.every((x,i)=>x-c.radii[i]>=0&&x+c.radii[i]<=c.width),'密集圓點不可裁切');
+  assert(await page.locator('svg.spark circle').evaluateAll(cs=>cs.every(c=>+c.getAttribute('r')>=2)),'兩種分數的密集圓點半徑須至少 2 px');
+  const top=page.locator('svg.spark circle[fill="var(--accent)"]').nth(20);
+  await top.hover();
+  assert.match(await top.locator('title').textContent(),/sample-20 總分 7/);
+  assert(await top.evaluate(c=>{const b=c.getBoundingClientRect();return document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)===c;}),'密集組最上層圓點須可命中 hover');
  },
  async manyUndated(page){
   const c=await chart(page,['2026-01-01','2026-01-02',...Array(120).fill(null)],300);
@@ -92,7 +125,7 @@ const cases={
  async allUndated(page){
   const c=await chart(page,Array(120).fill(null),300);
   assert(c.dots.every((x,i)=>x-c.radii[i]>=0&&x+c.radii[i]<=c.width),'全缺日期的圓點不可裁切');
-  assert(c.dots.every((x,i)=>!i||x-c.dots[i-1]>=c.radii[i]+c.radii[i-1]),'大量同組圓點不可重疊');
+  assert(c.radii.every(r=>r>=2),'大量同組圓點半徑須至少 2 px');
  },
  async labelsAndLegend(page){
   const c=await chart(page,['2026-01-01','2026-01-12','2026-02-01']);
@@ -123,7 +156,7 @@ try{
      const context=await browser.newContext(options),page=await context.newPage();
      try{
       await test(page);
-      if(process.env.SITE_SCREENSHOTS&&['sameDate','missingDate','portraitMessage'].includes(name)){
+      if(process.env.SITE_SCREENSHOTS&&['sameDate','missingDate','denseSameDate','portraitMessage'].includes(name)){
        fs.mkdirSync(process.env.SITE_SCREENSHOTS,{recursive:true});
        await page.screenshot({path:`${process.env.SITE_SCREENSHOTS}/${engine.name()}-${viewport}-${name}.png`,fullPage:true});
       }

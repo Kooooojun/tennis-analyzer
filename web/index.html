@@ -413,7 +413,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
   </section>
 </main>
 
-<script>window.LOAD_FAIL=[]; for(const f of ["manifest","trend"]) document.write(`<script src="sessions/${f}.js?v=${Date.now()}"${f==="manifest"?` onerror="LOAD_FAIL.push('場次清單')"`:""}><\/script>`);</script>  <!-- small, rebuilt together: always fresh -->
+<script>window.LOAD_FAIL=[]; for(const f of ["manifest","trend"]) document.write(`<script src="sessions/${f}.js?v=${Date.now()}" onerror="LOAD_FAIL.push('${f==="manifest"?"場次清單":"分數走勢"}')"><\/script>`);</script>  <!-- small, rebuilt together: always fresh -->
 <script>for(const id of window.SESSION_IDS||[]) { const e=encodeURIComponent(id); document.write(`<script src="sessions/${e}/data.js?v=${(window.SESSION_VER||{})[id]||Date.now()}" data-id="${e}" onerror="LOAD_FAIL.push(decodeURIComponent(this.dataset.id))"><\/script>`); }</script>  <!-- content hash: the browser keeps data.js until it is rebuilt -->
 <script>
 document.body.classList.add("ready");  // data.js scripts above have run; before route() so canvases get their real size
@@ -431,7 +431,7 @@ const DAY_KEYS = [...(window.SESSIONS||[])].sort((a,b)=>!isoDate(a)-!isoDate(b)|
 if(LOAD_FAIL.length){
   const p=document.createElement("p"), retry=document.createElement("button"); p.setAttribute("role","alert"); p.style.padding="24px";
   p.textContent=`載入失敗（沒載到：${LOAD_FAIL.join("、")}） `; retry.type="button"; retry.textContent="重試"; retry.onclick=()=>location.reload(); p.append(retry);
-  document.querySelector("main").before(p); if(!DAY_KEYS.length){ document.querySelector("main").hidden=true; throw new Error("load failed"); }
+  document.querySelector("#home").before(p); if(!DAY_KEYS.length){ document.querySelector("main").hidden=true; throw new Error("load failed"); }
 }  // a dropped connection is not "no sessions"
 if(!DAY_KEYS.length){ document.querySelector("main").innerHTML='<p style="padding:24px">還沒有分析好的練習。在這個資料夾開 Claude Code，說「幫我分析 videos/ 裡的新練習」。</p>'; throw new Error("no sessions"); }
 let DAY = DAY_KEYS.findLast(k=>isoDate(DAYS[k]))??DAY_KEYS.at(-1), ALL = DAYS[DAY].data;
@@ -1335,7 +1335,7 @@ function drawHome(){
       return `<li><a href="#d${encodeURIComponent(d.id)}/overview" data-p="${esc(p)}"><b>${esc(d.label)}${d.slug?`<span class="slug">${esc(d.slug)}</span>`:""}</b><span class="sc">${sc}</span><span class="meta">${n} 拍 · ${esc(d.camera||"沒寫鏡頭")}</span></a></li>`;
     }).join("");
     const trend=tr.map(t=>`<h3>${esc(NAMES[t.kind]||t.kind)}・分數走勢</h3>`+(t.history.length<2?`<p class="hint">只有 ${t.history.length} 場有評分，還不能看走勢。</p>`:`<svg class="spark" data-player="${esc(p)}" data-kind="${esc(t.kind)}"></svg>`)+flagList(t.flags)).join("");
-    return `<div class="card"><h2>${esc(PN(p))}</h2><p class="hint" style="margin:0 0 6px">${days.length} 場</p><ul class="sess">${rows}</ul>${trend||`<p class="hint">還沒有評分趨勢（跑 tools/score.py 和 tools/trend.py）。</p>`}</div>`;
+    return `<div class="card"><h2>${esc(PN(p))}</h2><p class="hint" style="margin:0 0 6px">${days.length} 場</p><ul class="sess">${rows}</ul>${trend||(LOAD_FAIL.includes("分數走勢")?"":`<p class="hint">還沒有評分趨勢（跑 tools/score.py 和 tools/trend.py）。</p>`)}</div>`;
   }).join("")+`</div><p class="caveat">分數走勢只比同一個鏡頭位置的場次（docs/scoring.md §6）。缺點改善 = 原本低於 6 分的項目進步；優點退步 = 原本 8 分以上的項目退步。</p>`;
   $("home").querySelectorAll("a[data-p]").forEach(a=>a.addEventListener("click",()=>{ pfilter=a.dataset.p; }));
   $("home").querySelectorAll("svg.spark").forEach(svg=>drawSpark(svg,T.find(t=>t.player===svg.dataset.player&&t.kind===svg.dataset.kind)));
@@ -1361,7 +1361,7 @@ function drawSpark(svg,t){  // total + consistency per session, oldest left
   for(const [key,col,w] of [["consistency","var(--muted)",1.5],["total","var(--accent)",2.5]]){
     const pts=h.map((r,i)=>[i,r.items[key]]).filter(([,v])=>v!=null), seg=r=>r.camera?r.camera+"|"+r.knee_src+"|"+r.score_version:NaN;  // NaN: an unnamed camera never joins a neighbour
     for(let a=0,b=1;a<pts.length;a=b++){ while(b<pts.length&&seg(h[pts[b][0]])===seg(h[pts[b-1][0]])) b++; if(b-a>1) mk("polyline",{points:pts.slice(a,b).map(([i,v])=>`${x(i)},${y(v)}`).join(" "),fill:"none",stroke:col,"stroke-width":w}); }  // different camera / knee source / version: not comparable, so not joined
-    for(const [i,v] of pts){ const radius=Math.min(key==="total"?4.5:3,i?(x(i)-x(i-1))*.45:Infinity,i<h.length-1?(x(i+1)-x(i))*.45:Infinity);
+    for(const [i,v] of pts){ const radius=Math.max(2,Math.min(key==="total"?4.5:3,i?(x(i)-x(i-1))*.45:Infinity,i<h.length-1?(x(i+1)-x(i))*.45:Infinity));
       const c=mk("circle",{cx:x(i),cy:y(v),r:radius,fill:col}); const tt=document.createElementNS(NS,"title"); tt.textContent=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v} · 鏡頭：${h[i].camera||"沒寫"}`; c.append(tt); }
   }
   let lx=-1e9;
