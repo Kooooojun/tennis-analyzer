@@ -53,7 +53,7 @@
 |---|---|---|
 | `contact_untrusted == true`（人工無法定位接觸） | 所有依接觸格量測的欄位 | `refine.py` 寫為 `null`；保留拍數供覆蓋率計算，不以錯誤時間評分 |
 | `vis < 0.5`（手腕可見度） | `contact_h`、`contact_fwd` | 手腕位置不可信 |
-| `knee_warn == true`（`knee_warn_why`：`"gap"` = 2D 與 3D 差 > 20°；`"view"` = 鏡頭在正前／正後 30° 內，`score_version` 6 起） | 膝蓋 | 這拍角度不可信。正前／正後的 2D 中位誤差 20–34°、3D 正後方 22°，側面 2D 只有約 2°（CalTennis，`testset/results/eval-caltennis.md`） |
+| `knee_warn == true`（`knee_warn_why`：`"gap"` = 2D 與 3D 差 > 20°；`"view"` = 鏡頭在正前／正後 30° 內，`score_version` 6 起；`"contact"` = 人工無法定位接觸格，顯示「擊球格不可信，這拍不量」） | 膝蓋 | 這拍角度不可信。正前／正後的 2D 中位誤差 20–34°、3D 正後方 22°，側面 2D 只有約 2°（CalTennis，`testset/results/eval-caltennis.md`） |
 | 欄位是 `null` / 缺 | 該指標 | — |
 | 場次 `notes.json` 的 `showOpen` 不是 `true` | 轉肩 `open_min`（整場） | 只有鏡頭在身後、髖高以上，肩寬比例才代表轉肩（SKILL.md） |
 | 整組用 2D 膝蓋，且 `knee2d_ok == false`（`score_version` 5 起） | 膝蓋 | 腿沒側對鏡頭，2D 膝角被縮短（第 11 節）。用 3D 的組不受影響 |
