@@ -256,3 +256,23 @@ old["items"] = {**old["items"], "total": 1}
 assert new["score_version"] == 10 and old["series_key"] != new["series_key"]
 assert compare([old, new]) == []
 print("contact-height consistency and version tests ok")
+
+# #107：不可信接觸仍是適用的手臂檢查拍，只能算看不出來，保留覆蓋率分母。
+unknown_sv = dict(kind="SV", contact_untrusted=True, serve_arm_conf=None, serve_arm_straight=None)
+r = check_session([sv(True)] * 3 + [unknown_sv] * 4)[0]
+assert (r["n"], r["passed"], r["failed"], r["unclear"], r["coverage"], r["status"], r["verified"]) == (7, 3, 0, 4, .43, "資料不足", False), r
+unknown_bh = dict(kind="BH", backhand="one", contact_untrusted=True, bh_elbow_conf=None)
+for r in check_session([bh(True, True)] * 3 + [unknown_bh] * 4):
+    assert (r["n"], r["passed"], r["unclear"], r["coverage"], r["status"], r["verified"]) == (7, 3, 4, .43, "資料不足", False), r
+# 全部不可信仍須產生檢查列，且不跨球員混算。
+rows = check_session([dict(unknown_sv, player="A"), dict(unknown_bh, player="B")])
+assert len(rows) == 3, rows
+assert all((r["n"], r["passed"], r["failed"], r["unclear"], r["coverage"], r["status"], r["verified"]) == (1, 0, 0, 1, 0, "資料不足", False) for r in rows), rows
+assert {(r["player"], r["kind"]) for r in rows} == {("A", "SV"), ("B", "BH")}, rows
+# 不可信標記優先於殘留的判定值；未標記者維持原本行為。
+r = check_session([sv(True)] * 3 + [sv(True, contact_untrusted=True), sv(False, contact_untrusted=True)])[0]
+assert (r["n"], r["passed"], r["failed"], r["unclear"], r["coverage"]) == (5, 3, 0, 2, .6), r
+assert check_session([sv(True, contact_untrusted=False)] * 3)[0]["verified"] is True
+# 不把雙手反拍、其他拍種或缺少單手資訊的舊資料誤列為單手反拍檢查。
+assert check_session([dict(unknown_bh, backhand="two"), dict(unknown_bh, backhand=None), dict(unknown_bh, kind="FH"), dict(unknown_bh, kind="OH")]) == []
+print("untrusted contact check coverage tests ok")
