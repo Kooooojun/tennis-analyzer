@@ -6,6 +6,7 @@ import hashlib, json, re, sys
 from check_findings import check
 from common import ROOT, load, work
 from platform_util import read_text, unlink, write_text
+from trend import _score_set
 
 S = ROOT / "web" / "sessions"
 POSE = ("frames", "world")  # per-frame arrays: ~99% of the bytes, only needed for the stroke on screen
@@ -24,6 +25,8 @@ for d in sorted(p for p in S.iterdir() if p.is_dir()):  # pass 1: build and chec
     s = d.name; strokes = load(d / "strokes.json"); notes = load(d / "notes.json", {})
     vids = sorted({x["video"] for x in strokes})
     sc = load(d / "scores.json") if (d / "scores.json").exists() else None
+    for g in (sc or {}).get("groups", []):
+        if "form_metrics" in g: g["score_set"] = _score_set(g)
     errs = check(notes, strokes, sc) if sc is not None else []  # {} still checks: cites that need scores fail
     bad += [f"{s}: {e}" for e in errs]
     sess = dict(id=s, label=notes.get("label", s[5:].replace("-", "/") if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s) else s),
