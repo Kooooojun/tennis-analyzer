@@ -148,7 +148,7 @@ def main(argv):
                 sys.exit(f"ffprobe could not read audio/duration for {V}: {r.stderr.strip() or 'invalid streams or duration'}")
             audio_src = []
             if silent:
-                print("沒有聲音，擊球只靠姿態，可能漏很多", file=sys.stderr)
+                print("這支影片沒有聲音：擊球偵測要靠聲音，這支可能抓不到任何擊球", file=sys.stderr)
                 audio_src = ["-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono", "-map", "1:a:0", "-t", str(duration)]
             for name, filt in (("audio_hp.f32", ["-af", "highpass=f=1500"]), ("audio.f32", [])):
                 if stale(D / name, V): ffmpeg(V, D / name, *audio_src, "-vn", "-ac", "1", "-ar", "16000", *filt, "-f", "f32le")

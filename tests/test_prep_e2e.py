@@ -130,7 +130,7 @@ subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=6
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", str(silent / "clip.mp4")], check=True)
 os.utime(silent / "clip.mp4", (old, old))
 r = prep("silent", "1")
-assert r.returncode == 0 and r.stderr.count("沒有聲音，擊球只靠姿態，可能漏很多") == 1, r.stderr
+assert r.returncode == 0 and r.stderr.count("這支影片沒有聲音：擊球偵測要靠聲音，這支可能抓不到任何擊球") == 1, r.stderr
 assert "來源比例 4:3" in r.stderr
 D = R / "work" / "silent" / "clip"
 for name in ("audio.f32", "audio_hp.f32"):
