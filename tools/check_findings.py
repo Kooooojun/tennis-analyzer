@@ -44,6 +44,8 @@ def _cite(c, strokes, groups, show_open=False):
     """None if the cite checks out, else the reason."""
     who = lambda s: s.get("player") or "me"
     if not isinstance(c, dict): return "cite 的每一項要是物件"
+    if "change" in c and (c["change"] not in ("up", "down") or "stroke" in c or not isinstance(c.get("metric"), str) or c.get("stat", "score") not in ("score", "cons")):
+        return "change 只能是 up／down，且須引用分數或分項一致性"
     if "stroke" in c:
         n = c["stroke"]
         if not isinstance(n, int) or not 1 <= n <= len(strokes): return f"拍 #{n} 不存在"
@@ -74,14 +76,10 @@ def _cite(c, strokes, groups, show_open=False):
 def _change_errors(finding, scores, runs):
     """Check directional claims against the same score histories as trend.py."""
     text = finding.get("title", "") + "。" + finding.get("text", "")
-    text = re.sub(r"(?:不能|無法|沒有|不足以|不代表|不算|不可)(?:判定|確認|說|視為|當作)?(?:確定)?(?:進退步|進步|退步|改善)", "", text)
-    up, down = r"進步|改善|變好|(?:更|比較)(?:好|穩|一致)|比.*穩|一致了", r"退步|變差|(?:更|比較)差"
-    cross_session = re.search(r"前場|上場|上次|前次|之前|昨天|跨場|\d{1,2}/\d{1,2}", text)
+    up, down = r"進步|改善|變好|(?:更|比較)(?:好|穩|一致)|比[^不沒無未非]*穩|一致了", r"退步|變差|(?:更|比較)差|不穩"
+    cross_session = r"前場|上場|上次|前次|之前|昨天|跨場|\d{1,2}/\d{1,2}"
     drills = {c.get("drill") for c in finding.get("cite", []) if isinstance(c, dict) and c.get("drill") is not None}
-    clauses = [c for c in re.split(r"[。；，,！!?？\n]", text) if re.search(up + "|" + down, c)
-               and not re.search(r"下次|下一次|未來|建議|試著|希望|目標|請|先.*改善", c)
-               and not (not cross_session and len(drills) >= 2 and re.search(r"自拋|對打|高拋", c))]
-    if not clauses: return []
+    clauses = [c.strip() for c in re.split(r"[。；，,：:！!?？\n]", text) if re.search(up + "|" + down, c)]
     split_clauses = []
     for clause in clauses:
         parts = re.split(r"(而且|並且|但是|同時|以及|且|但|而|與|及|、)", clause)
@@ -93,7 +91,12 @@ def _change_errors(finding, scores, runs):
             else:
                 pending += parts[i] + parts[i + 1]
         split_clauses.append(pending)
-    clauses = split_clauses
+    clauses = [c for c in split_clauses
+               if not re.search(r"(?:不能|無法|沒有|不足以|不代表|不算|不可).*?(?:" + up + "|" + down + ")", c)
+               and not (not re.search(cross_session, c) and re.match(r"下次|下一次|未來|建議|試著|希望|目標|請|先改善", c))
+               and not (not re.search(cross_session, text) and len(drills) >= 2 and re.search(r"自拋|對打|高拋", c))]
+    declared = [c for c in finding.get("cite", []) if isinstance(c, dict) and c.get("change") in ("up", "down") and isinstance(c.get("metric"), str)]
+    if not clauses and not declared: return []
     identities = {(c.get("player") or "me", c.get("kind")) for c in finding.get("cite", []) if isinstance(c, dict) and "kind" in c}
     if not identities: return ["進退步宣稱缺少球員與拍種的群組引用"]
 
@@ -123,6 +126,8 @@ def _change_errors(finding, scores, runs):
         names = {**NAMES, "form": "技術", "power": "力量", "uncapped": "未壓前總分"}
         cited_items = [c["metric"] + (".cons" if c.get("stat") == "cons" else "") for c in finding.get("cite", []) if isinstance(c, dict) and isinstance(c.get("metric"), str)
                        and (c.get("player") or "me", c.get("kind")) == (player, kind)]
+        claims = [(c["metric"] + (".cons" if c.get("stat") == "cons" else ""), c["change"]) for c in declared
+                  if (c.get("player") or "me", c.get("kind")) == (player, kind)]
         for clause in clauses:
             mentioned = re.findall("|".join(re.escape(n) for n in sorted(names.values(), key=len, reverse=True)), clause)
             items = [item for item, name in names.items() if name in mentioned]
@@ -137,13 +142,14 @@ def _change_errors(finding, scores, runs):
                     specific, items = metric_items, []
                 items += [m if m.endswith(".cons") else m + ".cons" for m in specific]
                 items = items or ["consistency"]
-            for item in set(items or ["total"]):
-                name = names.get(item.removesuffix(".cons"), item) + ("一致性" if item.endswith(".cons") else "")
-                flag = flags.get(item)
-                if flag is None: errors.append(f"{name}沒有足夠的同版本、同機位誤差估計，不能宣稱進步或退步")
-                elif flag["flag"] == "在誤差內": errors.append(f"{name}變化在誤差內（差 {flag['diff']}，門檻 {flag['threshold']:.2f}），不能宣稱進步或退步")
-                elif re.search(up, clause) and flag["diff"] < 0 or re.search(down, clause) and flag["diff"] > 0:
-                    errors.append(f"{name}文字的進退步方向與實際差值 {flag['diff']} 相反")
+            claims += [(item, direction) for item in set(items or ["total"]) for direction, pattern in (("up", up), ("down", down)) if re.search(pattern, clause)]
+        for item, direction in sorted(set(claims)):
+            name = names.get(item.removesuffix(".cons"), item) + ("一致性" if item.endswith(".cons") else "")
+            flag = flags.get(item)
+            if flag is None: errors.append(f"{name}沒有足夠的同版本、同機位誤差估計，不能宣稱進步或退步")
+            elif flag["flag"] == "在誤差內": errors.append(f"{name}變化在誤差內（差 {flag['diff']}，門檻 {flag['threshold']:.2f}），不能宣稱進步或退步")
+            elif direction == "up" and flag["diff"] < 0 or direction == "down" and flag["diff"] > 0:
+                errors.append(f"{name}進退步方向與實際差值 {flag['diff']} 相反")
     return errors
 
 

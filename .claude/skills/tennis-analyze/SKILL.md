@@ -150,6 +150,8 @@ Anchors, sources, coverage gate and which metrics each camera excludes are in `d
 
 寫跨場建議先看 `trend.json`：標題與內文遇「在誤差內」只能描述觀察到的差值及「無法判定進退步」，不得寫成進步、退步、改善或變得更穩。缺少區間／SEM、拍數不足或版本不同時也不下進退步結論；重跑 `score.py` → `trend.py` → `check_findings.py` 核對，失敗就修建議文字。區間要寫明是「同一場內抽樣的誤差，不是跨日重測」。
 
+確定宣稱跨場進步／退步時，必須在每個對應分數的 `metric` 引用明寫 `"change": "up"`／`"change": "down"`，分項一致性另寫 `"stat": "cons"`；不可把方向寫在單拍或原始統計引用。`change` 會無條件核對差值、誤差與方向，不能靠「建議／請」等字跳過。中性觀察與未來練習指令不加 `change`；舊文字僅作保守詞彙核對，不把它當成理解自然語言的保證。
+
 Highlight reel (optional, when asked or when the session has clear examples). Write `work/<s>/reel.json`. The format is in the header of `tools/highlights.py`: cards plus one- or two-up clips by final stroke number. Then:
 
 ```
