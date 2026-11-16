@@ -163,7 +163,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
 }
 @media (max-width:600px) and (orientation:portrait){
   .player,.player.wide{padding:4px 0}
-  .player .vid-msg{top:8px;transform:none;font-size:12px;line-height:1.25;padding:6px 8px}
+  .player .vid-msg{top:34px;transform:none;font-size:12px;line-height:1.25;padding:6px 8px}
   .player input[type=range]{margin:2px 0 0}
   .player .now,.player .controls{margin-top:2px}
   .player .touch-hint{display:none}
@@ -209,7 +209,7 @@ main.noplayer>.col{max-width:820px}
 .sess .meta{grid-column:1;font-size:12px;color:var(--muted)}
 .sess .sc{grid-row:1/3;grid-column:2;align-self:center;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
 .sess .sc b{font-size:20px;color:var(--ink)}
-.spark{width:100%;height:150px;display:block}
+.spark{width:100%;height:170px;display:block}
 .flags{list-style:none;padding:0;margin:6px 0 0;display:grid;gap:4px}
 .flags li{font-size:13px;padding:5px 9px;border-radius:6px;background:var(--chip);border-left:3px solid var(--line)}
 .flags li.up{border-left-color:var(--good)} .flags li.down{border-left-color:var(--warn)}
@@ -428,7 +428,11 @@ const DAYS = Object.fromEntries((window.SESSIONS||[]).map(d=>[d.id,{...d,players
   label:dateLabel(d), slug:d.label===d.id&&isoDate(d)&&isoDate(d)!==d.id&&!sameDay(d)?d.id:""}]));  // a slug-only label gives way to the date; the slug stays as small print
 for(const [k,d] of Object.entries(DAYS)) d.data.forEach(s=>{ s.day=k; if(s.knee3d!=null){ s.knee2d=s.knee; s.knee=s.knee3d; } });  // knee = 3D when the session has world data (else the old 2D value)
 const DAY_KEYS = [...(window.SESSIONS||[])].sort((a,b)=>!isoDate(a)-!isoDate(b)||(isoDate(a)||"").localeCompare(isoDate(b)||"")||(isoDate(a)?a.id.localeCompare(b.id):0)).map(d=>d.id);  // dated by date then id; undated after them in manifest order, so the newest is still last  // an array: object keys put all-digit names first
-if(LOAD_FAIL.length){ const p=document.createElement("p"); p.style.padding="24px"; p.textContent=`載入失敗，重新整理再試（沒載到：${LOAD_FAIL.join("、")}）`; document.querySelector("main").before(p); if(!DAY_KEYS.length){ document.querySelector("main").hidden=true; throw new Error("load failed"); } }  // a dropped connection is not "no sessions"
+if(LOAD_FAIL.length){
+  const p=document.createElement("p"), retry=document.createElement("button"); p.setAttribute("role","alert"); p.style.padding="24px";
+  p.textContent=`載入失敗（沒載到：${LOAD_FAIL.join("、")}） `; retry.type="button"; retry.textContent="重試"; retry.onclick=()=>location.reload(); p.append(retry);
+  document.querySelector("main").before(p); if(!DAY_KEYS.length){ document.querySelector("main").hidden=true; throw new Error("load failed"); }
+}  // a dropped connection is not "no sessions"
 if(!DAY_KEYS.length){ document.querySelector("main").innerHTML='<p style="padding:24px">還沒有分析好的練習。在這個資料夾開 Claude Code，說「幫我分析 videos/ 裡的新練習」。</p>'; throw new Error("no sessions"); }
 let DAY = DAY_KEYS.findLast(k=>isoDate(DAYS[k]))??DAY_KEYS.at(-1), ALL = DAYS[DAY].data;
 const who = s => s.player||"me";  // "player": null or missing = the single-player "me", same as score.py
@@ -1337,10 +1341,14 @@ function drawHome(){
   $("home").querySelectorAll("svg.spark").forEach(svg=>drawSpark(svg,T.find(t=>t.player===svg.dataset.player&&t.kind===svg.dataset.kind)));
 }
 function drawSpark(svg,t){  // total + consistency per session, oldest left
-  const NS="http://www.w3.org/2000/svg", W=Math.max(260,svg.clientWidth||400), H=150, pl=26, pr=12, pt=10, pb=34, h=t.history, n=h.length;
+  const NS="http://www.w3.org/2000/svg", W=Math.max(260,svg.clientWidth||400), H=170, pl=26, pr=12, pt=10, pb=54;
+  const h=[...t.history].sort((a,b)=>!isoDate(a)-!isoDate(b)||(isoDate(a)||"").localeCompare(isoDate(b)||"")), groups=new Map();
+  h.forEach((r,i)=>{ const d=isoDate(r)||""; if(!groups.has(d)) groups.set(d,[]); groups.get(d).push(i); });
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
-  const ts=h.map(r=>isoDate(r)?Date.parse(r.date):NaN), byDate=ts.every(isFinite)&&ts.at(-1)>ts[0];  // spaced by date when every session has one
-  const x=i=>pl+(n<2?0.5:byDate?(ts[i]-ts[0])/(ts.at(-1)-ts[0]):i/(n-1))*(W-pl-pr), y=v=>pt+(1-(v-1)/9)*(H-pt-pb);
+  const dates=[...groups.keys()].filter(Boolean), first=Date.parse(dates[0]), span=Date.parse(dates.at(-1))-first;
+  const spread=Math.max(...[...groups.values()].map(g=>g.length-1))*5, left=pl+spread, right=W-pr-spread, dateRight=right-(groups.has("")&&dates.length?60:0);
+  const gx=d=>!d?(dates.length?right:(left+right)/2):span?left+(Date.parse(d)-first)/span*(dateRight-left):(left+dateRight)/2;
+  const x=i=>{ const d=isoDate(h[i])||"", g=groups.get(d); return gx(d)+(g.indexOf(i)-(g.length-1)/2)*10; }, y=v=>pt+(1-(v-1)/9)*(H-pt-pb);
   const mk=(tag,a)=>{ const e=document.createElementNS(NS,tag); for(const k in a) e.setAttribute(k,a[k]); svg.append(e); return e; };
   for(const v of [1,4,7,10]){ mk("line",{x1:pl,x2:W-pr,y1:y(v),y2:y(v),stroke:"var(--line)"}); mk("text",{x:pl-5,y:y(v)+3,"text-anchor":"end","font-size":10,fill:"var(--muted)"}).textContent=v; }
   for(const [key,col,w] of [["consistency","var(--muted)",1.5],["total","var(--accent)",2.5]]){
@@ -1348,10 +1356,15 @@ function drawSpark(svg,t){  // total + consistency per session, oldest left
     for(let a=0,b=1;a<pts.length;a=b++){ while(b<pts.length&&seg(h[pts[b][0]])===seg(h[pts[b-1][0]])) b++; if(b-a>1) mk("polyline",{points:pts.slice(a,b).map(([i,v])=>`${x(i)},${y(v)}`).join(" "),fill:"none",stroke:col,"stroke-width":w}); }  // different camera / knee source / version: not comparable, so not joined
     for(const [i,v] of pts){ const c=mk("circle",{cx:x(i),cy:y(v),r:key==="total"?4.5:3,fill:col}); const tt=document.createElementNS(NS,"title"); tt.textContent=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v} · 鏡頭：${h[i].camera||"沒寫"}`; c.append(tt); }
   }
-  let lx=-1e9;  // dates are spaced by time, so close sessions would print over each other: skip a label unless it clears the last one and the final label
-  h.forEach((r,i)=>{ if(byDate&&i<n-1&&(x(i)-lx<40||x(n-1)-x(i)<40)) return; lx=x(i); const l=DAYS[r.session]?.label||(isoDate(r)?mdOf(r.date):r.session); mk("text",{x:x(i),y:H-18,"text-anchor":n<2?"middle":i===0?"start":i===n-1?"end":"middle","font-size":10,fill:"var(--muted)"}).textContent=l.length>10?l.slice(0,10)+"…":l; });
-  mk("text",{x:pl,y:H-3,"font-size":10,fill:"var(--accent)"}).textContent="● 總分";
-  mk("text",{x:pl+52,y:H-3,"font-size":10,fill:"var(--muted)"}).textContent="● 一致性";
+  let lx=-1e9;
+  const keys=[...groups.keys()], last=gx(keys.at(-1));
+  keys.forEach((d,i)=>{
+    const px=gx(d); mk("line",{x1:px,x2:px,y1:y(1),y2:y(1)+5,stroke:"var(--muted)"});
+    if(i<keys.length-1&&(px-lx<40||last-px<40)) return;
+    lx=px; mk("text",{x:px,y:H-38,"text-anchor":keys.length<2?"middle":i===0?"start":i===keys.length-1?"end":"middle","font-size":10,fill:"var(--muted)"}).textContent=d?mdOf(d):"無日期";
+  });
+  mk("text",{x:pl,y:H-6,"font-size":10,fill:"var(--accent)"}).textContent="● 總分";
+  mk("text",{x:pl+52,y:H-6,"font-size":10,fill:"var(--muted)"}).textContent="● 一致性";
 }
 route();
 </script>
