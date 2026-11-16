@@ -76,6 +76,14 @@ def probe_rate(v):
     return w, h, fps
 
 
+def finite_seconds(value):
+    try:
+        seconds = float(value)
+        return seconds if math.isfinite(seconds) else None
+    except (TypeError, ValueError):
+        return None
+
+
 @lru_cache(None)
 def gpu():
     import torch  # ball.py picks mps > cuda > cpu the same way
@@ -139,11 +147,12 @@ def main(argv):
             try:
                 audio_info = json.loads(r.stdout)
                 streams = audio_info["streams"]
-                silent = not any(s.get("codec_type") == "audio" for s in streams)
+                audio_durations = [finite_seconds(s.get("duration")) for s in streams if s.get("codec_type") == "audio"]
+                silent = not any(d is None or d > 0 for d in audio_durations)
                 if silent:
                     video = next(s for s in streams if s.get("codec_type") == "video")
-                    duration = float(video.get("duration", audio_info.get("format", {}).get("duration", "nan")))
-                    if not math.isfinite(duration) or duration <= 0: raise ValueError("invalid video duration")
+                    duration = next(d for d in map(finite_seconds, (video.get("duration"), audio_info.get("format", {}).get("duration")))
+                                    if d is not None and d > 0)
             except (ValueError, KeyError, TypeError, StopIteration):
                 sys.exit(f"ffprobe could not read audio/duration for {V}: {r.stderr.strip() or 'invalid streams or duration'}")
             audio_src = []

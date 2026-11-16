@@ -4,7 +4,7 @@
 # Checks: outputs complete, second run does no work (mtimes unchanged), people count changes, exit codes pass through.
 import os, shutil, site, subprocess, sys, tempfile, venv
 from pathlib import Path
-import contextlib, io
+import contextlib, io, json
 from unittest.mock import patch
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -28,6 +28,39 @@ with tempfile.TemporaryDirectory() as d:
         assert ("來源比例" in err.getvalue()) == warned, (wh, err.getvalue())
         pw, ph = (960, 540) if wh[0] > wh[1] else (540, 960)
         assert calls[0][2:] == ("-an", "-vf", f"scale={pw}:{ph},fps=60", "-g", "30", "-f", "mp4"), calls
+
+def audio_commands(streams):
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d); (root / "videos" / "audio").mkdir(parents=True)
+        (root / "videos" / "audio" / "clip.mp4").touch()
+        result = subprocess.CompletedProcess([], 0, stdout=json.dumps({"streams": streams, "format": {"duration": "1.25"}}), stderr="")
+        calls = []; err = io.StringIO()
+        with patch.object(prep_module, "R", root), patch.object(prep_module, "need_ffmpeg"), \
+             patch.object(prep_module, "probe", return_value=(1920, 1080, 60)), patch.object(prep_module, "h264_args", return_value=[]), \
+             patch.object(prep_module, "stale", side_effect=lambda p, *a: p.name in ("audio.f32", "audio_hp.f32")), \
+             patch.object(prep_module.subprocess, "run", return_value=result), \
+             patch.object(prep_module, "ffmpeg", side_effect=lambda *a: calls.append(a)), contextlib.redirect_stderr(err):
+            prep_module.main(["audio", "1"])
+        return calls, err.getvalue()
+
+
+def test_empty_audio():
+    for value in ("0", "-1", "N/A", None):
+        calls, err = audio_commands([{"codec_type": "video", "duration": "1.25"}, {"codec_type": "audio", "duration": value}])
+        silent = value in ("0", "-1")
+        assert ("這支影片沒有聲音" in err) == silent, (value, err)
+        assert len(calls) == 2 and all(("anullsrc=r=16000:cl=mono" in c) == silent for c in calls), calls
+
+
+def test_duration_fallback():
+    for value in ("N/A", None, "0", "nan"):
+        calls, err = audio_commands([{"codec_type": "video", "duration": value}])
+        assert "這支影片沒有聲音" in err and len(calls) == 2, (value, err)
+        assert all(c[c.index("-t") + 1] == "1.25" for c in calls), calls
+
+
+test_empty_audio()
+test_duration_fallback()
 
 tmp = Path(tempfile.mkdtemp(prefix="prep_e2e_")); R = tmp / "repo"
 shutil.copytree(REPO / "tools", R / "tools", ignore=shutil.ignore_patterns("__pycache__"))
