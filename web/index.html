@@ -485,9 +485,9 @@ function series(s){
 const POSE_WAIT=new Map();  // stroke → redraws waiting for its pose file
 window.POSE=(day,id,p)=>{ const s=DAYS[day]?.data[id]; if(s) Object.assign(s,p); };
 function cancelPose(s){ const p=POSE_WAIT.get(s); if(p){ POSE_WAIT.delete(s); p.controller?.abort(); p.el.onload=p.el.onerror=null; p.el.remove(); } }
+function poseShown(s){ return shown(v)&&S===s||shown(vA)&&A===s||shown(vB)&&B===s; }
 function cancelUnusedPoses(){
-  const keep=new Set([shown(v)?S:null,shown(vA)?A:null,shown(vB)?B:null]);
-  for(const s of POSE_WAIT.keys()) if(!keep.has(s)) cancelPose(s);
+  for(const s of POSE_WAIT.keys()) if(!poseShown(s)) cancelPose(s);
 }
 function needPose(s,retry=0){  // <script> keeps file:// support; late files only populate their own stroke's cache
   if(s.frames||s._poseErr||POSE_WAIT.has(s)||s===S&&mainLoadTimer) return;
@@ -510,7 +510,7 @@ function needPose(s,retry=0){  // <script> keeps file:// support; late files onl
   }
 }
 document.addEventListener("visibilitychange",()=>{ for(const p of POSE_WAIT.values()){ p.hidden=document.hidden; p.last=Date.now(); } });
-setInterval(()=>{ const now=Date.now(); for(const p of [...POSE_WAIT.values()]){ if(!document.hidden&&!p.hidden) p.elapsed+=now-p.last; p.last=now; p.hidden=document.hidden; if(p.elapsed>=8000) p.done(); } },250);
+setInterval(()=>{ const now=Date.now(); for(const [s,p] of [...POSE_WAIT]){ if(!document.hidden&&!p.hidden&&poseShown(s)) p.elapsed+=now-p.last; p.last=now; p.hidden=document.hidden; if(p.elapsed>=8000) p.done(); } },250);
 
 // ---------- drawing one video frame's overlay ----------
 const ZB=new Map();
@@ -1088,7 +1088,15 @@ function tick(){
   if(frameRequest!==null){ v.cancelVideoFrameCallback?v.cancelVideoFrameCallback(frameRequest):cancelAnimationFrame(frameRequest); frameRequest=null; }
   render(frameOf(v.currentTime)); if(!v.paused) frameRequest=v.requestVideoFrameCallback?v.requestVideoFrameCallback(tick):requestAnimationFrame(tick);
 }
-function toggle(){ const dead=v.parentElement.querySelector(".vid-msg[data-fail]"); if(dead){ dead.click(); return; } if(v._want||!v.paused&&v.readyState) stopDead(v); else { v._want=v._resume=true; $("play").textContent="⏸ 暫停"; if(!v._fetching&&!mainLoadTimer){ if(v.readyState) cancelAlign(v); playSafe(v,$("badge")); } } }
+function toggle(){
+  const dead=v.parentElement.querySelector(".vid-msg[data-fail]"); if(dead){ dead.click(); return; }
+  if(v._want||!v.paused&&v.readyState) stopDead(v);
+  else {
+    if(mainLoadTimer){ clearTimeout(mainLoadTimer); mainLoadTimer=null; setClip(v,S,v._start); render(cur); }
+    v._want=v._resume=true; $("play").textContent="⏸ 暫停";
+    if(!v._fetching){ if(v.readyState) cancelAlign(v); playSafe(v,$("badge")); }
+  }
+}
 v.loop=true;
 v.addEventListener("playing",()=>{ if(v.paused||!v._want) return; $("play").textContent="⏸ 暫停"; tick(); });
 v.addEventListener("pause",()=>{if(!v.paused||v._want&&(v._reloading||v.error)) return; $("play").textContent="▶ 播放";});
@@ -1124,7 +1132,7 @@ function drawPresets(){
 }
 function cmpLoad(a,b){
   resetClip(vA,clipSrc(a)); resetClip(vB,clipSrc(b));
-  A=a; B=b; $("selA").value=sKey(A); $("selB").value=sKey(B); $("capA").innerHTML=capFor(A); $("capB").innerHTML=capFor(B);
+  A=a; B=b; A._poseErr=B._poseErr=false; $("selA").value=sKey(A); $("selB").value=sKey(B); $("capA").innerHTML=capFor(A); $("capB").innerHTML=capFor(B);
   cancelUnusedPoses();
   [...$("presets").children].forEach(x=>x.classList.toggle("on",dayNo(...x._p.a)===A&&dayNo(...x._p.b)===B));
   const go=()=>{ if(vA.readyState&&vB.readyState){ const want=canResume(vA)&&canResume(vB); cmpGoto(cmpCur); vA._reloading=vB._reloading=false; if(want) cmpStart(); } };  // each clip stops itself first, so one that never loads can't leave the other looping
@@ -1238,7 +1246,7 @@ function route(){
   const home=!m||!Object.hasOwn(DAYS,m[1]), wasHome=!$("home").hidden;
   document.querySelector("main").hidden=$("days").hidden=$("tabbar").hidden=home; $("home").hidden=!home;
   $("homeLink").textContent=home?"網球練習":"‹ 網球練習"; $("homeLink").title=home?"":"回到所有場次";
-  if(home){ cancelPrefetch(); $("h1Sub").textContent=""; $("sub").textContent=`${DAY_KEYS.length} 場練習`; drawHome(); document.querySelectorAll("video").forEach(hold); return; }
+  if(home){ cancelPrefetch(); cancelUnusedPoses(); $("h1Sub").textContent=""; $("sub").textContent=`${DAY_KEYS.length} 場練習`; drawHome(); document.querySelectorAll("video").forEach(hold); return; }
   TAB=m[2]||"overview";
   document.querySelectorAll("main [data-tab]").forEach(e=>{ e.hidden=!e.dataset.tab.split(" ").includes(TAB) || (e.id==="reelCard"&&!DAYS[m[1]].reel); });  // before setDay, so clips on hidden tabs wait (whenShown)
   if(m[1]!==DAY||!S) setDay(m[1]);
@@ -1248,9 +1256,10 @@ function route(){
   [...$("tabbar").children].forEach(b=>{ const on=b.dataset.tab===TAB; b.classList.toggle("on",on); b.setAttribute("aria-current",on?"page":"false"); });
   document.querySelector("main").classList.toggle("noplayer",!PLAYER_TABS.includes(TAB));
   document.querySelectorAll("main [hidden] video").forEach(hold);  // player, compare and reel stop when their tab is left
-  if(!PLAYER_TABS.includes(TAB)) cancelPrefetch();
+  if(!PLAYER_TABS.includes(TAB)){ cancelPrefetch(); cancelUnusedPoses(); }
   if(TAB==="charts") drawCharts();
   for(const [vid,fn] of LATER){ if(!vid.isConnected) LATER.delete(vid); else if(shown(vid)){ LATER.delete(vid); fn(); } }  // drop reel <video>s that drawSummary replaced
+  for(const [vid,s] of [[v,S],[vA,A],[vB,B]]) if(s&&shown(vid)){ s._poseErr=false; needPose(s); }
   if(S){ render(cur); cmpRender(cmpCur); }  // canvases were 0x0 while hidden
 }
 addEventListener("hashchange",route);

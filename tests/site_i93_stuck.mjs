@@ -53,6 +53,46 @@ try{
      await page.evaluate(()=>load(12,false));await page.waitForFunction(()=>[ALL[11],ALL[13]].every(s=>!!s.frames),null,{timeout:5000});
      await page.evaluate(()=>step(1));assert.equal(await page.locator('#stage .pose-msg').isVisible(),false);
     },
+    async neighborPoseRecovery(page){
+     let allow=false,count=0;await page.route('**/pose/13.js*',route=>{count++;return allow?route.continue():route.fulfill({status:503,body:''});});
+     await page.evaluate(()=>load(12,false));await page.waitForFunction(()=>ALL[13]._poseErr,null,{timeout:5000});assert.equal(count,2);
+     allow=true;await page.evaluate(()=>go(DAY,'video'));await page.waitForFunction(()=>TAB==='video');
+     await page.locator('#vA').scrollIntoViewIfNeeded();await page.evaluate(()=>cmpLoad(ALL[13],ALL[14]));
+     await page.waitForFunction(()=>!!A.frames,null,{timeout:2000});assert.equal(count,3);
+    },
+    async poseLeaveOverview(page){return leavePose(page,'overview');},
+    async poseLeaveHome(page){return leavePose(page,'home');},
+    async poseRouteRecovery(page){
+     let allow=false;await page.route('**/pose/4.js*',route=>allow?route.continue():route.fulfill({status:503,body:''}));
+     await page.evaluate(()=>load(4,false));await page.waitForFunction(()=>S._poseErr);allow=true;
+     await page.evaluate(()=>go(DAY,'overview'));await page.waitForFunction(()=>TAB==='overview');
+     await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>!!S.frames,null,{timeout:2000});
+    },
+    async poseCompareVisibleTime(page){
+     await page.setViewportSize({width:390,height:500});
+     let count=0;await page.route('**/pose/4.js*',route=>{count++;if(count>1)return route.continue();});
+     await page.evaluate(()=>go(DAY,'video'));await page.waitForFunction(()=>TAB==='video');await page.locator('#vA').scrollIntoViewIfNeeded();
+     const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>cmpLoad(ALL[4],ALL[6]));await started;
+     await page.evaluate(()=>scrollTo(0,0));await page.waitForFunction(()=>!shown(vA));
+     await page.clock.runFor(20000);assert.equal(count,1);assert.equal(await page.evaluate(()=>!!A._poseErr),false);
+     await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>shown(vA));
+     await page.clock.runFor(8500);await page.waitForFunction(()=>!!A.frames,null,{timeout:1500});assert.equal(count,2);
+    },
+    async deferredPlayGesture(page){
+     await page.evaluate(()=>{
+      window.gesturePlays=[];window.playErrors=[];window.inPlayGesture=false;
+      const click=$('play').onclick;$('play').onclick=e=>{window.inPlayGesture=e.isTrusted;try{return click(e);}finally{window.inPlayGesture=false;}};
+      const native=v.play.bind(v);v.play=()=>{gesturePlays.push({gesture:inPlayGesture,src:v.src});const task=native();task?.catch(e=>playErrors.push(e.name));return task;};
+      const list=visible(),target=list[(list.indexOf(S)-2+list.length)%list.length];target.src+='?gesture';step(-1);step(-1);
+     });
+     await page.locator('#play').click();
+     const state=await page.evaluate(()=>({pending:!!mainLoadTimer,plays:gesturePlays}));
+     assert.equal(state.pending,false);assert(state.plays.some(p=>p.gesture&&p.src),'可信任播放手勢中必須設定 src 並 play');
+     await page.waitForFunction(()=>!v.paused&&v.readyState>=3&&!v.seeking);
+     const before=await page.evaluate(()=>v.currentTime);await page.waitForFunction(t=>v.currentTime>t+.05,before,{timeout:2500});
+     assert.deepEqual(await page.evaluate(()=>playErrors.filter(e=>e==='NotAllowedError')),[]);
+     return {advanceSeconds:await page.evaluate(t=>v.currentTime-t,before),gesturePlays:state.plays.filter(p=>p.gesture).length};
+    },
     async latePose(page){
      let release;const gate=new Promise(r=>release=r);await page.route('**/pose/4.js*',async route=>{await gate;await route.continue().catch(()=>{});});
      await page.evaluate(()=>load(4,false));await page.waitForTimeout(100);await page.evaluate(()=>load(8,false));release();
@@ -70,7 +110,7 @@ try{
     const context=await browser.newContext({ignoreHTTPSErrors:true,...(engine==='webkit'?devices['iPhone 13']:{})}),page=await context.newPage(),errors=[];
     page.on('pageerror',e=>errors.push(e.message));
     try{
-     if(['poseVisibleTime','noSource'].includes(name))await page.clock.install();
+     if(['poseVisibleTime','noSource','poseLeaveOverview','poseLeaveHome','poseCompareVisibleTime'].includes(name))await page.clock.install();
      await page.goto(f.url);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>S&&v.readyState>=3&&!v.seeking);
      await page.waitForTimeout(650);const details=await test(page);assert.deepEqual(errors,[]);results.push({engine,case:name,pass:true,...details});
     }catch(e){results.push({engine,case:name,pass:false,error:e.message,errors});}
@@ -82,6 +122,16 @@ try{
 }finally{await f.close();}
 if(process.env.SITE_RESULTS)fs.writeFileSync(process.env.SITE_RESULTS,JSON.stringify(results,null,2));
 process.exitCode=results.some(x=>!x.pass)?1:0;
+
+async function leavePose(page,tab){
+ let allow=false,count=0;await page.route('**/pose/4.js*',route=>{count++;if(allow)return route.continue();});
+ const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>load(4,false));await started;
+ await page.evaluate(tab=>{if(tab==='home')location.hash='#home';else go(DAY,tab);},tab);
+ await page.waitForFunction(tab=>tab==='home'?!$('home').hidden:TAB===tab,tab);
+ await page.clock.runFor(20000);assert.equal(await page.evaluate(()=>POSE_WAIT.has(S)||!!S._poseErr),false);allow=true;
+ await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>!!S.frames,null,{timeout:2000});
+ assert.equal(count,2);assert.equal(await page.locator('#stage .pose-msg').isVisible(),false);
+}
 
 async function stalled(page,missed,mode){
  if(missed)await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
