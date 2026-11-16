@@ -17,12 +17,27 @@ class Tracker:
 
     def __init__(self, n):
         self.n = n; self.pos = [None] * n; self.col = [None] * n; self.last = [0] * n; self.f = 0
+        self.vel = np.zeros((n, 2)); self.depth = [None] * n; self.scale = [None] * n; self.reid = False; self.motion = False
 
     def cost(self, k, d):
         if self.pos[k] is None: return self.NEW
+        color = np.linalg.norm(np.subtract(d["color"], self.col[k])) / self.COL
+        if self.reid: return color
         gap = self.f - self.last[k]
-        dp = np.hypot(*np.subtract(d["pos"], self.pos[k])) / max(d["scale"], 0.03) / (1 + gap / 15)  # lost a while: position counts less
-        return dp + np.linalg.norm(np.subtract(d["color"], self.col[k])) / self.COL
+        pred = np.asarray(self.pos[k]) + (self.vel[k] * gap if gap < 5 and (self.n > 2 or self.motion) else 0)
+        dp = np.hypot(*np.subtract(d["pos"], pred)) / max(d["scale"], 0.03) / (1 + gap / 15)
+        # 兩槽保留原成本，局部誤色才不會永久占住第二個身分。
+        if self.n == 2: return dp + color
+        depth = abs(d["pos"][1] - self.depth[k]) / max(d["scale"], self.scale[k], 0.03)
+        size = abs(np.log(max(d["scale"], 0.03) / max(self.scale[k], 0.03)))
+        # 連續運動優先；大跳躍可能是剪接，位置不能蓋過外觀與長期深度。
+        continuity = max(1 - dp, 0) * max(1 - color, 0) if gap == 1 else 0
+        # 全員失聯後的區域會過時，不能長期壓過相同外觀。
+        score = min(dp, 1) - continuity + 0.5 * (depth + size) / max((self.f - max(self.last)) / 15, 1) + color
+        # 區域參照不能逼出原可接回的身分；微小遞增項保留封頂後的排序。
+        if (color < 0.5 or dp + color <= self.NEW) and any(p is None for p in self.pos):
+            return min(score, self.NEW) - 1e-6 / (1 + max(score, 0))
+        return score
 
     def step(self, dets):
         """dets: [{pos: (x, y) in frame heights, scale: torso length, color: Lab}] -> slot per detection, -1 = dropped."""
@@ -31,13 +46,38 @@ class Tracker:
             if not any(np.hypot(*np.subtract(d["pos"], dets[j]["pos"])) < 0.5 * d["scale"]
                        and np.linalg.norm(np.subtract(d["color"], dets[j]["color"])) < self.COL / 2 for j in keep):
                 keep.append(i)
+        self.reid = False
+        self.motion = False
+        if self.n == 2 and len(keep) == 2 and all(p is not None for p in self.pos):
+            delta = np.subtract(self.pos[1], self.pos[0])
+            self.motion = np.dot(delta, self.vel[0]) > 0 > np.dot(delta, self.vel[1]) and np.linalg.norm(
+                np.subtract(dets[keep[0]]["color"], dets[keep[1]]["color"])) < self.COL / 2
+        if self.n > 1 and len(keep) == self.n and all(c is not None for c in self.col):
+            colors = np.array([[np.linalg.norm(np.subtract(dets[i]["color"], c)) for c in self.col] for i in keep])
+            nearest = colors.argmin(1); ordered = np.sort(colors, axis=1)
+            # 全員外觀皆有唯一對應才跨區接軌；相似外觀仍依運動與深度配對。
+            self.reid = len(set(nearest)) == self.n and bool(np.all(ordered[:, 0] < self.COL / 2)
+                        and np.all(ordered[:, 1] - ordered[:, 0] > self.COL / 2))
+        # 兩人皆同步跳離原區域，才把明確外觀當作剪接接軌。
+        if self.reid and self.n == 2:
+            self.reid = all(self.f - self.last[k] == 1 and np.hypot(*np.subtract(dets[i]["pos"], self.pos[k])) > max(dets[i]["scale"], 0.03)
+                            for i, k in zip(keep, nearest))
         C = [[self.cost(k, dets[i]) for k in range(self.n)] + [self.DROP] * len(keep) for i in keep]
         best = min(itertools.permutations(range(self.n + len(keep)), len(keep)), key=lambda p: sum(C[a][b] for a, b in enumerate(p)), default=())
         out = [-1] * len(dets)
         for a, k in zip(keep, best):
             if k >= self.n: continue
-            d = dets[a]; out[a] = k; self.pos[k] = d["pos"]; self.last[k] = self.f
-            self.col[k] = np.array(d["color"], float) if self.col[k] is None else 0.95 * self.col[k] + 0.05 * np.array(d["color"], float)
+            d = dets[a]; out[a] = k
+            if self.pos[k] is not None:
+                gap = self.f - self.last[k]; v = np.subtract(d["pos"], self.pos[k]) / gap
+                self.vel[k] = 0.5 * self.vel[k] + 0.5 * v if gap < 5 else np.zeros(2)
+                self.vel[k] *= min(1, max(d["scale"], 0.03) / max(np.hypot(*self.vel[k]), 0.03))
+            self.pos[k] = d["pos"]; self.last[k] = self.f
+            # 慢更新保留身分參照，避免短暫錯配迅速污染整個槽。
+            alpha = 0.05 if self.n == 2 else 0.005
+            self.col[k] = np.array(d["color"], float) if self.col[k] is None else (1 - alpha) * self.col[k] + alpha * np.array(d["color"], float)
+            self.depth[k] = d["pos"][1] if self.depth[k] is None else 0.995 * self.depth[k] + 0.005 * d["pos"][1]
+            self.scale[k] = d["scale"] if self.scale[k] is None else 0.995 * self.scale[k] + 0.005 * d["scale"]
         return out
 
 
