@@ -49,6 +49,13 @@ def delete(p):
 
 def probe(v):
     """(width, height) after rotation, and source fps (int, or None when unreadable)."""
+    w, h, r = probe_rate(v)
+    return w, h, int(r + 0.5) if r else None
+
+
+def probe_rate(v):
+    """(width, height) after rotation, and the exact average fps (float, or None when unreadable). pose_full uses it too:
+    ffmpeg is the decoder, so its view of the source is the one that counts."""
     r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
                         "stream=width,height,avg_frame_rate:stream_side_data=rotation:stream_tags=rotate", "-of", "json", str(v)],
                        capture_output=True, text=True, encoding="utf-8")
@@ -63,7 +70,7 @@ def probe(v):
         sys.exit(f"ffprobe gave an unreadable rotation for {v}: {rot!r}")
     n, _, d = s.get("avg_frame_rate", "0/0").partition("/")  # avg handles variable frame rate
     try:
-        fps = int(float(n) / float(d or 1) + 0.5) if float(n) > 0 and float(d or 1) > 0 else None
+        fps = float(n) / float(d or 1) if float(n) > 0 and float(d or 1) > 0 else None
     except ValueError:
         fps = None
     return w, h, fps
@@ -97,6 +104,7 @@ def main(argv):
     src = R / "videos" / S
     if not src.is_dir(): usage()
     need_ffmpeg()
+    from pose_full import METHOD as POSE_METHOD  # here, not at the top: pose_full needs numpy, which only the venv has
     # dotfiles (macOS ._A.mp4 sidecars) skipped like the old zsh glob; sorted by name ignoring case (as that glob did), ties broken by exact name so the order never depends on the OS
     vids = sorted((v for v in src.iterdir() if v.is_file() and v.suffix.lower() in EXTS and not v.name.startswith(".")), key=lambda v: (v.name.casefold(), v.name))
     if not vids: sys.exit(f"no videos in videos/{S}")
@@ -113,10 +121,10 @@ def main(argv):
     for V, n, (w, h, fps) in zip(vids, names, info):
         D = W / n; D.mkdir(parents=True, exist_ok=True)
         print(f"== {n}", flush=True)
-        # the proxy below is always 60 fps, so a 30 fps source becomes duplicated frames
+        # the proxy below is always 60 fps (duplicated frames for a 30 fps source); pose runs at the source rate and is interpolated
         if fps: write_text(D / "src_fps.txt", f"{fps}\n")
         else: delete(D / "src_fps.txt")  # unreadable: no stale value from an earlier video
-        if fps and fps < 50: print(f"警告：{n} 來源 {fps} fps，proxy 會補成 60 fps（重複影格），速度類數字（手速、準備時間）沒驗證過", file=sys.stderr)
+        if fps and fps < 50: print(f"警告：{n} 來源 {fps} fps，proxy 會補成 60 fps（重複影格；姿態用原始 fps 跑再內插），速度類數字（手速、準備時間）沒驗證過", file=sys.stderr)
         # shortcut: assumes 16:9 sources (phone video); other ratios get stretched, as before
         pw, ph = (960, 540) if w > h else (540, 960)
         if stale(D / "proxy.mp4", V):
@@ -126,11 +134,14 @@ def main(argv):
         # a different people count means a different pose run; no people.txt (older work dir) = trust what is there
         pt, pose = D / "people.txt", D / "pose.npy"
         if pt.is_file() and pose.is_file() and pt.read_text(encoding="utf-8").strip() != str(N): delete(pose)
+        pm = D / "pose_method.txt"  # pose from an older algorithm (no file = before versions existed) is redone
+        if pose.is_file() and (not pm.is_file() or pm.read_text(encoding="utf-8").strip() != POSE_METHOD):
+            print(f"{n}: pose 是舊方法算的（pose_method {POSE_METHOD}），重算", flush=True); delete(pose)
         for t in D.glob("pose*_t*.npy"):  # extra tracks from an earlier, larger run
             k = t.stem.rsplit("_t", 1)[1]
             if k.isdigit() and int(k) >= N: delete(t)
-        if stale(pose, D / "proxy.mp4"): py("pose_full.py", D / "proxy.mp4", R / "models" / "pose_heavy.task", pose, N, log=D / "pose.log")
-        write_text(pt, f"{N}\n")
+        if stale(pose, D / "proxy.mp4"): py("pose_full.py", D / "proxy.mp4", R / "models" / "pose_heavy.task", pose, N, V, log=D / "pose.log")
+        write_text(pt, f"{N}\n"); write_text(pm, f"{POSE_METHOD}\n")
         if stale(D / "sounds.npy", D / "audio_hp.f32", D / "audio.f32"): py("hits.py", D / "audio_hp.f32", D / "audio.f32", D / "sounds.npy")
         if stale(D / "ball.npy", D / "proxy.mp4"):
             ball_note(D / "proxy.mp4", pw, ph)

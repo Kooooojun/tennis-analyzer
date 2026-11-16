@@ -35,7 +35,7 @@ W = R / "work" / "synth"
 r = prep("synth", "2"); assert r.returncode == 0
 assert r.stdout.splitlines()[-1] == "ready: 2 videos -> work/synth", r.stdout
 assert (W / "videos.json").read_text(encoding="utf-8") == '["A x", "b"]\n'  # case-insensitive name order; a space stays inside one name
-want = {"proxy.mp4", "audio.f32", "audio_hp.f32", "pose.npy", "pose_world.npy", "people.txt", "sounds.npy", "ball.npy", "events.npy", "src_fps.txt", "pose.log", "ball.log"}
+want = {"proxy.mp4", "audio.f32", "audio_hp.f32", "pose.npy", "pose_world.npy", "people.txt", "sounds.npy", "ball.npy", "events.npy", "src_fps.txt", "pose_method.txt", "pose.log", "ball.log"}
 for d in ("A x", "b"):
     got = {p.name for p in (W / d).iterdir()}
     assert got == want, (d, got ^ want)
@@ -45,11 +45,22 @@ c = cv2.VideoCapture(str(W / "A x" / "proxy.mp4")); assert (c.get(3), c.get(4)) 
 c = cv2.VideoCapture(str(W / "b" / "proxy.mp4")); assert (c.get(3), c.get(4)) == (960, 540)
 del c
 
-ALWAYS = {"people.txt", "src_fps.txt"}  # rewritten every run by design
+ALWAYS = {"people.txt", "src_fps.txt", "pose_method.txt"}  # rewritten every run by design
 mt = lambda: {p: p.stat().st_mtime_ns for p in W.rglob("*") if p.is_file() and p.name not in ALWAYS and p.name != "videos.json"}
 before = mt()
 assert prep("synth", "2").returncode == 0
 assert mt() == before, "second run must do no work"
+
+# pose from an older algorithm (other version, or no pose_method.txt as before versions existed) is redone, once
+pose = W / "b" / "pose.npy"
+for stale_method in ("1\n", None):
+    pm = W / "b" / "pose_method.txt"
+    if stale_method: pm.write_text(stale_method, encoding="utf-8")
+    else: pm.unlink()
+    t = pose.stat().st_mtime_ns
+    assert prep("synth", "2").returncode == 0 and pose.stat().st_mtime_ns != t, stale_method
+    t = pose.stat().st_mtime_ns
+    assert prep("synth", "2").returncode == 0 and pose.stat().st_mtime_ns == t
 
 # people 2 -> 3: pose.npy is deleted and pose re-runs
 pose = W / "b" / "pose.npy"; t = pose.stat().st_mtime_ns
