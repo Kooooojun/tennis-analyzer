@@ -67,7 +67,7 @@ def label(d,x,y,s,tag,col):
     d.text((x,y),tag,font=F(34),fill=INK,stroke_width=3,stroke_fill=(0,0,0))
     k=s['knee3d'] if s.get('knee3d') is not None else s['knee']
     if k is not None: d.text((x,y+44),f"準備時膝蓋 {'3D' if s.get('knee3d') is not None else '2D'} {k:.0f}°",font=F(30),fill=col,stroke_width=3,stroke_fill=(0,0,0))
-    if s.get('knee_warn'): d.text((x,y+84),"這拍角度不準",font=F(30),fill=BAD,stroke_width=3,stroke_fill=(0,0,0))
+    if s.get('knee_warn'): d.text((x,y+84),"擊球格不可信，這拍不量" if s.get("knee_warn_why")=="contact" else "這拍角度不準",font=F(30),fill=BAD,stroke_width=3,stroke_fill=(0,0,0))
 
 class Out:
     def __init__(s,path): s.p=subprocess.Popen(["ffmpeg","-v","error","-y","-f","rawvideo","-pix_fmt","rgb24","-s",f"{W}x{H}","-r",str(FPS),"-i","-","-c:v","libx264","-preset","slow","-crf","22","-pix_fmt","yuv420p","-movflags","+faststart",path],stdin=subprocess.PIPE)

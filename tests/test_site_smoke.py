@@ -171,3 +171,6 @@ if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "site_contact_height.mjs")], check=True)
     subprocess.run(["node", str(R / "tests" / "site_i57_final.mjs")], check=True,
                    env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-i57-final"))} if os.environ.get("SITE_RESULTS") else {})})
+
+if os.environ.get("SITE_E2E_URL"):
+    subprocess.run(["node", str(R / "tests" / "site_contact_untrusted.mjs")], check=True)

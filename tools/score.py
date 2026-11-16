@@ -163,9 +163,12 @@ def check_session(strokes):
     """One row per (player, kind, check) that applied to at least one stroke. Not part of the 1-10 score, so no score_version change."""
     who = lambda s: s.get("player") or "me"; out = []
     for kind, field, conf, name, rule in CHECKS:
-        for p in sorted({who(s) for s in strokes if s.get("kind") == kind and _num(s.get(conf))}):
-            g = [s for s in strokes if who(s) == p and s.get("kind") == kind and _num(s.get(conf))]
-            ps, fl = sum(s.get(field) is True for s in g), sum(s.get(field) is False for s in g); n = len(g)
+        applicable = [s for s in strokes if s.get("kind") == kind and (_num(s.get(conf)) or
+                      (s.get("contact_untrusted") is True and (kind == "SV" or s.get("backhand") == "one")))]
+        for p in sorted({who(s) for s in applicable}):
+            g = [s for s in applicable if who(s) == p]
+            decided = [s for s in g if s.get("contact_untrusted") is not True]
+            ps, fl = sum(s.get(field) is True for s in decided), sum(s.get(field) is False for s in decided); n = len(g)
             ok = ps + fl >= MIN_DECIDED and (ps + fl) / n >= MIN_COVER
             out.append(dict(player=p, kind=kind, field=field, name=name, n=n, passed=ps, failed=fl, unclear=n - ps - fl, coverage=_r((ps + fl) / n, 2),
                             status="ok" if ok else "資料不足", formula=rule,
