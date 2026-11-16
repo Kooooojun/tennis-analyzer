@@ -54,6 +54,33 @@ function contrast(fg, bg) {
     assert(layout.playLeft >= layout.stageRight - 1,
       `#play must sit beside stage in landscape, got playLeft=${layout.playLeft} stageRight=${layout.stageRight}`);
 
+    // Portrait clip (.player:not(.wide)) in 844x390 and 932x430 landscape must keep ~9:16 aspect (not locked to 200px width)
+    for (const vp of [{ width: 844, height: 390 }, { width: 932, height: 430 }]) {
+      await page.setViewportSize(vp);
+      await page.waitForTimeout(150);
+      const portraitStage = await page.evaluate(() => {
+        const player = document.querySelector(".player");
+        const stage = document.getElementById("stage");
+        const hadPlayerWide = player.classList.contains("wide");
+        const hadStageWide = stage.classList.contains("wide");
+        const prevAspect = stage.style.aspectRatio;
+        player.classList.remove("wide");
+        stage.classList.remove("wide");
+        stage.style.aspectRatio = "9 / 16";
+        const r = stage.getBoundingClientRect();
+        const ml = getComputedStyle(stage).marginLeft;
+        stage.style.aspectRatio = prevAspect;
+        if (hadPlayerWide) player.classList.add("wide");
+        if (hadStageWide) stage.classList.add("wide");
+        return { w: r.width, h: r.height, ml };
+      });
+      const ratio = portraitStage.w / portraitStage.h;
+      assert(Math.abs(ratio - 9 / 16) < 0.02,
+        `${vp.width}x${vp.height} portrait .stage aspect ${ratio.toFixed(3)} != 9/16 (w=${portraitStage.w}, h=${portraitStage.h})`);
+      assert.equal(portraitStage.ml, "0px", `${vp.width}x${vp.height} portrait .stage marginLeft must be 0px, got ${portraitStage.ml}`);
+    }
+    await page.setViewportSize({ width: 844, height: 390 });
+
     // Touch targets on advice tab >= 44px height & .tag single-line on stroke tab
     await page.evaluate(() => go(DAY_KEYS[0], "advice"));
     await page.waitForTimeout(200);

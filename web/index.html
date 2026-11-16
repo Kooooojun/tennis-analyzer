@@ -163,7 +163,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
 .touch-hint{display:none}
 @media (max-width:820px) and (max-height:500px), (pointer:coarse) and (max-height:500px) and (orientation:landscape){  /* phone held sideways: clip and controls side by side, nothing sticky */
   .player,.player.wide{position:static;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:12px;align-items:start;border-bottom:0;grid-template-rows:repeat(7,auto) 1fr}  /* spare height goes to the last row, so the controls stay packed at the top */
-  .player>*{grid-column:2} .player .stage{grid-column:1;grid-row:1 / span 8;height:calc(100vh - 24px);height:calc(100svh - 24px);width:auto;margin:0}
+  .player>*{grid-column:2} .player .stage,.player:not(.wide) .stage{grid-column:1;grid-row:1 / span 8;height:calc(100vh - 24px);height:calc(100svh - 24px);width:auto;margin:0}
   .player .stage.wide{width:min(55vw, (100vh - 24px) * 16 / 9);width:min(55vw, (100svh - 24px) * 16 / 9);height:auto}
 }
 @media (hover:none){.kbd-hint{display:none}.touch-hint{display:block;margin:4px 0 0}}
