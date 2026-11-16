@@ -37,6 +37,12 @@ def _items(g):
     return {"total": g["total"], "consistency": g["consistency"], **{m: x["score"] for m, x in g["metrics"].items()}}
 
 
+def _score_set(g):
+    """Same sets as compare(); old scores without form metadata remain unknown to the web."""
+    if "form_metrics" not in g: return None
+    return [sorted(_scored(_items(g))), sorted(m for m, x in g["metrics"].items() if x["cons"] is not None)]
+
+
 def _entry(r, g):
     """One history row. Every session is kept; comparable / series_key let the web split or mark lines (same n / camera rules as compare(); the date filter there lives in dated())."""
     cam = r.get("camera") or ""
@@ -44,6 +50,7 @@ def _entry(r, g):
                 uncertainty={"total": g.get("uncertainty", {}).get("total"), "consistency": g.get("uncertainty", {}).get("consistency"),
                              **{m: x.get("uncertainty", {}).get("score") for m, x in g["metrics"].items()}},
                 cons_set=sorted(m for m, x in g["metrics"].items() if x["cons"] is not None),
+                form_metrics=g.get("form_metrics"), form_n=g.get("form_n"), score_set=_score_set(g),
                 comparable=g["n"] >= MIN_N and bool(cam) and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(r.get("date")))), series_key=[cam, g.get("knee_src"), g.get("score_version")])
 
 
