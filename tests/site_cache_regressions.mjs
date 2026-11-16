@@ -91,6 +91,10 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
    const kept=await page.evaluate(()=>{v._fetching=true;v._align=()=>{};v.addEventListener('loadedmetadata',v._align);toggle();toggle();return !!v._align;});
    assert.equal(kept,true);
   },
+  async playingHiddenIntent(page){
+   await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=3);await page.evaluate(()=>toggle());await page.waitForFunction(()=>!v.paused&&v._want);
+   const state=await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));v.dispatchEvent(new Event('playing'));return [v.paused,v._want];});assert.deepEqual(state,[false,true]);
+  },
   async hiddenStall(page){
 
    await page.evaluate(()=>{go(DAY_KEYS[0],'stroke');});await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);

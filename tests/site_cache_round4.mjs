@@ -9,8 +9,9 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
  for(const [name,test] of Object.entries({
   async coldStream(page){await page.waitForFunction(()=>v.readyState>=2);assert.equal(await page.evaluate(()=>v.src.startsWith('blob:')),false);},
   async playPrep(page){
-   await page.evaluate(()=>{window.firstTime=null;v.addEventListener('playing',()=>{if(v._want&&firstTime===null)firstTime=v.currentTime;});toggle();});
+   await page.evaluate(()=>{window.firstTime=null;window.preparingButtons=[];v.addEventListener('playing',()=>{if(v._want&&firstTime===null)firstTime=v.currentTime;});v.addEventListener('pause',()=>{if(v._want&&!v.paused&&firstTime===null)preparingButtons.push($('play').textContent);});toggle();});
    await page.waitForFunction(()=>firstTime!==null);assert.ok(await page.evaluate(()=>firstTime>=(S.contact-48+.5)/FPS-.03));
+   const buttons=await page.evaluate(()=>preparingButtons);assert(buttons.length>0,'observe metadata pause before playing');assert(buttons.every(b=>b.includes('⏸')),'pending playback must keep the pause button');
   },
   async seekPending(page){await page.evaluate(()=>goto(100));await page.waitForFunction(()=>v.readyState>=2&&!v.seeking);assert.ok(Math.abs(await page.evaluate(()=>v.currentTime-(100+.5)/FPS))<.03);},
   async loadingKeyboard(page){

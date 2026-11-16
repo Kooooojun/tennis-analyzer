@@ -897,7 +897,7 @@ function watchStall(vid){
   const retry=(tap=false,still=false)=>{ if(still) stopDead(vid); if(vid===v&&!still&&m.dataset.fail&&keep?.[1]) vid._want=vid._resume=true; delete m.dataset.fail; m.disabled=true; tries=0; retryAt=0; m.textContent="影片下載中…"; reload(tap,still); };
   const fail=()=>{ keep=[keep?keep[0]:vid.readyState?vid.currentTime:null,!!vid._resume]; stopDead(vid,true); m.hidden=false; m.disabled=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; retryAt=autoRetries<3?Date.now()+15000*2**autoRetries:0; };
   m.onclick=()=>{ if(!m.dataset.fail) return; retry(vid===v,vid!==v); };
-  const suspend=now=>{ since=wait=errorSince=mediaSince=0; if(!offAt) offAt=now; if(vid._want||vid._resume) stopDead(vid); else vid._cancelResume(); };
+  const suspend=now=>{ since=wait=errorSince=mediaSince=0; if(!offAt) offAt=now; if((vid._want||vid._resume)&&(!vid.readyState||vid._reloading||vid.paused)) stopDead(vid); else vid._cancelResume(); };
   const resume=now=>{ if(offAt&&retryAt) retryAt+=now-offAt; offAt=0; };
   document.addEventListener("visibilitychange",()=>{
     since=wait=errorSince=mediaSince=0;
@@ -943,7 +943,7 @@ document.addEventListener("visibilitychange",()=>{
   if(document.hidden) cancelPrefetch(); else { players.forEach(prime); if(S) preloadNeighbors(S); }
 });
 for(const x of players){
-  x.addEventListener("playing",()=>{ if(document.hidden||!x._want){ x.pause(); return; } });
+  x.addEventListener("playing",()=>{ if(!x._want){ x.pause(); return; } });
   for(const event of ["progress","canplaythrough"]) x.addEventListener(event,()=>{ if(S) preloadNeighbors(S); });
 }
 for(const vid of [v,$("vA"),$("vB")]){
@@ -1019,7 +1019,7 @@ function tick(){
 function toggle(){ const dead=v.parentElement.querySelector(".vid-msg[data-fail]"); if(dead){ dead.click(); return; } if(v._want||!v.paused&&v.readyState) stopDead(v); else { v._want=v._resume=true; $("play").textContent="⏸ 暫停"; if(!v._fetching){ if(v.readyState) cancelAlign(v); playSafe(v,$("badge")); } } }
 v.loop=true;
 v.addEventListener("playing",()=>{ if(v.paused||!v._want) return; $("play").textContent="⏸ 暫停"; tick(); });
-v.addEventListener("pause",()=>{if(v._want&&(v._reloading||v.error)) return; $("play").textContent="▶ 播放";});
+v.addEventListener("pause",()=>{if(!v.paused||v._want&&(v._reloading||v.error)) return; $("play").textContent="▶ 播放";});
 v.addEventListener("seeked",()=>{ if(v.paused) render(frameOf(v.currentTime)); });
 $("play").onclick=toggle; $("prev").onclick=()=>goto(cur-1); $("next").onclick=()=>goto(cur+1);
 seek.oninput=()=>goto(+seek.value);

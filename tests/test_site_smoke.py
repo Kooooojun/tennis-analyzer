@@ -4,6 +4,8 @@
 # Run: SITE_E2E_URL="$SITE_URL" PLAYWRIGHT_MODULE="$PW_MODULE" python tests/test_site_smoke.py
 # Background: add SITE_SERVER_LOG="$SITE_SERVER_LOG"; run node tests/site_cache_background.mjs,
 # then repeat with SITE_ENGINE=webkit (Chromium needs a headed browser or SITE_CHROMIUM_EXECUTABLE).
+# Playing background: same env plus SITE_CHROMIUM_EXECUTABLE if needed; run
+# node tests/site_cache_playing_background.mjs (25 s per policy and engine, includes native-pause simulation).
 # Drip: use the same env as background and run node tests/site_cache_drip.mjs (1 KiB / 2 s native fallback).
 # Run: .venv/bin/python tests/test_site_smoke.py   (plain asserts; cases follow testset/results/cross-platform_pred.md)
 # Builds a synthetic session (Chinese name and notes, no real data) with build_site.py in a scratch copy of tools/, under the
