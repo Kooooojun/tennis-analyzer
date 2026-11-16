@@ -122,6 +122,18 @@ PROF = load_session_profiles(s)[0]
 hand = lambda name: (profile_for(PROF, name) or {"hand": None})["hand"]  # racket hand; None = no profile yet: look at both wrists (assemble.py guesses it later)
 
 
+def guess(c):
+    """Pre-fill for labels.txt: the automatic stroke kind when confident, else '?' (you still confirm it and add the drill)."""
+    if not c["hand"]: return "?"  # FH/BH flip with the hand: no profile, no guess
+    v, key = c["v"], (c["v"], c["track"]); wp = track_file(Wd / v, "pose_world", c["track"])
+    if key not in poses: poses[key] = np.load(track_file(Wd / v, "pose", c["track"]))
+    if key not in worlds: worlds[key] = np.load(wp) if wp.exists() else None
+    if v not in sizes: sizes[v] = size(Wd / v / "proxy.mp4")  # one open per video (and size() exits on an unreadable proxy)
+    k = classify(poses[key], int(round(c["t"] * FPS)), c["hand"], worlds[key], sizes[v])  # a left-hander's backswing side mirrors
+    return prefill(k["kind"], k["conf"])
+
+
+poses, worlds, sizes = {}, {}, {}
 C = []
 for vi, v in enumerate(V):
     ks = [k for k in T[v] if names[(vi + 1, k)] != "x"]
@@ -141,12 +153,14 @@ for vi, v in enumerate(V):
         _, pk, on, sp, arc = M[k][t]
         if sp >= 0.05 and arc >= 0.7:
             C.append(dict(v=v, vn=vi + 1, t=float(t), arc=float(arc), sp=float(sp), track=k, player=names[(vi + 1, k)], hand=prof[k]))  # profile hand only: a guessed hand must not pre-fill FH/BH (a wrong guess mirrors them)
+for c in C:
+    c["prefill"] = guess(c)
 save(Wd / "cands.json", C)
 
 for old in Wd.glob("sheet*.jpg"):
     try: unlink(old)
     except PermissionError: print(f"warning: cannot delete {old} (open in another program?), left it")
-caps, poses, failed = {}, {}, []  # failed: sheets that could not be written; the run still ends non-zero
+caps, failed = {}, []  # failed: sheets that could not be written; the run still ends non-zero
 for c in C:
     for k2 in T[c["v"]]:
         if names[(c["vn"], k2)] != "x" and (c["v"], k2) not in poses: poses[(c["v"], k2)] = np.load(track_file(Wd / c["v"], "pose", k2))
@@ -175,25 +189,13 @@ else:
         if not imwrite(Wd / f"sheet{i}.jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 85]): failed.append(f"sheet{i}.jpg")
     if low: print("no original video for", sorted(low), "- sheets from proxy.mp4 only (about half the resolution, the ball is small)")
 
-def guess(c):
-    """Pre-fill for labels.txt: the automatic stroke kind when confident, else '?' (you still confirm it and add the drill)."""
-    if not c["hand"]: return "?"  # FH/BH flip with the hand: no profile, no guess
-    v, key = c["v"], (c["v"], c["track"]); wp = track_file(Wd / v, "pose_world", c["track"])
-    if key not in poses: poses[key] = np.load(track_file(Wd / v, "pose", c["track"]))
-    if key not in worlds: worlds[key] = np.load(wp) if wp.exists() else None
-    if v not in sizes: sizes[v] = size(Wd / v / "proxy.mp4")  # one open per video (and size() exits on an unreadable proxy)
-    k = classify(poses[key], int(round(c["t"] * FPS)), c["hand"], worlds[key], sizes[v])  # a left-hander's backswing side mirrors
-    return prefill(k["kind"], k["conf"])
-
-
-worlds, sizes = {}, {}
 lab = Wd / "labels.txt"
 if lab.exists():
     old = next((l.split()[2] for l in read_text(lab).splitlines() if l.startswith("# cands ") and len(l.split()) > 2), None)
     print("labels.txt exists, left untouched" + ("" if old in (None, cands_fp(Wd / "cands.json")) else
           ". WARNING: it was written for other candidates, its lines now point at other hits; assemble.py will refuse it. Move it aside and re-run to get a fresh one"))
 else:
-    G = [guess(c) for c in C]
+    G = [c["prefill"] for c in C]
     write_text(lab, "# idx kind drill [@player]   kind: FH BH SV OH, or x = not a player / not a hit (keep a line only if the sheet shows the ball on the strings or leaving them; else x + why: dropped in-hand shadow follow-through pickup no-swing). A kind already filled in is a guess about the swing, NOT proof of contact; fill each ? from its sheet, never in bulk."
                    "  drill: feed rally high unsure (SV takes none). @player: who hit it (prefilled from players.txt, change it if the crop shows someone else). Anything after is a comment\n"
                    + f"# cands {cands_fp(Wd / 'cands.json')}   (which candidates these lines belong to; leave it)\n"

@@ -38,10 +38,23 @@ def bulk_warning(rows):
                 "re-check every sheet and keep a line only where you see the ball on the strings or just leaving them (ignore this if every line really is a hit)")
 
 
+def kind_source(row, cand):
+    """Where the stroke kind in labels.txt came from: 'prefill' (unchanged auto guess), 'user' (edited or filled by user),
+    or 'unknown' (legacy cands.json without 'prefill')."""
+    pf = cand.get("prefill")
+    if pf is None:
+        return "unknown"
+    return "prefill" if row[1] == pf else "user"
+
+
 def rename_warning(rows, C, who, hands):
     """A warning when '@name' moved a FH/BH line to someone whose hand differs from the hand its pre-fill was computed with
-    (cands.json 'hand' = the original player's profile hand; None = nothing was pre-filled). Only a hint: nothing is changed."""
-    idx = [int(r[0]) for r in rows if r[1] in ("FH", "BH") and who[int(r[0])] not in (None, C[int(r[0])].get("player")) and C[int(r[0])].get("hand") and hands.get(who[int(r[0])]) not in (None, C[int(r[0])]["hand"])]
+    (cands.json 'hand' = the original player's profile hand; None = nothing was pre-filled). Skips lines whose kind was
+    changed or filled by the user; legacy cands.json without 'prefill' ('unknown') keeps the existing warning. Only a hint: nothing is changed."""
+    idx = [int(r[0]) for r in rows
+           if r[1] in ("FH", "BH") and kind_source(r, C[int(r[0])]) != "user"
+           and who[int(r[0])] not in (None, C[int(r[0])].get("player"))
+           and C[int(r[0])].get("hand") and hands.get(who[int(r[0])]) not in (None, C[int(r[0])]["hand"])]
     if idx:
         return f"WARNING: lines {', '.join(map(str, idx))} were renamed to a player with the other racket hand: their FH/BH pre-fill was worked out for the original player's hand (it mirrors). Check the kind on those sheets again"
 
