@@ -150,4 +150,10 @@ ids = t.step([det(0.49, 0.2, WHITE, 0.06), det(0.51, 0.8, WHITE, 0.06)])
 for i in range(1, 16):
     y = 0.2 + 0.04 * i
     assert t.step([det(0.49, y, WHITE, 0.06), det(0.51, 1 - y, WHITE, 0.06)]) == ids, i
+
+# 全槽都用過時，離場後的舊區域也不能壓過相同外觀。
+t = Tracker(3)
+ids = t.step([det(0.2, 0.2, WHITE, 0.1), det(0.8, 0.8, BLACK, 0.1), det(1.4, 0.5, RED, 0.1)])
+for _ in range(240): t.step([])
+assert t.step([det(0.2, 0.8, WHITE, 0.1)]) == ids[:1]
 print("ok")

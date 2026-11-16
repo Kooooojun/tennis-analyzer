@@ -32,7 +32,8 @@ class Tracker:
         size = abs(np.log(max(d["scale"], 0.03) / max(self.scale[k], 0.03)))
         # 連續運動優先；大跳躍可能是剪接，位置不能蓋過外觀與長期深度。
         continuity = max(1 - dp, 0) * max(1 - color, 0) if gap == 1 else 0
-        score = min(dp, 1) - continuity + 0.5 * (depth + size) + color
+        # 全員失聯後的區域會過時，不能長期壓過相同外觀。
+        score = min(dp, 1) - continuity + 0.5 * (depth + size) / max((self.f - max(self.last)) / 15, 1) + color
         # 區域參照不能逼出原可接回的身分；微小遞增項保留封頂後的排序。
         if (color < 0.5 or dp + color <= self.NEW) and any(p is None for p in self.pos):
             return min(score, self.NEW) - 1e-6 / (1 + max(score, 0))
