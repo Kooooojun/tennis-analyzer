@@ -481,12 +481,33 @@ function series(s){
 // ---------- skeletons: data.js has each stroke's summary, sessions/<s>/pose/<id>.js its frames/world, fetched when the stroke is on screen ----------
 const POSE_WAIT=new Map();  // stroke → redraws waiting for its pose file
 window.POSE=(day,id,p)=>{ const s=DAYS[day]?.data[id]; if(s) Object.assign(s,p); };
-function needPose(s){  // <script>, not fetch, so file:// works; each redraw paints whatever stroke is current, so a late file never draws a stale stroke
-  if(s.frames||s._poseErr||POSE_WAIT.has(s)) return;
-  const el=document.createElement("script"); POSE_WAIT.set(s,el);
-  el.onload=el.onerror=()=>{ if(!s.frames) s._poseErr=true; POSE_WAIT.delete(s); el.remove(); if(S) render(cur); cmpRender(cmpCur); };
-  el.src=`sessions/${encodeURIComponent(s.day)}/pose/${s.id}.js?v=${(window.SESSION_VER||{})[s.day]||""}`; document.head.append(el);
+function cancelPose(s){ const p=POSE_WAIT.get(s); if(p){ POSE_WAIT.delete(s); p.controller?.abort(); p.el.onload=p.el.onerror=null; p.el.remove(); } }
+function cancelUnusedPoses(){
+  const keep=new Set([shown(v)?S:null,shown(vA)?A:null,shown(vB)?B:null]);
+  for(const s of POSE_WAIT.keys()) if(!keep.has(s)) cancelPose(s);
 }
+function needPose(s,retry=0){  // <script> keeps file:// support; late files only populate their own stroke's cache
+  if(s.frames||s._poseErr||POSE_WAIT.has(s)||s===S&&mainLoadTimer) return;
+  const el=document.createElement("script"), p={el,elapsed:0,last:Date.now(),hidden:document.hidden}; POSE_WAIT.set(s,p);
+  p.done=()=>{
+    if(POSE_WAIT.get(s)!==p) return;
+    cancelPose(s);
+    if(!s.frames){ if(!retry) needPose(s,1); else s._poseErr=true; }
+    if(S) render(cur); cmpRender(cmpCur);  // redraw only the current selection, never the file that just arrived
+  };
+  el.onload=el.onerror=p.done;
+  const src=`sessions/${encodeURIComponent(s.day)}/pose/${s.id}.js?v=${(window.SESSION_VER||{})[s.day]||""}`+(retry?`&_retry=${Date.now()}`:"");
+  if(location.protocol==="file:"){ el.src=src; document.head.append(el); }
+  else {  // Removing an external script does not cancel its download in Chrome; fetch makes cancellation real.
+    p.controller=new AbortController();
+    fetch(src,{signal:p.controller.signal}).then(r=>{ if(!r.ok) throw new Error("pose unavailable"); return r.text(); }).then(code=>{
+      if(POSE_WAIT.get(s)!==p) return;
+      el.textContent=code; document.head.append(el); p.done();
+    }).catch(()=>{ if(POSE_WAIT.get(s)===p) p.done(); });
+  }
+}
+document.addEventListener("visibilitychange",()=>{ for(const p of POSE_WAIT.values()){ p.hidden=document.hidden; p.last=Date.now(); } });
+setInterval(()=>{ const now=Date.now(); for(const p of [...POSE_WAIT.values()]){ if(!document.hidden&&!p.hidden) p.elapsed+=now-p.last; p.last=now; p.hidden=document.hidden; if(p.elapsed>=8000) p.done(); } },250);
 
 // ---------- drawing one video frame's overlay ----------
 const ZB=new Map();
@@ -765,7 +786,7 @@ function markList(){ document.querySelectorAll("#strokes button").forEach(b=>b.c
 // ---------- main player ----------
 const v=$("v"), cv=$("cv"), seek=$("seek");
 const OPT={skel:true, guides:true, trail:true};
-let S=null, cur=0, N=150, rate=0.25, frameRequest=null;
+let S=null, cur=0, N=150, rate=0.25, frameRequest=null, mainLoadTimer=null, lastStepAt=0, neighborTimer=null;
 const clipSrc=s=>s.src;
 // iOS Safari ignores preload and fetches nothing until play(), so a muted play() starts the fetch; start()/cmpGoto pause it once metadata is in.
 // Low Power Mode also blocks that until a tap, so the badge says to tap. Never throws: a play cut short by pause() rejects with AbortError.
@@ -825,15 +846,19 @@ function clipFetch(key,background=false){
   })();
   return e.task;
 }
-function cancelPrefetch(){ prefetchFor=null; ++prefetchRun; if(prefetch&&!prefetch.foreground&&!prefetch.url){ prefetch.controller.abort(); for(const [k,e] of CLIPS) if(e===prefetch) CLIPS.delete(k); } prefetch=null; }
+function cancelPrefetch(){ clearTimeout(neighborTimer); neighborTimer=null; prefetchFor=null; ++prefetchRun; if(prefetch&&!prefetch.foreground&&!prefetch.url){ prefetch.controller.abort(); for(const [k,e] of CLIPS) if(e===prefetch) CLIPS.delete(k); } prefetch=null; }
 const fullyBuffered=vid=>vid.src.startsWith("blob:")||Number.isFinite(vid.duration)&&vid.buffered.length&&vid.buffered.end(vid.buffered.length-1)>=vid.duration-.05;
 async function preloadNeighbors(s){
+  if(mainLoadTimer) return;
+  const quiet=Date.now()-lastStepAt;
+  if(quiet<350){ if(!neighborTimer) neighborTimer=setTimeout(()=>{ neighborTimer=null; if(S===s) preloadNeighbors(s); },350-quiet); return; }
   if(document.hidden||navigator.connection?.saveData||/^(slow-2g|2g|3g)$/.test(navigator.connection?.effectiveType)||players.some(x=>shown(x)&&x.src&&!fullyBuffered(x))||prefetchFor===s) return;
   if(location.protocol==="file:"||!shown(v)||S!==s) return;
   const run=prefetchRun, list=visible(), i=list.indexOf(s);
   if(!list.length) return;
   prefetchFor=s;
   const neighbors=i<0?list.slice(0,2):[list[(i+1)%list.length],list[(i-1+list.length)%list.length]];
+  for(const neighbor of new Set(neighbors)) if(neighbor!==s) needPose(neighbor);
   for(const key of new Set(neighbors.map(clipSrc).filter(key=>key!==clipSrc(s)))){
     if(run!==prefetchRun||!shown(v)||S!==s) return;
     const task=clipFetch(key,true); prefetch=CLIPS.get(key);
@@ -880,10 +905,10 @@ function watchStall(vid){
   vid._resetStall=()=>{ if(restore) vid.removeEventListener("loadedmetadata",restore); restore=keep=null; vid._want=vid._resume=vid._reloading=false; tries=wait=since=errorSince=errorStatus=autoRetries=retryAt=offAt=mediaSince=0; delete m.dataset.fail; m.hidden=true; m.disabled=true; };
   const pausePair=()=>{ if(vid!==v&&vid._want) cmpWait(); };
   const reload=(tap=false,still=false)=>{
-    if(vid._fetching||!(vid.currentSrc||vid.src)){
+    if(vid._fetching||!vid.src){
       if(vid._clip){
-        const s=vid._clip, start=vid._start, want=!still&&(vid._want||vid._resume||tap);
-        resetClip(vid,vid._clipKey); vid._want=vid._resume=want;
+        const s=vid._clip, start=vid._start, want=!still&&(vid._want||vid._resume||tap), attempts=tries+1;
+        resetClip(vid,vid._clipKey); tries=attempts; since=Date.now(); vid._want=vid._resume=want;
         $(vid===v?"play":"cmpPlay").textContent=want?"⏸ 暫停":vid===v?"▶ 播放":"▶ 同步播放";
         setClip(vid,s,start);
       }
@@ -935,11 +960,13 @@ function watchStall(vid){
   vid.addEventListener("canplay",()=>{ if(vid.error||vid.readyState<3) return; tries=autoRetries=retryAt=0; delete m.dataset.fail; m.hidden=true; });
   setInterval(()=>{
     const now=Date.now();
-    if(document.hidden||hiddenAt||!vid.offsetParent){ suspend(now); return; }
+    if(document.hidden||!vid.offsetParent){ suspend(now); return; }
+    if(hiddenAt){ hiddenAt=0; since=wait=errorSince=mediaSince=0; }
     resume(now);
     if(m.dataset.fail){ if(retryAt&&now>=retryAt){ autoRetries++; retry(false,vid!==v); } return; }
-    if(vid._fetching){ if(now-vid._fetchSince>=1000){ const e=CLIPS.get(vid._clipKey); m.hidden=false; m.textContent="影片下載中…"+(e?.total?" "+Math.min(100,Math.floor(e.bytes/e.total*100))+"%":""); } return; }
-    if(!vid.currentSrc&&!vid.src) return;
+    if(vid===v&&mainLoadTimer) return;
+    if(vid._fetching){ if(!since) since=now; if(now-since>=10000){ tries<1?reload():fail(); return; } if(now-vid._fetchSince>=1000){ const e=CLIPS.get(vid._clipKey); m.hidden=false; m.textContent="影片下載中…"+(e?.total?" "+Math.min(100,Math.floor(e.bytes/e.total*100))+"%":""); } return; }
+    if(!vid.src){ if(vid._clip){ if(!since) since=now; if(now-since>=10000) tries<1?reload():fail(); } else m.hidden=true; return; }
     if(vid.error){
       if(!vid._badBlob&&(vid.error.code===3||vid.error.code===4&&(errorStatus===404||errorStatus===410))){ fail(); return; }
       if(!errorSince) errorSince=now; if(tries<1&&now-errorSince>=2000) reload(); else if(tries>=1) fail(); return;
@@ -951,8 +978,7 @@ function watchStall(vid){
     if(!wait){ wait=since=mediaSince=now; sig=k; mediaSig=media; }
     if(media!==mediaSig){ mediaSig=media; mediaSince=now; }
     if(k!==sig){ sig=k; since=now; }
-    if(now-mediaSince>=30000){ fail(); return; }
-    if(now-since>=10000){ tries<1?reload():fail(); return; }
+    if(now-mediaSince>=10000||now-since>=10000){ tries<1?reload():fail(); return; }
     if(now-wait>=1000){ m.hidden=false; m.textContent="影片下載中…"; }
   },500);
 }
@@ -968,9 +994,11 @@ for(const x of players){
 for(const vid of [v,$("vA"),$("vB")]){
   vid.addEventListener("pause",()=>{ if(vid._edgeWait||vid.id==="vB"&&vid.ended&&$("vA")._want&&!cmpInRange()){ vid._edgeWait=true; return; } if(vid.paused&&!vid.error&&!vid._reloading){ if(vid!==v&&vid._want) stopDead(vid); else vid._want=vid._resume=false; } });
 }
-function load(id, scroll){
+function load(id, scroll, defer=false){
+  clearTimeout(mainLoadTimer); mainLoadTimer=null;
   const key=clipSrc(ALL[id]); cancelPrefetch(); resetClip(v,key);
   S=ALL[id]; S._poseErr=false; N=S.n??S.frames.length; seek.max=N-1;  // n: frame count in data.js; older builds only have frames
+  cancelUnusedPoses();
   S.phases=[{f:S.contact-48,name:"準備"},...(S.prep!=null?[{f:S.contact-Math.round(S.prep*FPS),name:"引拍完成"}]:[]),{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}].sort((a,b)=>a.f-b.f);  // 引拍完成 can fall before 準備 or after 向前揮拍
   $("phases").innerHTML=""; for(const p of S.phases){ const b=document.createElement("button"); b.textContent=p.name; b.onclick=()=>goto(p.f); $("phases").append(b); }
   const dn=drillName(S);
@@ -1000,7 +1028,9 @@ function load(id, scroll){
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage
   $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]); $("stage").parentElement.classList.toggle("wide", !!S.size && S.size[0]>S.size[1]); document.querySelector("main").classList.toggle("wideplayer", !!S.size && S.size[0]>S.size[1]);
   const s=S, start=()=>{ if(S!==s) return; const want=canResume(v), frame=v._pendingFrame??S.contact-48; goto(frame); if(want){ v._want=v._resume=true; playSafe(v,$("badge")); $("play").textContent="⏸ 暫停"; } };
-  whenShown(v,()=>setClip(v,s,start));
+  v._clip=s; v._start=start;
+  const request=()=>{ mainLoadTimer=null; whenShown(v,()=>{ setClip(v,s,start); render(cur); }); };
+  if(defer) mainLoadTimer=setTimeout(request,350); else request();
   render(Math.max(0,Math.min(N-1,S.contact-48)));  // the new stroke's frame now (its skeleton fetch starts here), not the last stroke's until the clip loads
   markList(); markStrips(); drawNotes();
   if(scroll && !PLAYER_TABS.includes(TAB)) go(DAY,"stroke");
@@ -1035,14 +1065,14 @@ function tick(){
   if(frameRequest!==null){ v.cancelVideoFrameCallback?v.cancelVideoFrameCallback(frameRequest):cancelAnimationFrame(frameRequest); frameRequest=null; }
   render(frameOf(v.currentTime)); if(!v.paused) frameRequest=v.requestVideoFrameCallback?v.requestVideoFrameCallback(tick):requestAnimationFrame(tick);
 }
-function toggle(){ const dead=v.parentElement.querySelector(".vid-msg[data-fail]"); if(dead){ dead.click(); return; } if(v._want||!v.paused&&v.readyState) stopDead(v); else { v._want=v._resume=true; $("play").textContent="⏸ 暫停"; if(!v._fetching){ if(v.readyState) cancelAlign(v); playSafe(v,$("badge")); } } }
+function toggle(){ const dead=v.parentElement.querySelector(".vid-msg[data-fail]"); if(dead){ dead.click(); return; } if(v._want||!v.paused&&v.readyState) stopDead(v); else { v._want=v._resume=true; $("play").textContent="⏸ 暫停"; if(!v._fetching&&!mainLoadTimer){ if(v.readyState) cancelAlign(v); playSafe(v,$("badge")); } } }
 v.loop=true;
 v.addEventListener("playing",()=>{ if(v.paused||!v._want) return; $("play").textContent="⏸ 暫停"; tick(); });
 v.addEventListener("pause",()=>{if(!v.paused||v._want&&(v._reloading||v.error)) return; $("play").textContent="▶ 播放";});
 v.addEventListener("seeked",()=>{ if(v.paused) render(frameOf(v.currentTime)); });
 $("play").onclick=toggle; $("prev").onclick=()=>goto(cur-1); $("next").onclick=()=>goto(cur+1);
 seek.oninput=()=>goto(+seek.value);
-function step(d){ const list=visible(); if(!list.length) return; let i=list.findIndex(s=>s.id===S.id); if(i<0) i=0; load(list[(i+d+list.length)%list.length].id,false); }
+function step(d){ const list=visible(); if(!list.length) return; let i=list.findIndex(s=>s.id===S.id); if(i<0) i=0; const now=Date.now(), defer=now-lastStepAt<600; lastStepAt=now; load(list[(i+d+list.length)%list.length].id,false,defer); }
 $("prevS").onclick=()=>step(-1); $("nextS").onclick=()=>step(1);
 function speedButtons(box,get,set){ for(const s of [0.1,0.25,0.5,1]){ const b=document.createElement("button"); b.textContent=s+"×"; b.onclick=()=>{ set(s); [...box.children].forEach(x=>x.classList.toggle("on",x===b)); }; if(s===get()) b.classList.add("on"); box.append(b); } }
 speedButtons($("speeds"),()=>rate,s=>{rate=s;v.playbackRate=s;});
@@ -1072,6 +1102,7 @@ function drawPresets(){
 function cmpLoad(a,b){
   resetClip(vA,clipSrc(a)); resetClip(vB,clipSrc(b));
   A=a; B=b; $("selA").value=sKey(A); $("selB").value=sKey(B); $("capA").innerHTML=capFor(A); $("capB").innerHTML=capFor(B);
+  cancelUnusedPoses();
   [...$("presets").children].forEach(x=>x.classList.toggle("on",dayNo(...x._p.a)===A&&dayNo(...x._p.b)===B));
   const go=()=>{ if(vA.readyState&&vB.readyState){ const want=canResume(vA)&&canResume(vB); cmpGoto(cmpCur); vA._reloading=vB._reloading=false; if(want) cmpStart(); } };  // each clip stops itself first, so one that never loads can't leave the other looping
   for(const [vid,s] of [[vA,A],[vB,B]]) whenShown(vid,()=>setClip(vid,s,go));
