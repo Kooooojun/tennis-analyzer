@@ -81,7 +81,9 @@ g = grp(score_session([st(knee3d=120, knee_warn=True)] * 4 + [st(knee=130)] * 5,
 assert g["knee_src"] == "knee" and g["metrics"]["knee"]["median"] == 130
 
 # trend.compare(history): history = [{"session", "camera", "items": {name: score|None}}] oldest first
-def h(s, cam="c", n=20, **items): return dict(session=s, camera=cam, n=n, items=items)
+def h(s, cam="c", n=20, **items):
+    return dict(session=s, camera=cam, n=n, score_version=SCORE_VERSION, items=items,
+                uncertainty={k: dict(sem=0.36) for k in items})
 
 
 # 11: one session -> no flags
@@ -93,9 +95,9 @@ assert ("contact_h", "缺點改善") in [(x["item"], x["flag"]) for x in f]
 # baseline is the mean of up to 3 previous comparable sessions
 f = compare([h("a", knee=2), h("b", knee=9), h("c", knee=9), h("d", knee=9), h("e", knee=7.9)])
 assert [(x["item"], x["flag"], x["base"]) for x in f] == [("knee", "優點退步", 9.0)]
-# 12: exactly 1.0 counts, 0.9 does not; None is skipped
+# 12: the bootstrap error threshold replaces the fixed 1.0 step; None is skipped
 assert compare([h("a", knee=8), h("b", knee=7)])[0]["flag"] == "優點退步"
-assert compare([h("a", knee=8), h("b", knee=7.1)]) == []
+assert compare([h("a", knee=8), h("b", knee=7.1)])[0]["flag"] == "在誤差內"
 assert compare([h("a", knee=None), h("b", knee=2)]) == [] and compare([h("a", knee=9), h("b", knee=None)]) == []
 # 10: other cameras are not comparable
 assert compare([h("a", "ground", knee=9), h("b", "tripod", knee=3)]) == []
@@ -108,7 +110,7 @@ assert compare([h("a", knee=9), h("b", knee=3), h("c", n=5, knee=3)]) == []  # s
 assert compare([h("a", n=5, knee=9), h("b", knee=3)]) == []
 assert compare([h("a", n=5, knee=2), h("b", knee=9), h("c", knee=7)])[0]["base"] == 9
 # metric set changed (showOpen flipped): total is not comparable, per-metric scores still are
-assert compare([h("a", total=9, knee=9), h("b", total=7, knee=9, open_min=5)]) == []
+assert [(f["item"], f["flag"]) for f in compare([h("a", total=9, knee=9), h("b", total=7, knee=9, open_min=5)])] == [("knee", "在誤差內")]
 assert compare([h("a", total=9, knee=9), h("b", total=7, knee=7)])[0]["item"] == "total"
 # NaN / missing vis fails the gate; player null is "me"
 nan = float("nan")

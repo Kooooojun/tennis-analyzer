@@ -1,9 +1,10 @@
 # trend.py — every web/sessions/*/scores.json -> history per (player, kind) with flags -> web/sessions/trend.json
 # Latest session vs the mean of up to 3 earlier sessions with the same camera and knee source (docs/scoring.md §6).
 import re
+import math
 import numpy as np
 
-WEAK, STRONG, STEP, BASE_N = 6, 8, 1.0, 3
+WEAK, STRONG, BASE_N = 6, 8, 3
 MIN_N = 10  # fewer strokes than this: same-day retest moved the total 1.6, too noisy to compare (docs/scoring.md §6)
 NAMES = {"total": "總分", "consistency": "一致性", "knee": "膝蓋", "contact_h": "擊球時手腕高度（2D）", "contact_fwd": "擊球前後", "prep": "準備時間", "open_min": "轉肩", "finish": "收拍", "reach": "擊球伸展", "tilt": "肩膀傾斜", "lean": "軀幹前傾", "stance": "站姿寬度", "wrist_speed": "手速", "turn": "轉肩幅度", "leg_load": "重心降低"}
 
@@ -13,7 +14,7 @@ def _scored(items): return {k for k, v in items.items() if v is not None}  # Non
 
 def compare(history):
     """history: [{"session", "camera", "n", "items": {name: score or None}}], oldest first. Returns flags for the latest session."""
-    if not history or history[-1]["n"] < MIN_N: return []
+    if not history or history[-1]["n"] < MIN_N or history[-1].get("score_version") is None: return []
     history = [h for h in history if h["n"] >= MIN_N]
     if len(history) < 2: return []
     last = history[-1]; prev = [h for h in history[:-1] if last["camera"] and h["camera"] == last["camera"] and h.get("knee_src") == last.get("knee_src") and h.get("score_version") == last.get("score_version")]
@@ -22,12 +23,13 @@ def compare(history):
         # total / consistency average over whichever metrics were scored, so only compare sessions that scored the same set
         # consistency-only metrics (score always None) still feed them, so the set of metrics with a cons must match too (Codex PR #3)
         same = [h for h in prev if item not in ("total", "consistency") or (_scored(h["items"]) == _scored(last["items"]) and set(h.get("cons_set") or []) == set(last.get("cons_set") or []))]
-        olds = [h["items"].get(item) for h in same][-BASE_N:]; olds = [x for x in olds if x is not None]
-        if v is None or not olds: continue
-        base = round(float(np.mean(olds)), 2); d = round(v - base, 2)
-        if abs(d) < STEP: continue
-        flag = "缺點改善" if base < WEAK and d > 0 else "優點退步" if base >= STRONG and d < 0 else "進步" if d > 0 else "退步"
-        out.append(dict(item=item, flag=flag, base=base, now=v, diff=d))
+        same = [h for h in same if h["items"].get(item) is not None][-BASE_N:]
+        sem = lambda h: (h.get("uncertainty", {}).get(item) or {}).get("sem")
+        if v is None or not same or any(sem(h) is None or not math.isfinite(sem(h)) or sem(h) < 0 for h in [last, *same]): continue
+        base = float(np.mean([h["items"][item] for h in same])); d = v - base
+        threshold = 1.96 * math.sqrt(sem(last)**2 + sum(sem(h)**2 for h in same) / len(same)**2)
+        flag = "在誤差內" if abs(d) <= threshold or math.isclose(abs(d), threshold, rel_tol=0, abs_tol=1e-12) else "缺點改善" if base < WEAK and d > 0 else "優點退步" if base >= STRONG and d < 0 else "進步" if d > 0 else "退步"
+        out.append(dict(item=item, flag=flag, base=round(base, 2), now=v, diff=round(d, 2), threshold=threshold))
     return out
 
 
@@ -39,6 +41,8 @@ def _entry(r, g):
     """One history row. Every session is kept; comparable / series_key let the web split or mark lines (same n / camera rules as compare(); the date filter there lives in dated())."""
     cam = r.get("camera") or ""
     return dict(session=r["session"], date=r.get("date"), camera=cam, n=g["n"], knee_src=g.get("knee_src"), score_version=g.get("score_version"), items=_items(g),
+                uncertainty={"total": g.get("uncertainty", {}).get("total"), "consistency": g.get("uncertainty", {}).get("consistency"),
+                             **{m: x.get("uncertainty", {}).get("score") for m, x in g["metrics"].items()}},
                 cons_set=sorted(m for m, x in g["metrics"].items() if x["cons"] is not None),
                 comparable=g["n"] >= MIN_N and bool(cam) and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(r.get("date")))), series_key=[cam, g.get("knee_src"), g.get("score_version")])
 

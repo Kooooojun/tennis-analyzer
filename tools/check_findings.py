@@ -5,6 +5,7 @@ import sys
 import re
 import numpy as np
 from platform_util import utf8_stdout
+from trend import NAMES, _entry, compare
 
 utf8_stdout()
 
@@ -69,7 +70,46 @@ def _cite(c, strokes, groups, show_open=False):
     return "cite 要有 stroke、metric 或 stat"
 
 
-def check(notes, strokes, scores):
+def _change_errors(finding, scores, runs):
+    """Check directional claims against the same score histories as trend.py."""
+    text = finding.get("title", "") + "。" + finding.get("text", "")
+    text = re.sub(r"(?:不能|無法|沒有|不足以|不代表|不算|不可)(?:判定|確認|說|視為|當作)?(?:確定)?(?:進退步|進步|退步|改善)", "", text)
+    clauses = [c for c in re.split(r"[。；，,！!?？\n]", text) if re.search(r"進步|退步|改善|變好|變差|更[好差穩]|比較[好差穩]|比.*穩|一致了", c)]
+    if not clauses: return []
+    identities = {(c.get("player") or "me", c.get("kind")) for c in finding.get("cite", []) if isinstance(c, dict) and "kind" in c}
+    if not identities: return ["進退步宣稱缺少球員與拍種的群組引用"]
+
+    def entry(run, group):
+        h = _entry(run, group)
+        h["items"].update({m + ".cons": x["cons"] for m, x in group["metrics"].items()})
+        h["uncertainty"].update({m + ".cons": x.get("uncertainty", {}).get("cons") for m, x in group["metrics"].items()})
+        return h
+
+    errors = []
+    for player, kind in identities:
+        group = next((g for g in scores.get("groups", []) if (g["player"], g["kind"]) == (player, kind)), None)
+        if group is None: continue
+        history = []
+        for run in runs:
+            if run.get("session") == scores.get("session") or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(run.get("date"))): continue
+            if str(run["date"]) >= str(scores.get("date", "")): continue
+            old = next((g for g in run.get("groups", []) if (g["player"], g["kind"]) == (player, kind)), None)
+            if old is not None: history.append(entry(run, old))
+        history.sort(key=lambda h: (h["date"], h["session"]))
+        flags = {f["item"]: f for f in compare([*history, entry({"session": "", **scores}, group)])} if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(scores.get("date"))) else {}
+        for clause in clauses:
+            items = [item for item, name in NAMES.items() if name in clause]
+            if re.search(r"穩|一致", clause):
+                items = [m + ".cons" for m in items if m in group["metrics"]] or ["consistency"]
+            for item in set(items or ["total"]):
+                name = NAMES.get(item.removesuffix(".cons"), item) + ("一致性" if item.endswith(".cons") else "")
+                flag = flags.get(item)
+                if flag is None: errors.append(f"{name}沒有足夠的同版本、同機位誤差估計，不能宣稱進步或退步")
+                elif flag["flag"] == "在誤差內": errors.append(f"{name}變化在誤差內（差 {flag['diff']}，門檻 {flag['threshold']:.2f}），不能宣稱進步或退步")
+    return errors
+
+
+def check(notes, strokes, scores, runs=()):
     """Return one error string per failing finding ('#<k> <title>: reason; reason')."""
     out = []
     for i, f in enumerate(notes.get("findings", []), 1):
@@ -77,6 +117,7 @@ def check(notes, strokes, scores):
         if not isinstance(cites, list): cites = []
         if not cites: errs.append("沒有引用（cite）")
         errs += [r for r in (_cite(c, strokes, scores.get("groups", []), scores.get("show_open") is True) for c in cites) if r]
+        errs += _change_errors({**f, "cite": cites}, scores, runs)
         vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
         text = f.get("text", "")
         U = r"(?:°|%|％|秒)"
@@ -103,6 +144,7 @@ if __name__ == "__main__":
     from common import session, web, load
     D = web(session())
     if not (D / "scores.json").exists(): sys.exit(f"缺 scores.json：先跑 .venv/bin/python tools/score.py {D.name}")
-    errs = check(load(D / "notes.json"), load(D / "strokes.json"), load(D / "scores.json"))
+    runs = [load(p) for p in D.parent.glob("*/scores.json")]
+    errs = check(load(D / "notes.json"), load(D / "strokes.json"), load(D / "scores.json"), runs=runs)
     print("\n".join(errs) if errs else f"ok：{len(load(D / 'notes.json').get('findings', []))} 條 findings 的引用都對得上")
     sys.exit(1 if errs else 0)

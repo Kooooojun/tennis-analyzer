@@ -147,6 +147,8 @@ python tools/run.py check_findings.py <s>    # exit 1 + the failing findings
 
 Anchors, sources, coverage gate and which metrics each camera excludes are in `docs/scoring.md`. Add trend flags to the findings (re-save `notes.json` after running these) only when they compare sessions with the same `camera` text.
 
+寫跨場建議先看 `trend.json`：標題與內文遇「在誤差內」只能描述觀察到的差值及「無法判定進退步」，不得寫成進步、退步、改善或變得更穩。缺少區間／SEM、拍數不足或版本不同時也不下進退步結論；重跑 `score.py` → `trend.py` → `check_findings.py` 核對，失敗就修建議文字。區間要寫明是「同一場內抽樣的誤差，不是跨日重測」。
+
 Highlight reel (optional, when asked or when the session has clear examples). Write `work/<s>/reel.json`. The format is in the header of `tools/highlights.py`: cards plus one- or two-up clips by final stroke number. Then:
 
 ```
