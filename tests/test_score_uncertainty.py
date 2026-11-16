@@ -53,6 +53,7 @@ assert abs(f['threshold'] - 1.96 * math.sqrt(0.3**2 + 3*0.3**2/9)) < 1e-12
 assert compare([row('a',7),dict(row('b',3),score_version=9)]) == []
 assert compare([row('a',7),dict(row('b',3),uncertainty={})]) == []
 assert compare([row('a',7),dict(row('b',3),uncertainty={'total':{'sem':None}})]) == []
+assert compare([dict(row('a',7),cons_set=['knee']),dict(row('b',3),cons_set=['prep'])]) == []
 # 舊資料缺少版本也不視為可比。
 assert compare([dict(row('a',7),score_version=None),dict(row('b',3),score_version=None)]) == []
 # 最新一場的區間進入走勢資料。
