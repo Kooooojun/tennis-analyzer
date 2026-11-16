@@ -1,5 +1,6 @@
 # 場內 bootstrap 與誤差門檻；不讀取私人資料。
 import math
+import copy
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tools'))
@@ -86,6 +87,7 @@ b['groups'][0]['metrics']['contact_h']['cons']=4.2
 assert errors('擊球時手腕高度（2D）更穩')
 b['groups'][0]['metrics']['contact_h']['cons']=9
 assert errors('擊球時手腕高度（2D）更穩') == []
+assert check(dict(findings=[dict(title='這個分項更穩',cite=[dict(kind='FH',metric='contact_h',stat='cons',value=9)])]),strokes,b,runs=[a,b]) == []
 # 真正超過門檻，既有數字核對與建議宣稱都可通過。
 a['groups'][0]['total']=3
 assert errors('總分進步') == []
@@ -101,4 +103,26 @@ finding = dict(title='這場自拋比對打更穩',cite=[dict(kind='FH',drill='f
 current = dict(b,groups=score.score_session(within,False))
 assert check(dict(findings=[finding]),within,current,runs=[]) == []
 assert check(dict(findings=[dict(finding,title='比前場更穩')]),within,current,runs=[])
+# 同日場次依 (date, session) 取基準，與正式走勢一致。
+same_a,same_b = copy.deepcopy([a,b])
+same_a['date']=same_b['date']
+assert check(dict(findings=[dict(title='總分退步',cite=cite)]),strokes,same_b,runs=[same_a,same_b]) == []
+# 技術、力量與未壓前分數可與受上限影響的總分朝不同方向。
+left,right = copy.deepcopy([a,b])
+for r,total,form,power,uncapped in [(left,7,9,9,9),(right,8.5,8,8,8.5)]:
+    r['groups'][0].update(total=total,form=form,power=power,uncapped=uncapped)
+    r['groups'][0]['uncertainty'].update({k:{'sem':0.1,'ci':[1,10]} for k in ('total','form','power','uncapped')})
+def group_claim(title,metric):
+    c=[dict(kind='FH',metric=metric,value=right['groups'][0][metric])]
+    return check(dict(findings=[dict(title=title,cite=c)]),strokes,right,runs=[left,right])
+assert group_claim('技術分進步','form')
+assert group_claim('技術分退步','form') == []
+assert group_claim('這個分數進步','form')
+assert group_claim('力量分進步','power')
+assert group_claim('力量分退步','power') == []
+left['groups'][0].update(total=9,uncapped=9.1)
+right['groups'][0].update(total=6.5,uncapped=9.8)
+assert group_claim('未壓前總分進步','uncapped') == []
+# 不具名宣稱只取同球員、拍種的引用；無效引用須回報而非拋例外。
+assert check(dict(findings=[dict(title='這個分數退步',cite=[dict(kind='FH',metric=1,value=8)])]),strokes,right,runs=[left,right])
 print('場內區間、差值門檻與建議核對測試通過')
