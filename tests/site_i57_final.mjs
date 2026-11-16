@@ -9,12 +9,14 @@ const {chromium,webkit,devices}=await import(pathToFileURL(process.env.PLAYWRIGH
 const f=await fixture(),results=[];
 const portrait=execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','testsrc2=s=180x320:r=60:d=3','-an','-c:v','libx264','-threads','1','-preset','ultrafast','-pix_fmt','yuv420p','-movflags','frag_keyframe+empty_moov','-f','mp4','pipe:1']);
 const history=dates=>dates.map((date,i)=>({session:`sample-${i}`,date,camera:'合成鏡頭',knee_src:'3D',score_version:9,items:{total:7,consistency:6}}));
-async function chart(page,dates){
+async function chart(page,dates,width){
  await page.route('**/trend.js*',route=>route.fulfill({contentType:'text/javascript',body:`window.TREND=[${JSON.stringify({player:'me',kind:'FH',history:history(dates),flags:[]})}];`}));
  await page.goto(f.url);
  await page.locator('svg.spark').waitFor();
+ if(width)await page.locator('svg.spark').evaluate((svg,width)=>{svg.style.width=width+'px';svg.replaceChildren();drawSpark(svg,TREND[0]);},width);
  return page.locator('svg.spark').evaluate(svg=>({
   dots:[...svg.querySelectorAll('circle[fill="var(--accent)"]')].map(c=>+c.getAttribute('cx')),
+  radii:[...svg.querySelectorAll('circle[fill="var(--accent)"]')].map(c=>+c.getAttribute('r')),
   ticks:[...svg.querySelectorAll('line')].filter(l=>l.getAttribute('x1')===l.getAttribute('x2')).map(l=>+l.getAttribute('x1')),
   texts:[...svg.querySelectorAll('text')].map(t=>{const b=t.getBBox();return {text:t.textContent,x:+t.getAttribute('x'),y:+t.getAttribute('y'),box:{x:b.x,y:b.y,width:b.width,height:b.height}};}),
   width:svg.viewBox.baseVal.width,height:svg.viewBox.baseVal.height,
@@ -74,6 +76,23 @@ const cases={
   assert(c.dots.every((x,i)=>!i||x>c.dots[i-1]),'亂序資料須先按日期排，缺日期接在最後');
   assert(Math.abs((c.dots[1]-c.dots[0])/(c.dots[2]-c.dots[0])-1/31)<.001,'缺日期不可讓已知日期變等距');
   assert.equal(c.ticks.length,4);
+ },
+ async nearbySameDate(page){
+  const c=await chart(page,['2026-01-01','2026-01-01','2026-01-02','2026-04-01'],300);
+  assert(c.dots.every((x,i)=>!i||x>c.dots[i-1]),'同日偏移不可越過隔日');
+  assert(c.dots.every((x,i)=>!i||x-c.dots[i-1]>=c.radii[i]+c.radii[i-1]),'密集同分圓點不可重疊');
+  const first=(c.dots[0]+c.dots[1])/2;
+  assert(Math.abs((c.dots[2]-first)/(c.dots[3]-first)-1/90)<.001,'同日偏移須保留日期中心的日數比例');
+ },
+ async manyUndated(page){
+  const c=await chart(page,['2026-01-01','2026-01-02',...Array(120).fill(null)],300);
+  assert(c.dots.every((x,i)=>!i||x>c.dots[i-1]),'大量缺日期仍須接在已知日期後面');
+  assert(c.dots.every((x,i)=>x-c.radii[i]>=0&&x+c.radii[i]<=c.width),'大量缺日期的圓點不可裁切');
+ },
+ async allUndated(page){
+  const c=await chart(page,Array(120).fill(null),300);
+  assert(c.dots.every((x,i)=>x-c.radii[i]>=0&&x+c.radii[i]<=c.width),'全缺日期的圓點不可裁切');
+  assert(c.dots.every((x,i)=>!i||x-c.dots[i-1]>=c.radii[i]+c.radii[i-1]),'大量同組圓點不可重疊');
  },
  async labelsAndLegend(page){
   const c=await chart(page,['2026-01-01','2026-01-12','2026-02-01']);

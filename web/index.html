@@ -1345,19 +1345,27 @@ function drawSpark(svg,t){  // total + consistency per session, oldest left
   const h=[...t.history].sort((a,b)=>!isoDate(a)-!isoDate(b)||(isoDate(a)||"").localeCompare(isoDate(b)||"")), groups=new Map();
   h.forEach((r,i)=>{ const d=isoDate(r)||""; if(!groups.has(d)) groups.set(d,[]); groups.get(d).push(i); });
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
-  const dates=[...groups.keys()].filter(Boolean), first=Date.parse(dates[0]), span=Date.parse(dates.at(-1))-first;
-  const spread=Math.max(...[...groups.values()].map(g=>g.length-1))*5, left=pl+spread, right=W-pr-spread, dateRight=right-(groups.has("")&&dates.length?60:0);
+  const keys=[...groups.keys()], dates=keys.filter(Boolean), first=Date.parse(dates[0]), span=Date.parse(dates.at(-1))-first;
+  const spread=Math.min(Math.max(...[...groups.values()].map(g=>g.length-1))*5,(W-pl-pr)/4), left=pl+spread, right=W-pr-spread, dateRight=right-(groups.has("")&&dates.length?60:0);
   const gx=d=>!d?(dates.length?right:(left+right)/2):span?left+(Date.parse(d)-first)/span*(dateRight-left):(left+dateRight)/2;
-  const x=i=>{ const d=isoDate(h[i])||"", g=groups.get(d); return gx(d)+(g.indexOf(i)-(g.length-1)/2)*10; }, y=v=>pt+(1-(v-1)/9)*(H-pt-pb);
+  const xs=[];
+  // 日期中心維持比例；偏移只用鄰日空間的一部分，避免折線倒退。
+  keys.forEach((d,i)=>{
+    const g=groups.get(d), px=gx(d), room=Math.min(spread,i?(px-gx(keys[i-1]))/3:spread,i<keys.length-1?(gx(keys[i+1])-px)/3:spread);
+    const step=Math.min(10,2*room/Math.max(1,g.length-1));
+    g.forEach((j,k)=>xs[j]=px+(k-(g.length-1)/2)*step);
+  });
+  const x=i=>xs[i], y=v=>pt+(1-(v-1)/9)*(H-pt-pb);
   const mk=(tag,a)=>{ const e=document.createElementNS(NS,tag); for(const k in a) e.setAttribute(k,a[k]); svg.append(e); return e; };
   for(const v of [1,4,7,10]){ mk("line",{x1:pl,x2:W-pr,y1:y(v),y2:y(v),stroke:"var(--line)"}); mk("text",{x:pl-5,y:y(v)+3,"text-anchor":"end","font-size":10,fill:"var(--muted)"}).textContent=v; }
   for(const [key,col,w] of [["consistency","var(--muted)",1.5],["total","var(--accent)",2.5]]){
     const pts=h.map((r,i)=>[i,r.items[key]]).filter(([,v])=>v!=null), seg=r=>r.camera?r.camera+"|"+r.knee_src+"|"+r.score_version:NaN;  // NaN: an unnamed camera never joins a neighbour
     for(let a=0,b=1;a<pts.length;a=b++){ while(b<pts.length&&seg(h[pts[b][0]])===seg(h[pts[b-1][0]])) b++; if(b-a>1) mk("polyline",{points:pts.slice(a,b).map(([i,v])=>`${x(i)},${y(v)}`).join(" "),fill:"none",stroke:col,"stroke-width":w}); }  // different camera / knee source / version: not comparable, so not joined
-    for(const [i,v] of pts){ const c=mk("circle",{cx:x(i),cy:y(v),r:key==="total"?4.5:3,fill:col}); const tt=document.createElementNS(NS,"title"); tt.textContent=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v} · 鏡頭：${h[i].camera||"沒寫"}`; c.append(tt); }
+    for(const [i,v] of pts){ const radius=Math.min(key==="total"?4.5:3,i?(x(i)-x(i-1))*.45:Infinity,i<h.length-1?(x(i+1)-x(i))*.45:Infinity);
+      const c=mk("circle",{cx:x(i),cy:y(v),r:radius,fill:col}); const tt=document.createElementNS(NS,"title"); tt.textContent=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v} · 鏡頭：${h[i].camera||"沒寫"}`; c.append(tt); }
   }
   let lx=-1e9;
-  const keys=[...groups.keys()], last=gx(keys.at(-1));
+  const last=gx(keys.at(-1));
   keys.forEach((d,i)=>{
     const px=gx(d); mk("line",{x1:px,x2:px,y1:y(1),y2:y(1)+5,stroke:"var(--muted)"});
     if(i<keys.length-1&&(px-lx<40||last-px<40)) return;
