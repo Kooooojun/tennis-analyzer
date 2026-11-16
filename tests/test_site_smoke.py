@@ -105,25 +105,26 @@ for(const engine of [chromium,webkit]){
     assert.deepEqual(errors,[]);
 
     const fallback=await context.newPage();
+    const sameClip=(url,target)=>{const u=new URL(url);u.searchParams.delete('_retry');return u.href===target;};
     await fallback.addInitScript(()=>{window.fetch=()=>Promise.reject(new TypeError('test fallback'));});
     await fallback.goto(process.env.SITE_E2E_URL);
     await fallback.evaluate(()=>go(DAY_KEYS[0],'stroke')); await fallback.waitForFunction(()=>v.readyState>=2);
     const failedURL=await fallback.evaluate(()=>{const list=visible(),i=list.findIndex(s=>s===S);return new URL(clipSrc(list[(i+1)%list.length]),location.href).href;});
     let release=false;
-    await fallback.route('**/*.mp4',async route=>{if(!release&&route.request().url()===failedURL)await route.fulfill({status:503,body:''});else await route.continue();});
+    await fallback.route('**/*.mp4*',async route=>{if(!release&&sameClip(route.request().url(),failedURL))await route.fulfill({status:503,body:''});else await route.continue();});
     await fallback.evaluate(()=>step(1)); await fallback.waitForFunction(()=>!!v.error); release=true;
     await fallback.waitForFunction(()=>v.readyState>=2&&!v.error);
     assert(await fallback.evaluate(()=>Math.abs(v.currentTime-(S.contact-48+.5)/FPS)<1/FPS),'automatic reload must preserve initial alignment');
-    await fallback.unroute('**/*.mp4');
-    await fallback.route('**/*.mp4',async route=>{await new Promise(r=>setTimeout(r,1000));await route.continue().catch(()=>{});});
+    await fallback.unroute('**/*.mp4*');
+    await fallback.route('**/*.mp4*',async route=>{await new Promise(r=>setTimeout(r,1000));await route.continue().catch(()=>{});});
     await fallback.evaluate(()=>step(1)); await fallback.waitForTimeout(100);
     await fallback.evaluate(()=>{toggle();go(DAY,'advice');}); await fallback.waitForTimeout(1400);
     assert(await fallback.evaluate(()=>v.paused&&!v._want),'leaving a tab must cancel pending playback before metadata');
-    await fallback.unroute('**/*.mp4');
+    await fallback.unroute('**/*.mp4*');
     await fallback.evaluate(()=>go(DAY,'video')); await fallback.locator('#vA').scrollIntoViewIfNeeded();
     await fallback.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
     const failedB=await fallback.evaluate(()=>new URL(clipSrc(ALL[4]),location.href).href);let retryB=false;
-    await fallback.route('**/*.mp4',async route=>{if(!retryB&&route.request().url()===failedB)await route.fulfill({status:503,body:''});else await route.continue();});
+    await fallback.route('**/*.mp4*',async route=>{if(!retryB&&sameClip(route.request().url(),failedB))await route.fulfill({status:503,body:''});else await route.continue();});
     await fallback.evaluate(()=>cmpLoad(ALL[3],ALL[4]));
     await fallback.waitForFunction(()=>!!vB.parentElement.querySelector('.vid-msg[data-fail]'));retryB=true;
     await fallback.locator('#cmpPlay').click(); await fallback.waitForFunction(()=>vB.readyState>=2&&!vB._reloading);
@@ -154,6 +155,10 @@ if os.environ.get("SITE_E2E_URL"):
 
 if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "test_site_i57_css.mjs")], check=True)
+
+if os.environ.get("SITE_E2E_URL"):
+    subprocess.run(["node", str(R / "tests" / "site_cache_retry.mjs")], check=True,
+                   env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-retry"))} if os.environ.get("SITE_RESULTS") else {})})
 
 if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "test_site_i57_mobile.mjs")], check=True)
