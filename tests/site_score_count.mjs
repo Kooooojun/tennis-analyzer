@@ -32,8 +32,9 @@ try{
    check(!await muted(page.locator('.score').nth(1).locator('.total'))&&!(await page.locator('.score').nth(1).textContent()).includes('只根據'),`${tag}：兩項總分維持原樣`);
    check((await single.ariaSnapshot()).includes('只根據 1 項：準備時間'),`${tag}：總覽讀屏`);
    check(await single.locator('.flags .single-metric').count()>0,`${tag}：旗標總分灰色`);
-   await page.evaluate(()=>{DAYS[DAY].findings=[{title:'合成引用',text:'分數',cite:[{player:countGroup.player,kind:'FH',metric:'total',stat:'score',value:7},{player:countGroup.player,kind:'FH',metric:'form',stat:'score',value:6}]}];drawSummary();go(DAY,'advice');route();});
-   check(await page.locator('.cite .single-metric').count()===2&&(await page.locator('.cite').ariaSnapshot()).includes('只根據 1 項：準備時間'),`${tag}：建議引用的總分與技術分`);
+   await page.evaluate(()=>{DAYS[DAY].findings=[{title:'合成引用',text:'分數',cite:[{player:countGroup.player,kind:'FH',metric:'total',stat:'score',value:7},{player:countGroup.player,kind:'FH',metric:'form',stat:'score',value:6},{player:countGroup.player,kind:'FH',metric:'uncapped',stat:'score',value:7.5}]}];drawSummary();go(DAY,'advice');route();});
+   check(await page.locator('.cite .single-metric').count()===3&&(await page.locator('.cite').ariaSnapshot()).includes('只根據 1 項：準備時間'),`${tag}：建議引用的總分、技術分與未壓前總分`);
+   const cited=await page.locator('.cite').textContent();check(cited.includes('未壓前總分')&&!cited.includes('uncapped'),`${tag}：未壓前總分引用顯示中文`);
    await page.evaluate(()=>{go(null);route();});
    const home=page.locator('#home');
    check(await home.locator('.sess .single-metric').count()>0,`${tag}：首頁總分灰色`);

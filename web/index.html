@@ -442,7 +442,7 @@ if(!DAY_KEYS.length){ document.querySelector("main").innerHTML='<p style="paddin
 let DAY = DAY_KEYS.findLast(k=>isoDate(DAYS[k]))??DAY_KEYS.at(-1), ALL = DAYS[DAY].data;
 const who = s => s.player||"me";  // "player": null or missing = the single-player "me", same as score.py
 const PN = p => p==="me" ? "我" : p;
-const ITEM = {total:"總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球時手腕高度（2D）", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜", lean:"軀幹前傾", stance:"站姿寬度", wrist_speed:"手速", turn:"轉肩幅度", leg_load:"重心降低", power:"力量"};
+const ITEM = {total:"總分", uncapped:"未壓前總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球時手腕高度（2D）", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜", lean:"軀幹前傾", stance:"站姿寬度", wrist_speed:"手速", turn:"轉肩幅度", leg_load:"重心降低", power:"力量"};
 const STAT = {median:"中位數", mean:"平均", min:"最小", max:"最大", n:"拍數", score:"分數", cons:"一致性分", spread:"散佈"};
 const formNote = g => g?.form_n===1&&g.form_metrics?.length===1?`只根據 1 項：${ITEM[g.form_metrics[0]]||g.form_metrics[0]}`:"";
 const differentItems = (a,b) => a?.score_set!=null&&b?.score_set!=null&&JSON.stringify(a.score_set)!==JSON.stringify(b.score_set);
@@ -659,7 +659,7 @@ function drawSummary(){
   $("findings").innerHTML="";
   for(const it of items){
     const d=document.createElement("div"); d.className="find "+it.cls;
-    d.innerHTML=`<b>${it.cls==="good"?"✓ ":"△ "}${esc(it.t)}</b><p>${esc(it.p)}</p>`+(it.c.length?`<div class="cite" title="${{true:"這條建議引用的數據（已用 check_findings.py 核對）",false:"這條建議引用的數據（未核對：這場沒有 scores.json）"}[DAYS[DAY].checked]??"這條建議引用的數據"}">${DAYS[DAY].checked===false?"<span>未核對</span>":""}${it.c.map(c=>{const note=c.stroke==null&&["total","form"].includes(c.metric)?formNote(scoreGroup(c)):"";return `<span class="${note?"single-metric":""}">${esc(citeText(c))}${note?` · ${esc(note)}`:""}</span>`;}).join("")}</div>`:"");
+    d.innerHTML=`<b>${it.cls==="good"?"✓ ":"△ "}${esc(it.t)}</b><p>${esc(it.p)}</p>`+(it.c.length?`<div class="cite" title="${{true:"這條建議引用的數據（已用 check_findings.py 核對）",false:"這條建議引用的數據（未核對：這場沒有 scores.json）"}[DAYS[DAY].checked]??"這條建議引用的數據"}">${DAYS[DAY].checked===false?"<span>未核對</span>":""}${it.c.map(c=>{const note=c.stroke==null&&["total","form","uncapped"].includes(c.metric)?formNote(scoreGroup(c)):"";return `<span class="${note?"single-metric":""}">${esc(citeText(c))}${note?` · ${esc(note)}`:""}</span>`;}).join("")}</div>`:"");
     for(const [s,label] of it.j.filter(([s])=>s)){ const b=document.createElement("button"); b.className="jump"; b.textContent=label; b.onclick=()=>load(s.id,true); d.append(b); }
     $("findings").append(d);
   }
