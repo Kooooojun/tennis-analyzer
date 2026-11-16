@@ -37,16 +37,19 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
     await page.route('**/*edge-error*',r=>r.fulfill({status:broken==='corrupt'?200:+broken,contentType:'video/mp4',body:broken==='corrupt'?'broken':''}));
     const t=Date.now();await page.evaluate(()=>{ALL[3].src+='?edge-error';load(3,false);});
     await page.waitForFunction(()=>v.parentElement.querySelector('[data-fail]:not([disabled])'));
-    assert(Date.now()-t<1800,`${broken}: 確定性錯誤不得等待自動重載`);
+    assert(Date.now()-t<(broken==='corrupt'?4000:1800),`${broken}: 確定性 HTTP 錯誤立即提示，其餘格式錯誤最多重載一次`);
     await page.unroute('**/*edge-error*');
    }
   },
   async temporary503(page){
-   let requests=0;
-   await page.route('**/*edge-503*',r=>r.request().method()==='HEAD'||requests++===0?r.fulfill({status:503,body:''}):r.continue());
-   const start=Date.now();await page.evaluate(()=>{ALL[3].src+='?edge-503';load(3,false);});
-   await page.waitForFunction(()=>v.readyState>=3&&!v.error,null,{timeout:4500});
-   assert(Date.now()-start<4500,'暫時性 503 必須沿用兩秒重載，不得等十五秒退避');
+   for(const headStatus of [503,200]){
+    let requests=0;
+    await page.route('**/*edge-503*',r=>r.request().method()==='HEAD'?r.fulfill({status:headStatus,body:''}):requests++===0?r.fulfill({status:503,body:''}):r.continue());
+    const start=Date.now();await page.evaluate(()=>{ALL[3].src+='?edge-503';load(3,false);});
+    await page.waitForFunction(()=>v.readyState>=3&&!v.error,null,{timeout:4500});
+    assert(Date.now()-start<4500,'暫時性 503 必須沿用兩秒重載，不得等十五秒退避');
+    await page.unroute('**/*edge-503*');
+   }
   },
   async compareLoading(page){
    await compare(page);

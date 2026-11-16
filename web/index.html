@@ -920,7 +920,7 @@ function watchStall(vid){
       const e=CLIPS.get(vid._clipKey); if(e?.url===vid.src) CLIPS.delete(vid._clipKey);
       if(!retiredClips.has(vid.src)) retiredClips.set(vid.src,e?.size||0); vid._badBlob=true;
     }
-    errorStatus=/^https?:/.test(vid.src)?0:200;
+    errorStatus=0;
     if(!vid._badBlob&&vid.error?.code===4&&/^https?:/.test(vid.src)){
       const token=vid._loadToken;
       fetch(vid.src,{method:"HEAD",cache:"no-store",signal:AbortSignal.timeout(1500)})
@@ -938,7 +938,7 @@ function watchStall(vid){
     if(vid._fetching){ if(now-vid._fetchSince>=1000){ const e=CLIPS.get(vid._clipKey); m.hidden=false; m.textContent="影片下載中…"+(e?.total?" "+Math.min(100,Math.floor(e.bytes/e.total*100))+"%":""); } return; }
     if(!vid.currentSrc&&!vid.src) return;
     if(vid.error){
-      if(!vid._badBlob&&(vid.error.code===3||vid.error.code===4&&(errorStatus>=200&&errorStatus<300||errorStatus===404||errorStatus===410))){ fail(); return; }
+      if(!vid._badBlob&&(vid.error.code===3||vid.error.code===4&&(errorStatus===404||errorStatus===410))){ fail(); return; }
       if(!errorSince) errorSince=now; if(tries<1&&now-errorSince>=2000) reload(); else if(tries>=1) fail(); return;
     }
     errorSince=0;
