@@ -163,4 +163,6 @@ if os.environ.get("SITE_E2E_URL"):
                    env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-retry"))} if os.environ.get("SITE_RESULTS") else {})})
 
 if os.environ.get("SITE_E2E_URL"):
+    subprocess.run(["node", str(R / "tests" / "site_cache_keyboard.mjs")], check=True,
+                   env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-keyboard"))} if os.environ.get("SITE_RESULTS") else {})})
     subprocess.run(["node", str(R / "tests" / "test_site_i57_mobile.mjs")], check=True)
