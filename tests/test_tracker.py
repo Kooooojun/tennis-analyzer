@@ -64,4 +64,33 @@ assert same_person(d1, [det(1.3, 0.5, BLACK), det(0.52, 0.5, WHITE)]) == 1
 assert same_person(d1, [det(1.3, 0.5, BLACK)]) is None          # it is someone the two-person model did not see
 assert same_person(d1, [None, det(0.53, 0.5, WHITE)]) == 1       # empty slots are skipped
 assert same_person(d1, []) is None
+
+# 同色交叉仍有連續運動方向；兩個骨架之間超過既有重複判斷距離。
+t = Tracker(2)
+ids = t.step([det(0.2, 0.49, WHITE, 0.06), det(0.8, 0.51, WHITE, 0.06)])
+for i in range(1, 16):
+    x = 0.2 + 0.04 * i
+    assert t.step([det(x, 0.49, WHITE, 0.06), det(1 - x, 0.51, WHITE, 0.06)]) == ids, i
+
+# 剪接後換位：位置不連續，外觀仍足以分辨身分。
+t = Tracker(2)
+ids = t.step([det(0.2, 0.5, WHITE), det(0.8, 0.5, BLACK)])
+assert t.step([det(0.8, 0.5, WHITE), det(0.2, 0.5, BLACK)]) == ids
+
+# 四人同時換位，不能讓短期位置覆蓋外觀記憶。
+colors = (WHITE, BLACK, RED, (45, -40, -35))
+positions = ((0.2, 0.3), (0.8, 0.3), (0.2, 0.8), (0.8, 0.8))
+t = Tracker(4)
+ids = t.step([det(*p, c, 0.08) for p, c in zip(positions, colors)])
+assert t.step([det(*p, c, 0.08) for p, c in zip(positions[::-1], colors)]) == ids
+
+# 一人獨留移動，不應只因有空槽就拆成另一個身分。
+t = Tracker(4)
+[solo] = t.step([det(0.2, 0.6, WHITE)])
+assert t.step([det(0.7, 0.6, WHITE)]) == [solo]
+
+# 完全同色且切鏡換位沒有可辨線索，只要求不崩潰、不新增槽。
+t = Tracker(2)
+t.step([det(0.2, 0.5, WHITE), det(0.8, 0.5, WHITE)])
+assert sorted(t.step([det(0.8, 0.5, WHITE), det(0.2, 0.5, WHITE)])) == [0, 1]
 print("ok")

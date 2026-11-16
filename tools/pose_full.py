@@ -17,12 +17,20 @@ class Tracker:
 
     def __init__(self, n):
         self.n = n; self.pos = [None] * n; self.col = [None] * n; self.last = [0] * n; self.f = 0
+        self.vel = np.zeros((n, 2)); self.depth = [None] * n; self.scale = [None] * n; self.reid = False
 
     def cost(self, k, d):
         if self.pos[k] is None: return self.NEW
+        color = np.linalg.norm(np.subtract(d["color"], self.col[k])) / self.COL
+        if self.reid: return color
         gap = self.f - self.last[k]
-        dp = np.hypot(*np.subtract(d["pos"], self.pos[k])) / max(d["scale"], 0.03) / (1 + gap / 15)  # lost a while: position counts less
-        return dp + np.linalg.norm(np.subtract(d["color"], self.col[k])) / self.COL
+        pred = np.asarray(self.pos[k]) + (self.vel[k] * gap if gap < 5 else 0)
+        dp = np.hypot(*np.subtract(d["pos"], pred)) / max(d["scale"], 0.03) / (1 + gap / 15)
+        depth = abs(d["pos"][1] - self.depth[k]) / max(d["scale"], self.scale[k], 0.03)
+        size = abs(np.log(max(d["scale"], 0.03) / max(self.scale[k], 0.03)))
+        # 連續運動優先；大跳躍可能是剪接，位置不能蓋過外觀與長期深度。
+        continuity = max(1 - dp, 0) if gap == 1 else 0
+        return min(dp, 1) - continuity + 0.5 * (depth + size) + color
 
     def step(self, dets):
         """dets: [{pos: (x, y) in frame heights, scale: torso length, color: Lab}] -> slot per detection, -1 = dropped."""
@@ -31,13 +39,27 @@ class Tracker:
             if not any(np.hypot(*np.subtract(d["pos"], dets[j]["pos"])) < 0.5 * d["scale"]
                        and np.linalg.norm(np.subtract(d["color"], dets[j]["color"])) < self.COL / 2 for j in keep):
                 keep.append(i)
+        self.reid = False
+        if self.n > 1 and len(keep) == self.n and all(c is not None for c in self.col):
+            colors = np.array([[np.linalg.norm(np.subtract(dets[i]["color"], c)) for c in self.col] for i in keep])
+            nearest = colors.argmin(1); ordered = np.sort(colors, axis=1)
+            # 全員外觀皆有唯一對應才跨區接軌；相似外觀仍依運動與深度配對。
+            self.reid = len(set(nearest)) == self.n and bool(np.all(ordered[:, 0] < self.COL / 2)
+                        and np.all(ordered[:, 1] - ordered[:, 0] > self.COL / 2))
         C = [[self.cost(k, dets[i]) for k in range(self.n)] + [self.DROP] * len(keep) for i in keep]
         best = min(itertools.permutations(range(self.n + len(keep)), len(keep)), key=lambda p: sum(C[a][b] for a, b in enumerate(p)), default=())
         out = [-1] * len(dets)
         for a, k in zip(keep, best):
             if k >= self.n: continue
-            d = dets[a]; out[a] = k; self.pos[k] = d["pos"]; self.last[k] = self.f
-            self.col[k] = np.array(d["color"], float) if self.col[k] is None else 0.95 * self.col[k] + 0.05 * np.array(d["color"], float)
+            d = dets[a]; out[a] = k
+            if self.pos[k] is not None:
+                gap = self.f - self.last[k]; v = np.subtract(d["pos"], self.pos[k]) / gap
+                self.vel[k] = 0.5 * self.vel[k] + 0.5 * v if gap < 5 and np.hypot(*v) < max(d["scale"], 0.03) else np.zeros(2)
+            self.pos[k] = d["pos"]; self.last[k] = self.f
+            # 慢更新保留身分參照，避免短暫錯配迅速污染整個槽。
+            self.col[k] = np.array(d["color"], float) if self.col[k] is None else 0.995 * self.col[k] + 0.005 * np.array(d["color"], float)
+            self.depth[k] = d["pos"][1] if self.depth[k] is None else 0.995 * self.depth[k] + 0.005 * d["pos"][1]
+            self.scale[k] = d["scale"] if self.scale[k] is None else 0.995 * self.scale[k] + 0.005 * d["scale"]
         return out
 
 
