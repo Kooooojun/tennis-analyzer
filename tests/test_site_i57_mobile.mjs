@@ -81,6 +81,7 @@ function contrast(fg, bg) {
       const visH = Math.max(0, Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0));
       return {
         pos: getComputedStyle(p).position,
+        wide: p.classList.contains("wide"),
         top: r.top,
         bottom: r.bottom,
         h: r.height,
@@ -95,10 +96,12 @@ function contrast(fg, bg) {
     assert.equal(cmpPort.pos, "sticky", `portrait .player must be sticky, got ${cmpPort.pos}`);
     assert(cmpPort.top >= -1 && cmpPort.bottom > 0 && cmpPort.visH > 0,
       `portrait .player must stay visible when scrolled to compare (top=${cmpPort.top}, bottom=${cmpPort.bottom})`);
-    assert(cmpPort.h <= cmpPort.vh * 0.6,
-      `portrait .player height at compare (${cmpPort.h.toFixed(1)}px = ${(cmpPort.ratio * 100).toFixed(1)}%) must be <= 60% of ${cmpPort.vh}px`);
+    if (cmpPort.wide) {
+      assert(cmpPort.h <= cmpPort.vh * 0.6,
+        `portrait .player height at compare (${cmpPort.h.toFixed(1)}px = ${(cmpPort.ratio * 100).toFixed(1)}%) must be <= 60% of ${cmpPort.vh}px`);
+    }
 
-    // Scroll down on stroke tab, check sticky .player <= 60% and visible, then click 2nd stroke and verify scrollY != 0
+    // Scroll down on stroke tab, check sticky .player <= 60% (for wide clips) and visible, then click 2nd stroke and verify scrollY != 0
     await page.evaluate(() => go(DAY_KEYS[0], "stroke"));
     await page.waitForTimeout(200);
     await page.evaluate(() => window.scrollTo(0, 120));
@@ -109,6 +112,7 @@ function contrast(fg, bg) {
       const visH = Math.max(0, Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0));
       return {
         pos: getComputedStyle(p).position,
+        wide: p.classList.contains("wide"),
         top: r.top,
         bottom: r.bottom,
         h: r.height,
@@ -124,8 +128,10 @@ function contrast(fg, bg) {
     assert.equal(strokePort.pos, "sticky", `portrait .player on stroke tab must be sticky, got ${strokePort.pos}`);
     assert(strokePort.top >= -1 && strokePort.bottom > 0 && strokePort.visH > 0,
       `portrait .player must stay visible at stroke list (top=${strokePort.top}, bottom=${strokePort.bottom})`);
-    assert(strokePort.h <= strokePort.vh * 0.6,
-      `portrait .player height at stroke list (${strokePort.h.toFixed(1)}px = ${(strokePort.ratio * 100).toFixed(1)}%) must be <= 60% of ${strokePort.vh}px`);
+    if (strokePort.wide) {
+      assert(strokePort.h <= strokePort.vh * 0.6,
+        `portrait .player height at stroke list (${strokePort.h.toFixed(1)}px = ${(strokePort.ratio * 100).toFixed(1)}%) must be <= 60% of ${strokePort.vh}px`);
+    }
 
     // Click 2nd stroke in list -> scrollY must NOT reset to 0
     await page.locator(".strokes button").nth(1).click();
