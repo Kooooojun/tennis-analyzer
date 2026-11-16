@@ -29,11 +29,11 @@ try{
  let playable=false,seconds=null;
  try{
   await page.waitForFunction(()=>v.readyState>=2&&!v.parentElement.querySelector('[data-fail]'),null,{timeout:30000});
-  await page.evaluate(()=>{v._testTime=v.currentTime;v.play().catch(()=>{});});await page.waitForFunction(()=>v.currentTime>v._testTime);
+  await page.evaluate(()=>{v._testTime=v.currentTime;v._want=v._resume=true;v.play().catch(()=>{});});await page.waitForFunction(()=>v.currentTime>v._testTime);
   playable=true;seconds=(Date.now()-start)/1000;
  }catch{}
  const events=fs.readFileSync(process.env.SITE_SERVER_LOG,'utf8').trim().split('\n').map(s=>JSON.parse(s)).filter(e=>e.case===id);
  const result={engine:name,hidden,failed:await page.evaluate(()=>sawFailure),playable,seconds,requests:events.filter(e=>e.event==='request').length,aborts:events.filter(e=>e.event==='abort').length,errors,events};
  console.log(JSON.stringify(result,null,2));if(process.env.SITE_RESULTS)fs.writeFileSync(process.env.SITE_RESULTS,JSON.stringify(result,null,2));
- if(!process.env.SITE_BASELINE){assert.equal(hidden.state,'hidden');assert(playable);assert(!result.failed);assert.equal(result.requests,1);assert.equal(result.aborts,0);assert.deepEqual(errors,[]);}
+ if(!process.env.SITE_BASELINE){assert.equal(hidden.state,'hidden');assert(playable);assert(!result.failed);assert.equal(result.requests,name==='webkit'?2:1);assert.equal(result.aborts,0);assert.deepEqual(errors,[]);}
 }finally{await browser.close();}

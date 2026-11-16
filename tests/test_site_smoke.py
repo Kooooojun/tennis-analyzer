@@ -62,14 +62,15 @@ for(const engine of [chromium,webkit]){
     assert(await page.evaluate(()=>v.playbackRate===rate),'loading a source must preserve the selected speed');
     const first=await page.evaluate(()=>S.id);
     await page.evaluate(()=>step(1)); await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
-    await page.waitForTimeout(1000);
+    await page.waitForFunction(id=>CLIPS.get(clipSrc(ALL[id]))?.url,first);
     const target=await page.evaluate(id=>new URL(clipSrc(ALL[id]),location.href).href,first), before=requests.filter(u=>u===target).length;
     await page.evaluate(()=>step(-1)); await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
     assert.equal(requests.filter(u=>u===target).length,before,'revisit must not fetch the clip');
-    const advance=await page.evaluate(async()=>{v.currentTime=0;v.playbackRate=1;await v.play();const t=v.currentTime;await new Promise(r=>setTimeout(r,250));v.pause();return v.currentTime-t;});
+    const advance=await page.evaluate(async()=>{v.currentTime=0;v.playbackRate=1;v._want=v._resume=true;await v.play();const t=v.currentTime;await new Promise(r=>setTimeout(r,250));v.pause();return v.currentTime-t;});
     assert(advance>0,'cached clip must play');
     await page.evaluate(()=>go(DAY,'video')); await page.locator('#vA').scrollIntoViewIfNeeded();
     await page.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
+    await page.evaluate(async()=>{for(const s of ALL.slice(0,4))await clipFetch(clipSrc(s),true);});
     await page.evaluate(()=>cmpLoad(ALL[0],ALL[1])); await page.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
     await page.evaluate(()=>cmpLoad(ALL[2],ALL[3])); await page.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
     const cmpBefore=requests.length;
@@ -136,3 +137,7 @@ for(const engine of [chromium,webkit]){
 
 if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "site_cache_regressions.mjs")], check=True)
+
+if os.environ.get("SITE_E2E_URL"):
+    subprocess.run(["node", str(R / "tests" / "site_cache_round4.mjs")], check=True,
+                   env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-round4"))} if os.environ.get("SITE_RESULTS") else {})})

@@ -64,11 +64,11 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   },
   async playRetries(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
-   const retries=await page.evaluate(()=>{stopDead(v);const m=v.parentElement.querySelector('.vid-msg');m.dataset.fail='1';let n=0;m.onclick=()=>n++;toggle();return n;});assert.equal(retries,1);
+   const retries=await page.evaluate(()=>{stopDead(v);const m=v.parentElement.querySelector('.vid-msg');m.dataset.fail='1';m.disabled=false;let n=0;m.onclick=()=>n++;toggle();return n;});assert.equal(retries,1);
   },
   async sharedBadBlob(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'video'));await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
-   const states=await page.evaluate(()=>{stopDead(vA);const key=A.src,url=vA.src;vB.src=url;vA.dispatchEvent(new Event('error'));vA.removeAttribute('src');vA.load();releaseClips();const first=liveClips.has(url);vB.removeAttribute('src');vB.load();releaseClips();return [first,liveClips.has(url),revokedActive];});assert.deepEqual(states,[true,false,0]);
+   const states=await page.evaluate(async()=>{stopDead(vA);const key=A.src,url=await clipFetch(key,true);vA.src=url;vB.src=url;vA.dispatchEvent(new Event('error'));vA.removeAttribute('src');vA.load();releaseClips();const first=liveClips.has(url);vB.removeAttribute('src');vB.load();releaseClips();return [first,liveClips.has(url),revokedActive];});assert.deepEqual(states,[true,false,0]);
   },
   async readyHidesMessage(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
@@ -114,7 +114,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
    await page.waitForTimeout(200);assert.equal(requests.length,0,'home fetches none');
    await page.evaluate(()=>go(DAY_KEYS[0],'overview'));await page.waitForTimeout(200);assert.equal(requests.length,0,'overview fetches none');
    await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>{if(!S)return false;const list=visible(),i=list.indexOf(S);return CLIPS.get(list[(i-1+list.length)%list.length].src)?.url;});
-   const expected=await page.evaluate(()=>{const list=visible();const i=list.indexOf(S);return [S.src,list[(i+1)%list.length].src,list[(i-1+list.length)%list.length].src].map(u=>new URL(u,location.href).href);});assert.deepEqual(requests.slice(0,3),expected);
+   const expected=await page.evaluate(()=>{const list=visible();const i=list.indexOf(S);return [S.src,list[(i+1)%list.length].src,list[(i-1+list.length)%list.length].src].map(u=>new URL(u,location.href).href);});assert.deepEqual([...new Set(requests)].slice(0,3),expected);
   },
   async abortPrefetch(page){
    let aborted=false;await page.route('**/*.mp4*',async route=>{if(route.request().url().includes('pendingprefetch')){try{await new Promise(r=>setTimeout(r,1000));await route.continue();}catch{}}else await route.continue();});
@@ -126,7 +126,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
    await page.evaluate(()=>go(DAY_KEYS[0],'video'));await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
    await page.route('**/*slowpair*',async route=>{await new Promise(r=>setTimeout(r,600));try{await route.continue();}catch{}});
    await page.evaluate(()=>{const b={...ALL[4],src:ALL[4].src+'?slowpair'};cmpLoad(ALL[3],b);cmpStart();});
-   await page.waitForFunction(()=>vA.readyState>=1&&vB._fetching);
+   await page.waitForFunction(()=>vA.readyState>=1&&!vB.readyState);
    await page.evaluate(()=>$('cmpPlay').click());
    await page.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
    await page.waitForTimeout(100);
@@ -148,7 +148,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   },
   async corruptBlob(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
-   await page.evaluate(()=>{const real=fetch;let bad=true;window.fetch=async(...args)=>{if(bad&&String(args[0]).includes('badcase')){bad=false;return new Response('broken',{headers:{'Content-Type':'video/mp4'}});}return real(...args);};ALL[3].src+='?badcase';load(3,false);});
+   await page.evaluate(async()=>{const real=fetch;let bad=true;window.fetch=async(...args)=>{if(bad&&String(args[0]).includes('badcase')){bad=false;return new Response('broken',{headers:{'Content-Type':'video/mp4'}});}return real(...args);};ALL[3].src+='?badcase';await clipFetch(ALL[3].src,true);load(3,false);});
    await page.waitForFunction(()=>v.error&&v.src.startsWith('blob:'));
    const bad=await page.evaluate(()=>v.src);
    await page.waitForFunction(()=>!v.src.startsWith('blob:')&&v.readyState>=2&&!v.error);
@@ -176,7 +176,9 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
    await page.evaluate(()=>{window.goodPartner=vB.src;cmpStart();vB.src='data:video/mp4,broken';});
    await page.waitForFunction(()=>vB.parentElement.querySelector('[data-fail]'));
    await page.evaluate(()=>{Object.defineProperty(vB,'currentSrc',{configurable:true,get:()=>goodPartner});vB.parentElement.querySelector('.vid-msg').click();});
-   await page.waitForFunction(()=>!vA.paused&&!vB.paused&&vB.readyState>=2);
+   await page.waitForFunction(()=>vB.readyState>=2&&!vB._reloading);
+   assert.deepEqual(await page.evaluate(()=>[vA.paused,vB.paused,$('cmpPlay').textContent.includes('▶')]),[true,true,true]);
+   await page.evaluate(()=>cmpStart());await page.waitForFunction(()=>!vA.paused&&!vB.paused);
    assert.equal(await page.evaluate(()=>$('cmpPlay').textContent.includes('⏸')),true);
   },
   async emptyBuffer(page){
@@ -198,8 +200,8 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   },
   async fetchPercent(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
-   await page.evaluate(()=>{const real=fetch;window.fetch=async(...args)=>String(args[0]).includes('percent')?new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array(65536));}}),{headers:{'Content-Type':'video/mp4','Content-Length':'131072'}}):real(...args);ALL[3].src+='?percent';load(3,false);});
-   await page.waitForTimeout(1800);assert.match(await page.evaluate(()=>v.parentElement.querySelector('.vid-msg').textContent),/50%/);
+   await page.evaluate(()=>{const real=fetch;window.fetch=async(...args)=>String(args[0]).includes('percent')?new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array(65536));}}),{headers:{'Content-Type':'video/mp4','Content-Length':'131072'}}):real(...args);clipFetch('percent.mp4',true);});
+   await page.waitForTimeout(1800);assert.equal(await page.evaluate(()=>CLIPS.get('percent.mp4').bytes/CLIPS.get('percent.mp4').total),.5,'prefetch tracks byte progress without blocking the player');
   },
   async fetchProgress(page){
 

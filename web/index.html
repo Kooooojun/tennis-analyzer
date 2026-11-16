@@ -44,6 +44,7 @@ main.wideplayer{grid-template-columns:minmax(0,1fr)}  /* landscape clip: player 
 .stage video{object-fit:contain}
 .pose-msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.6);color:#fff;font:600 13px/1.2 -apple-system,'PingFang TC',sans-serif;padding:6px 10px;border-radius:6px;pointer-events:none;white-space:nowrap}
 .vid-msg{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);background:rgba(0,0,0,.7);color:#fff;border:0;font:600 13px/1.2 -apple-system,'PingFang TC',sans-serif;padding:8px 12px;border-radius:6px;pointer-events:none;white-space:nowrap}
+.stage:has(.vid-msg:not([hidden])) canvas{visibility:hidden}
 .vid-msg[data-fail]{pointer-events:auto;cursor:pointer;text-decoration:underline}
 .badge{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.6);color:#fff;font:600 12px/1 ui-monospace,Menlo,monospace;padding:6px 8px;border-radius:6px}
 .phase-badge{position:absolute;right:10px;top:10px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:13px;padding:5px 10px;border-radius:999px;display:none}
@@ -778,12 +779,12 @@ const shown=vid=>!!vid.offsetParent&&vid._near!==false;
 function whenShown(vid,fn){ if(shown(vid)){ LATER.delete(vid); fn(); } else LATER.set(vid,fn); }
 const NEAR=new IntersectionObserver(es=>{ for(const e of es){ const vid=e.target; vid._near=e.isIntersecting; if(LATER.has(vid)&&shown(vid)){ const fn=LATER.get(vid); LATER.delete(vid); fn(); } } },{rootMargin:"100px"});
 for(const vid of [$("vA"),$("vB")]){ vid._near=false; NEAR.observe(vid); }
-// Keep complete clips, not the browser's partial media cache. Pending requests are shared with foreground loads.
+// Cache complete neighbor preloads; a cache miss streams immediately through the native player.
 const CLIPS=new Map(), CLIP_LIMIT=Math.min(window.CLIP_CACHE_LIMIT||Infinity,(matchMedia("(max-width:820px)").matches||navigator.deviceMemory<=4?30:80)*1024*1024);
 const retiredClips=new Map();
 function releaseClips(){ for(const [url] of retiredClips) if(!players.some(x=>x.src===url)){ URL.revokeObjectURL(url); retiredClips.delete(url); } }
 const players=[v,$("vA"),$("vB")];
-let prefetch=null, prefetchRun=0;
+let prefetch=null, prefetchRun=0, prefetchFor=null;
 function trimClips(extra=0){
   if(extra>CLIP_LIMIT) return false;
   let total=[...CLIPS.values()].reduce((n,e)=>n+e.size,0)+[...retiredClips.values()].reduce((a,b)=>a+b,0);
@@ -799,7 +800,8 @@ function clipFetch(key,background=false){
   e={size:0,url:null,bytes:0,total:0,lastByte:Date.now(),hidden:document.hidden,controller:new AbortController(),foreground:!background}; CLIPS.set(key,e);
   e.task=(async()=>{
     // Timers may resume before visibilitychange; retain the last visibility event as well.
-    const timeout=setInterval(()=>{ if(document.hidden||e.hidden) e.lastByte=Date.now(); else if(Date.now()-e.lastByte>=10000) e.controller.abort(); },500);
+    const started=Date.now();
+    const timeout=setInterval(()=>{ if(background&&Date.now()-started>=30000) e.controller.abort(); else if(document.hidden||e.hidden) e.lastByte=Date.now(); else if(Date.now()-e.lastByte>=10000) e.controller.abort(); },500);
     try{
       const response=await fetch(key,{signal:e.controller.signal,priority:background?"low":"high"});
       if(!response.ok) throw new Error("clip unavailable");
@@ -822,9 +824,12 @@ function clipFetch(key,background=false){
   })();
   return e.task;
 }
-function cancelPrefetch(){ ++prefetchRun; if(prefetch&&!prefetch.foreground&&!prefetch.url){ prefetch.controller.abort(); for(const [k,e] of CLIPS) if(e===prefetch) CLIPS.delete(k); } prefetch=null; }
+function cancelPrefetch(){ prefetchFor=null; ++prefetchRun; if(prefetch&&!prefetch.foreground&&!prefetch.url){ prefetch.controller.abort(); for(const [k,e] of CLIPS) if(e===prefetch) CLIPS.delete(k); } prefetch=null; }
+const fullyBuffered=vid=>vid.src.startsWith("blob:")||Number.isFinite(vid.duration)&&vid.buffered.length&&vid.buffered.end(vid.buffered.length-1)>=vid.duration-.05;
 async function preloadNeighbors(s){
+  if(document.hidden||navigator.connection?.saveData||/^(slow-2g|2g|3g)$/.test(navigator.connection?.effectiveType)||players.some(x=>shown(x)&&x.src&&!fullyBuffered(x))||prefetchFor===s) return;
   if(location.protocol==="file:"||!shown(v)||S!==s) return;
+  prefetchFor=s;
   const run=prefetchRun, list=visible(), i=Math.max(0,list.indexOf(s));
   if(!list.length) return;
   for(const next of [list[(i+1)%list.length],list[(i-1+list.length)%list.length]]){
@@ -836,23 +841,27 @@ async function preloadNeighbors(s){
 const canResume=vid=>vid._resume&&!!vid.offsetParent&&!document.hidden;
 function cancelAlign(vid){ if(vid._align) vid.removeEventListener("loadedmetadata",vid._align); vid._align=null; }
 function resetClip(vid,key){
-  cancelAlign(vid); vid._resetStall(); vid._clipKey=key; vid._loadToken={}; vid._fetching=false; vid._blocked=false; vid._badBlob=false;
+  cancelAlign(vid); vid._resetStall(); vid._clipKey=key; vid._loadToken={}; vid._fetching=false; vid._blocked=false; vid._badBlob=false; vid._pendingFrame=null;
   vid.pause(); vid.removeAttribute("src"); vid.load(); releaseClips(); trimClips();
   $(vid===v?"play":"cmpPlay").textContent=vid===v?"▶ 播放":"▶ 同步播放";
   for(const [k,e] of CLIPS) if(!e.url&&e.foreground&&!players.some(x=>x._clipKey===k)){ e.controller.abort(); CLIPS.delete(k); }
 }
-async function setClip(vid,s,start){
-  const key=clipSrc(s), token=vid._loadToken;
-  vid._fetching=true; vid._fetchSince=Date.now();
-  const src=location.protocol==="file:"?key:await clipFetch(key);
-  if(token!==vid._loadToken) return;
-  vid._fetching=false;
-  vid._align=()=>{ if(vid._want&&!canResume(vid)){ stopDead(vid); return; } if(vid._want){ if(vid===v) cancelAlign(vid); else { vid._reloading=vid.src; vid.pause(); cmpStart(); } return; } cancelAlign(vid); vid.pause(); start(); };
+// Priming is only for visible native streams on iOS; blob playback needs no download gesture.
+function prime(vid){ if(!document.hidden&&shown(vid)&&vid.src&&!vid.src.startsWith("blob:")&&!vid.readyState) playSafe(vid,vid.parentElement.querySelector(".badge")); }
+function setClip(vid,s,start){
+  const key=clipSrc(s), e=CLIPS.get(key);
+  vid._clip=s; vid._start=start; vid._fetching=false;
+  if(!e?.url) cancelPrefetch();
+  if(e?.url){ CLIPS.delete(key); CLIPS.set(key,e); }
+  vid._align=()=>{
+    if(vid._want&&!canResume(vid)){ stopDead(vid); return; }
+    cancelAlign(vid);
+    if(vid!==v&&vid._want) vid._reloading=vid.src;
+    vid.pause(); start();
+  };
   vid.addEventListener("loadedmetadata",vid._align);
-  vid.src=src; vid.playbackRate=vid===v?rate:cmpRate;
-  if(vid!==v&&vid._want) vid._reloading=src;
-  playSafe(vid,vid.parentElement.querySelector(".badge"));
-  if(vid===v&&src.startsWith("blob:")) preloadNeighbors(s);
+  vid.preload="auto"; vid.src=e?.url||key; vid.playbackRate=vid===v?rate:cmpRate;
+  prime(vid);
 }
 // Playback stalls and download inactivity use separate clocks; background time consumes neither retry budget.
 function stopDead(vid,preserve=false){
@@ -862,28 +871,33 @@ function stopDead(vid,preserve=false){
   $(vid===v?"play":"cmpPlay").textContent=vid===v?"▶ 播放":"▶ 同步播放";
 }
 function watchStall(vid){
-  const m=document.createElement("button"); m.type="button"; m.className="vid-msg"; m.hidden=true; vid.parentElement.append(m);
+  const m=document.createElement("button"); m.type="button"; m.className="vid-msg"; m.hidden=true; m.disabled=true; vid.parentElement.append(m);
   let sig="", since=0, wait=0, tries=0, errorSince=0, progress=0, autoRetries=0, retryAt=0, hiddenAt=0, offAt=0, mediaSince=0, mediaSig="";
   let restore=null, keep=null;
   vid._cancelResume=()=>{ vid._resume=false; if(keep) keep[1]=false; };
-  vid._resetStall=()=>{ if(restore) vid.removeEventListener("loadedmetadata",restore); restore=keep=null; vid._want=vid._resume=vid._reloading=false; tries=wait=since=errorSince=autoRetries=retryAt=offAt=mediaSince=0; delete m.dataset.fail; m.hidden=true; };
+  vid._resetStall=()=>{ if(restore) vid.removeEventListener("loadedmetadata",restore); restore=keep=null; vid._want=vid._resume=vid._reloading=false; tries=wait=since=errorSince=autoRetries=retryAt=offAt=mediaSince=0; delete m.dataset.fail; m.hidden=true; m.disabled=true; };
   const pausePair=()=>{ if(vid!==v&&vid._want) for(const x of [$("vA"),$("vB")]){ x._reloading=x.src; x.pause(); } };
   const reload=(tap=false,still=false)=>{
+    if(vid._fetching||!(vid.currentSrc||vid.src)){
+      if(vid._clip){ resetClip(vid,vid._clipKey); setClip(vid,vid._clip,vid._start); }
+      return;
+    }
     pausePair();
     if(tap) cancelAlign(vid); vid._loadToken={}; tries++; since=Date.now(); wait=mediaSince=errorSince=0;
     const url=new URL(vid._badBlob?vid._clipKey:vid.currentSrc||vid.src,location.href).href; vid._badBlob=false;
-    const t=keep?keep[0]:vid.readyState?vid.currentTime:null; const want=!still&&(vid._resume||tap); if(vid!==v&&!want) stopDead(vid); keep=[t,want];
+    const t=(keep?keep[0]:vid.readyState?vid.currentTime:null)??(vid===v?((vid._pendingFrame??S.contact-48)+.5)/FPS:null); const want=!still&&(vid._resume||tap); if(vid!==v&&!want) stopDead(vid); keep=[t,want];
     if(restore) vid.removeEventListener("loadedmetadata",restore);
     vid._resume=vid._want=want;
+    if(vid===v) $("play").textContent=want?"⏸ 暫停":"▶ 播放";
     restore=()=>{ const go=canResume(vid); restore=keep=null; vid._reloading=false; if(vid.currentSrc!==new URL(url,location.href).href) return; if(t!=null) vid.currentTime=t;
       if(!go) stopDead(vid); else if(vid===v){ playSafe(v,$("badge")); $("play").textContent="⏸ 暫停"; tick(); } else cmpStart(); };
     vid.addEventListener("loadedmetadata",restore,{once:true});
-    vid._reloading=url; vid.src=url; releaseClips(); vid.playbackRate=vid===v?rate:cmpRate; playSafe(vid,vid.parentElement.querySelector(".badge"));
+    vid._reloading=url; vid.src=url; releaseClips(); vid.playbackRate=vid===v?rate:cmpRate; vid.load(); prime(vid);
   };
-  const retry=(tap=false,still=false)=>{ if(still) stopDead(vid); if(vid===v&&!still&&m.dataset.fail&&keep?.[1]) vid._want=vid._resume=true; delete m.dataset.fail; tries=0; retryAt=0; m.textContent="影片下載中…"; reload(tap,still); };
-  const fail=()=>{ keep=[keep?keep[0]:vid.readyState?vid.currentTime:null,!!vid._resume]; stopDead(vid,true); m.hidden=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; retryAt=autoRetries<3?Date.now()+15000*2**autoRetries:0; };
-  m.onclick=()=>{ retry(!m._still,!!m._still); m._still=false; };
-  const suspend=now=>{ since=wait=errorSince=mediaSince=0; if(!offAt) offAt=now; vid._cancelResume(); };
+  const retry=(tap=false,still=false)=>{ if(still) stopDead(vid); if(vid===v&&!still&&m.dataset.fail&&keep?.[1]) vid._want=vid._resume=true; delete m.dataset.fail; m.disabled=true; tries=0; retryAt=0; m.textContent="影片下載中…"; reload(tap,still); };
+  const fail=()=>{ keep=[keep?keep[0]:vid.readyState?vid.currentTime:null,!!vid._resume]; stopDead(vid,true); m.hidden=false; m.disabled=false; m.dataset.fail=1; m.textContent="影片載不到，按這裡重試"; retryAt=autoRetries<3?Date.now()+15000*2**autoRetries:0; };
+  m.onclick=()=>{ if(!m.dataset.fail) return; retry(vid===v,vid!==v); };
+  const suspend=now=>{ since=wait=errorSince=mediaSince=0; if(!offAt) offAt=now; if(vid._want||vid._resume) stopDead(vid); else vid._cancelResume(); };
   const resume=now=>{ if(offAt&&retryAt) retryAt+=now-offAt; offAt=0; };
   document.addEventListener("visibilitychange",()=>{
     since=wait=errorSince=mediaSince=0;
@@ -910,7 +924,7 @@ function watchStall(vid){
     resume(now);
     if(m.dataset.fail){ if(retryAt&&now>=retryAt){ autoRetries++; retry(false,vid!==v); } return; }
     if(vid._fetching){ if(now-vid._fetchSince>=1000){ const e=CLIPS.get(vid._clipKey); m.hidden=false; m.textContent="影片下載中…"+(e?.total?" "+Math.min(100,Math.floor(e.bytes/e.total*100))+"%":""); } return; }
-    if(!vid.currentSrc) return;
+    if(!vid.currentSrc&&!vid.src) return;
     if(vid.error){ if(!errorSince) errorSince=now; if(tries<1&&now-errorSince>=2000) reload(); else if(tries>=1) fail(); return; }
     errorSince=0;
     const need=!(vid._blocked&&!vid.readyState)&&(vid.readyState<1||vid.seeking||!vid.paused&&vid.readyState<3);
@@ -924,13 +938,19 @@ function watchStall(vid){
   },500);
 }
 [v,$("vA"),$("vB")].forEach(watchStall);
-document.addEventListener("visibilitychange",()=>{ for(const e of CLIPS.values()){ e.hidden=document.hidden; e.lastByte=Date.now(); } });
+document.addEventListener("visibilitychange",()=>{
+  for(const e of CLIPS.values()){ e.hidden=document.hidden; e.lastByte=Date.now(); }
+  if(document.hidden) cancelPrefetch(); else { players.forEach(prime); if(S) preloadNeighbors(S); }
+});
+for(const x of players){
+  x.addEventListener("playing",()=>{ if(document.hidden||!x._want){ x.pause(); return; } });
+  for(const event of ["progress","canplaythrough"]) x.addEventListener(event,()=>{ if(S) preloadNeighbors(S); });
+}
 for(const vid of [v,$("vA"),$("vB")]){
   vid.addEventListener("pause",()=>{ if(vid.paused&&!vid.error&&!vid._reloading){ if(vid!==v&&vid._want) stopDead(vid); else vid._want=vid._resume=false; } });
-  vid.addEventListener("loadstart",()=>{ if(vid._reloading&&vid.currentSrc!==vid._reloading) vid._reloading=false; });
 }
 function load(id, scroll){
-  const key=clipSrc(ALL[id]); if(CLIPS.has(key)) CLIPS.get(key).foreground=true; cancelPrefetch(); resetClip(v,key);
+  const key=clipSrc(ALL[id]); cancelPrefetch(); resetClip(v,key);
   S=ALL[id]; S._poseErr=false; N=S.n??S.frames.length; seek.max=N-1;  // n: frame count in data.js; older builds only have frames
   S.phases=[{f:S.contact-48,name:"準備"},...(S.prep!=null?[{f:S.contact-Math.round(S.prep*FPS),name:"引拍完成"}]:[]),{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}].sort((a,b)=>a.f-b.f);  // 引拍完成 can fall before 準備 or after 向前揮拍
   $("phases").innerHTML=""; for(const p of S.phases){ const b=document.createElement("button"); b.textContent=p.name; b.onclick=()=>goto(p.f); $("phases").append(b); }
@@ -960,7 +980,7 @@ function load(id, scroll){
   $("mElbow").textContent=arm?arm[0]:"–"; $("mElbow").style.color=arm?"var(--muted)":""; $("cElbow").textContent=arm?arm[1]:S.kind==="SV"?"發球：缺 3D 骨架或視角不夠，這拍沒有結論":"正手與雙手反拍不評手肘；手肘角度太不準，不顯示數字";
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage
   $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]); $("stage").parentElement.classList.toggle("wide", !!S.size && S.size[0]>S.size[1]); document.querySelector("main").classList.toggle("wideplayer", !!S.size && S.size[0]>S.size[1]);
-  const s=S, start=()=>{ if(S===s) goto(S.contact-48); };
+  const s=S, start=()=>{ if(S!==s) return; const want=canResume(v), frame=v._pendingFrame??S.contact-48; goto(frame); if(want){ v._want=v._resume=true; playSafe(v,$("badge")); $("play").textContent="⏸ 暫停"; } };
   whenShown(v,()=>setClip(v,s,start));
   render(Math.max(0,Math.min(N-1,S.contact-48)));  // the new stroke's frame now (its skeleton fetch starts here), not the last stroke's until the clip loads
   markList(); markStrips(); drawNotes();
@@ -969,7 +989,7 @@ function load(id, scroll){
 }
 const frameOf=t=>Math.max(0,Math.min(N-1,Math.floor(t*FPS+1e-3)));
 const relLabel=f=>{ const dt=(f-S.contact)/FPS; return dt===0?"擊球":(dt>0?"+":"")+dt.toFixed(2)+"s"; };
-function goto(f){ f=Math.max(0,Math.min(N-1,f)); hold(v); v.currentTime=(f+0.5)/FPS; render(f); }
+function goto(f){ f=Math.max(0,Math.min(N-1,f)); hold(v); v._pendingFrame=f; v.currentTime=(f+0.5)/FPS; render(f); }
 function drawChart(f){
   const c=$("chart"), {g,W,H}=fitCanvas(c); g.clearRect(0,0,W,H);
   const pad={l:30,r:6,t:8,b:18}; c._map=px=>Math.round((px-pad.l)/(W-pad.l-pad.r)*(N-1));
@@ -998,8 +1018,8 @@ function tick(){
 }
 function toggle(){ const dead=v.parentElement.querySelector(".vid-msg[data-fail]"); if(dead){ dead.click(); return; } if(v._want||!v.paused&&v.readyState) stopDead(v); else { v._want=v._resume=true; $("play").textContent="⏸ 暫停"; if(!v._fetching){ if(v.readyState) cancelAlign(v); playSafe(v,$("badge")); } } }
 v.loop=true;
-v.addEventListener("playing",()=>{ $("play").textContent="⏸ 暫停"; tick(); });
-v.addEventListener("pause",()=>{$("play").textContent="▶ 播放";});
+v.addEventListener("playing",()=>{ if(v.paused||!v._want) return; $("play").textContent="⏸ 暫停"; tick(); });
+v.addEventListener("pause",()=>{if(v._want&&(v._reloading||v.error)) return; $("play").textContent="▶ 播放";});
 v.addEventListener("seeked",()=>{ if(v.paused) render(frameOf(v.currentTime)); });
 $("play").onclick=toggle; $("prev").onclick=()=>goto(cur-1); $("next").onclick=()=>goto(cur+1);
 seek.oninput=()=>goto(+seek.value);
@@ -1034,7 +1054,7 @@ function cmpLoad(a,b){
   resetClip(vA,clipSrc(a)); resetClip(vB,clipSrc(b));
   A=a; B=b; $("selA").value=sKey(A); $("selB").value=sKey(B); $("capA").innerHTML=capFor(A); $("capB").innerHTML=capFor(B);
   [...$("presets").children].forEach(x=>x.classList.toggle("on",dayNo(...x._p.a)===A&&dayNo(...x._p.b)===B));
-  const go=()=>{ if(vA.readyState&&vB.readyState&&!vA._want&&!vB._want) cmpGoto(A.contact-48); };  // each clip stops itself first, so one that never loads can't leave the other looping
+  const go=()=>{ if(vA.readyState&&vB.readyState){ const want=canResume(vA)&&canResume(vB); cmpGoto(cmpCur); vA._reloading=vB._reloading=false; if(want) cmpStart(); } };  // each clip stops itself first, so one that never loads can't leave the other looping
   for(const [vid,s] of [[vA,A],[vB,B]]) whenShown(vid,()=>setClip(vid,s,go));
   cmpRender(Math.max(0,A.contact-48));  // the frame cmpGoto will land on, so the new skeleton never flashes at the old pair's time
 }
@@ -1054,7 +1074,7 @@ function cmpTick(){
 }
 vA.loop=vB.loop=true;
 for(const x of [v,vA,vB]) x.addEventListener("loadedmetadata",()=>{ x._blocked=false; });  // a tap lifted Low Power Mode's block; later loads show times again
-vA.addEventListener("playing",()=>{ $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
+vA.addEventListener("playing",()=>{ if(vA.paused||!vA._want) return; $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
 vA.addEventListener("pause",()=>{ if(!vA.paused||vA._want&&(vA._reloading||vA.error)) return; $("cmpPlay").textContent="▶ 同步播放"; });
 function cmpStart(){
   if([vA,vB].some(x=>x.parentElement.querySelector(".vid-msg[data-fail]"))){ stopDead(vA); return; }
@@ -1073,7 +1093,7 @@ function cmpStart(){
 }
 for(const vid of [vA,vB]) vid.addEventListener("seeked",()=>{ if(vA.paused) cmpRender(Math.floor(vA.currentTime*FPS+1e-3)); });
 $("cmpPlay").onclick=()=>{ const dead=[vA,vB].filter(x=>x.parentElement.querySelector(".vid-msg[data-fail]"));
-  if(dead.length){ for(const x of dead){ const m=x.parentElement.querySelector(".vid-msg"); m._still=true; m.click(); } return; }  // a side that gave up: play means retry it; both stay paused until the next tap so they start together
+  if(dead.length){ for(const x of dead){ x.parentElement.querySelector(".vid-msg").click(); } return; }  // a side that gave up: play means retry it; both stay paused until the next tap so they start together
   if(vA._want||!vA.paused&&vA.readyState) stopDead(vA); else cmpStart(); };
 $("cmpPrev").onclick=()=>cmpGoto(cmpCur-1); $("cmpNext").onclick=()=>cmpGoto(cmpCur+1); $("cmpContact").onclick=()=>cmpGoto(A.contact);
 cmpSeek.oninput=()=>cmpGoto(+cmpSeek.value);
