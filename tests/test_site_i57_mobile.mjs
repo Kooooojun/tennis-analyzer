@@ -81,7 +81,7 @@ function contrast(fg, bg) {
       const visH = Math.max(0, Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0));
       return {
         pos: getComputedStyle(p).position,
-        wide: p.classList.contains("wide"),
+        is169: !!(S.size && S.size[0] / S.size[1] >= 1.7),
         top: r.top,
         bottom: r.bottom,
         h: r.height,
@@ -96,12 +96,12 @@ function contrast(fg, bg) {
     assert.equal(cmpPort.pos, "sticky", `portrait .player must be sticky, got ${cmpPort.pos}`);
     assert(cmpPort.top >= -1 && cmpPort.bottom > 0 && cmpPort.visH > 0,
       `portrait .player must stay visible when scrolled to compare (top=${cmpPort.top}, bottom=${cmpPort.bottom})`);
-    if (cmpPort.wide) {
+    if (cmpPort.is169) {
       assert(cmpPort.h <= cmpPort.vh * 0.6,
         `portrait .player height at compare (${cmpPort.h.toFixed(1)}px = ${(cmpPort.ratio * 100).toFixed(1)}%) must be <= 60% of ${cmpPort.vh}px`);
     }
 
-    // Scroll down on stroke tab, check sticky .player <= 60% (for wide clips) and visible, then click 2nd stroke and verify scrollY != 0
+    // Scroll down on stroke tab, check sticky .player <= 60% (for 16:9 clips) and visible, then click 2nd stroke and verify scrollY != 0
     await page.evaluate(() => go(DAY_KEYS[0], "stroke"));
     await page.waitForTimeout(200);
     await page.evaluate(() => window.scrollTo(0, 120));
@@ -112,7 +112,7 @@ function contrast(fg, bg) {
       const visH = Math.max(0, Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0));
       return {
         pos: getComputedStyle(p).position,
-        wide: p.classList.contains("wide"),
+        is169: !!(S.size && S.size[0] / S.size[1] >= 1.7),
         top: r.top,
         bottom: r.bottom,
         h: r.height,
@@ -128,7 +128,7 @@ function contrast(fg, bg) {
     assert.equal(strokePort.pos, "sticky", `portrait .player on stroke tab must be sticky, got ${strokePort.pos}`);
     assert(strokePort.top >= -1 && strokePort.bottom > 0 && strokePort.visH > 0,
       `portrait .player must stay visible at stroke list (top=${strokePort.top}, bottom=${strokePort.bottom})`);
-    if (strokePort.wide) {
+    if (strokePort.is169) {
       assert(strokePort.h <= strokePort.vh * 0.6,
         `portrait .player height at stroke list (${strokePort.h.toFixed(1)}px = ${(strokePort.ratio * 100).toFixed(1)}%) must be <= 60% of ${strokePort.vh}px`);
     }
@@ -346,6 +346,7 @@ function contrast(fg, bg) {
           stW: st.width,
           stH: st.height,
           wide: document.querySelector(".player").classList.contains("wide"),
+          is169: !!(S.size && S.size[0] / S.size[1] >= 1.7),
           vh: window.innerHeight,
           ratio: p.height / window.innerHeight,
           ctlScrollW: ctl.scrollWidth,
@@ -365,7 +366,7 @@ function contrast(fg, bg) {
       if (spec.name === "iPhone 13") {
         console.log(`iPhone 13 portrait: .stage=${layout.stW.toFixed(1)}x${layout.stH.toFixed(1)}px, .player=${layout.pH.toFixed(1)}/${layout.vh}px (${(layout.ratio * 100).toFixed(1)}%)`);
       }
-      if (spec.maxPortraitRatio !== null && layout.wide) {
+      if (spec.maxPortraitRatio !== null && layout.is169) {
         assert(layout.ratio <= spec.maxPortraitRatio,
           `${spec.name}: .player height ${(layout.ratio * 100).toFixed(1)}% > ${(spec.maxPortraitRatio * 100)}%`);
       }
