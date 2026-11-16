@@ -74,6 +74,14 @@ pyv = venv_python(R)
 sp = subprocess.run([str(pyv), "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"], capture_output=True, text=True, check=True).stdout.strip()
 Path(sp, "parent_env.pth").write_text("\n".join(site.getsitepackages() + [site.getusersitepackages()]) + "\n", encoding="utf-8")
 subprocess.run([sys.executable, str(REPO / "tests" / "make_synth.py"), str(tmp / "syn"), "0.4", "960x540"], check=True)
+# Prep can have no first-pass candidates; exercise real windowed inference explicitly too.
+import numpy as np
+np.save(tmp / "windows.npy", np.array([[0, 1]], dtype=np.int64))
+subprocess.run([str(pyv), str(R / "tools" / "ball.py"), str(tmp / "syn" / "land.mp4"), str(tmp / "real-ball.npy"),
+                "--windows", str(tmp / "windows.npy")], check=True)
+real_ball = np.load(tmp / "real-ball.npy")
+assert real_ball.shape == (24, 3) and real_ball.dtype == np.float32
+assert np.isnan(real_ball[1:]).all()
 V = R / "videos" / "synth"; V.mkdir(parents=True)
 shutil.copy(tmp / "syn" / "land.mp4", V / "b.mp4"); shutil.copy(tmp / "syn" / "port.mp4", V / "A x.MOV")
 old = 1_600_000_000
@@ -149,7 +157,7 @@ assert prep("synth", "3").returncode == 0
 assert pose.stat().st_mtime_ns != t and (W / "b" / "people.txt").read_bytes() == b"3\n"
 # extra tracks from a larger run: people.txt already says 2, so pose.npy stays; prep itself drops tracks k >= 2
 import numpy as np
-for k in (1, 2): np.save(W / "b" / f"pose_t{k}.npy", np.zeros(1)); np.save(W / "b" / f"pose_world_t{k}.npy", np.zeros(1))
+for k in (1, 2): np.save(W / "b" / f"pose_t{k}.npy", np.load(pose)); np.save(W / "b" / f"pose_world_t{k}.npy", np.zeros(1))
 (W / "b" / "people.txt").write_bytes(b"2\n"); os.utime(W / "b" / "people.txt")
 t = pose.stat().st_mtime_ns
 assert prep("synth", "2").returncode == 0
@@ -177,6 +185,7 @@ for name in ("audio.f32", "audio_hp.f32"):
     audio = np.fromfile(D / name, dtype=np.float32)
     assert len(audio) == 6400 and not audio.any(), (name, audio.shape)
 assert np.load(D / "sounds.npy").shape == (0, 4) and np.load(D / "events.npy").shape == (0, 3)
+assert np.load(D / "ball.npy").shape == (24, 3) and np.isnan(np.load(D / "ball.npy")).all()
 assert not list(D.glob("*.part"))
 before = {p: p.stat().st_mtime_ns for p in D.iterdir() if p.name not in ALWAYS}
 assert prep("silent", "1").returncode == 0

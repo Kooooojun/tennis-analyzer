@@ -141,6 +141,19 @@ def pick(rows, hand, lag=LAG, slack=0, who=None, low=True, source_fps=FPS):
     return [(t - lag / FPS, pk, on) for t, pk, on, *_ in sorted(hits)]
 
 
+def ball_windows(rows, hand, who, n):
+    """第一輪候選估 lag 所需的完整影格範圍，合併為半開區間。"""
+    intervals = []
+    for t, *_ in pick(rows, hand, lag=0, slack=15, who=who, low=False):
+        start, stop = max(0, int(np.ceil(t * FPS - 29))), min(n, int(np.floor(t * FPS + 17)) + 1)
+        if start < stop: intervals.append((start, stop))
+    merged = []
+    for start, stop in sorted(intervals):
+        if merged and start <= merged[-1][1]: merged[-1][1] = max(merged[-1][1], stop)
+        else: merged.append([start, stop])
+    return np.array(merged, dtype=np.int64).reshape(-1, 2)
+
+
 if __name__ == "__main__":
     from platform_util import read_text, utf8_stdout
     utf8_stdout()
