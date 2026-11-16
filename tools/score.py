@@ -108,13 +108,15 @@ def score_group(strokes, show_open, kind="FH"):
         sc = None if kind not in cfg.get("abs_kinds", (kind,)) else lin(med, *cfg["lin"]) if "lin" in cfg else band(med, *cfg["band"]) if "band" in cfg else None
         out[m] = dict(median=_r(med, 2), spread=_r(sp, 2), n=len(vals), score=_r(sc), cons=_r(lin(sp, *cfg["cons"])) if "cons" in cfg else None, **_explain(cfg, len(vals), len(strokes), med, sp, enough, kind))
     tech = [x for m, x in out.items() if not METRICS[m].get("power")]
+    form_metrics = [m for m, x in out.items() if not METRICS[m].get("power") and x["score"] is not None]
     form = _mean([x["score"] for x in tech]); cons = _mean([x["cons"] for x in tech])
     power = _mean([x["score"] for m, x in out.items() if METRICS[m].get("power")])
     raw = None if form is None else form if cons is None else 0.75 * form + 0.25 * cons
     total = raw if raw is None or power is None else min(raw, power + POWER_MARGIN)  # no power data -> no cap (old sessions keep their scale)
     power_n = sum(any(_num(_value(s, m)) for m, x in out.items() if METRICS[m].get("power") and x["status"] == "ok") for s in strokes)  # cap is per group (docs/scoring.md §11); the web can show how many strokes fed it
     return dict(n=len(strokes), total=_r(total), form=_r(form), consistency=_r(cons), power=_r(power), power_n=power_n if kind in BASE_KINDS else None, uncapped=_r(raw),
-                capped=raw is not None and total < raw, metrics=out, knee_src=knee_src, score_version=SCORE_VERSION)
+                capped=raw is not None and total < raw, metrics=out, knee_src=knee_src, score_version=SCORE_VERSION,
+                form_metrics=form_metrics, form_n=len(form_metrics))
 
 
 def score_session(strokes, show_open):
