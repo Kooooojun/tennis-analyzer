@@ -139,10 +139,11 @@ function contrast(fg, bg) {
     const afterListClickScrollY = await page.evaluate(() => window.scrollY);
     assert(afterListClickScrollY > 0, `clicking 2nd stroke in list must not reset scrollY to 0 (got ${afterListClickScrollY})`);
 
-    // Scroll to #chart on stroke tab, click to jump -> main video currentTime changes and .player stays visible
+    // Scroll to #chart on stroke tab (positioned below sticky .player), click to jump -> main video currentTime changes and .player stays visible
     await page.evaluate(() => {
       const el = document.getElementById("chart");
-      const y = el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.5;
+      const pBottom = document.querySelector(".player").getBoundingClientRect().bottom;
+      const y = el.getBoundingClientRect().top + window.scrollY - pBottom - 24;
       window.scrollTo(0, Math.max(0, y));
     });
     await page.waitForTimeout(200);
