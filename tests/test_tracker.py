@@ -117,4 +117,21 @@ ids = t.step([det(0.2, 0.49, WHITE, 0.06), det(0.8, 0.51, WHITE, 0.06)])
 for i in range(1, 9):
     x = 0.2 + 0.08 * i
     assert t.step([det(x, 0.49, WHITE, 0.06), det(1 - x, 0.51, WHITE, 0.06)]) == ids, i
+
+# 有空槽且同色兩槽皆高成本時，仍保留接回較近槽的成本排序。
+t = Tracker(3)
+ids = t.step([det(0.2, 0.2, WHITE, 0.1), det(0.8, 0.8, WHITE)])
+t.step([])
+assert t.step([det(0.96, 0.82, (81, 0, 0), 0.22)]) == ids[1:2]
+
+# 缺一人時的近色小距離換位，位置權重不能蓋過足夠的色差。
+t = Tracker(3)
+ids = t.step([det(0.3, 0.5, (50, 0, 0)), det(0.41, 0.5, (26, 0, 0)), det(1.4, 0.7, WHITE)])
+assert t.step([det(0.41, 0.5, (50, 0, 0)), det(0.3, 0.5, (26, 0, 0))]) == ids[:2]
+
+# 首格偏色後漏一格，小幅深度尺度變化不能把原可接回者拆槽。
+t = Tracker(3)
+ids = t.step([det(0.2, 0.3, (40, 0, 0))])
+t.step([])
+assert t.step([det(0.26, 0.34, (65, 0, 0), 0.22)]) == ids
 print("ok")

@@ -29,10 +29,12 @@ class Tracker:
         depth = abs(d["pos"][1] - self.depth[k]) / max(d["scale"], self.scale[k], 0.03)
         size = abs(np.log(max(d["scale"], 0.03) / max(self.scale[k], 0.03)))
         # 連續運動優先；大跳躍可能是剪接，位置不能蓋過外觀與長期深度。
-        continuity = max(1 - dp, 0) if gap == 1 and color < 1 else 0
+        continuity = max(1 - dp, 0) * max(1 - color, 0) if gap == 1 else 0
         score = min(dp, 1) - continuity + 0.5 * (depth + size) + color
-        # 有空槽且外觀相近時，區域參照不能逼出新身分；同成本優先既有槽。
-        return min(score, self.NEW) if color < 0.5 and any(p is None for p in self.pos) else score
+        # 區域參照不能逼出原可接回的身分；微小遞增項保留封頂後的排序。
+        if (color < 0.5 or dp + color <= self.NEW) and any(p is None for p in self.pos):
+            return min(score, self.NEW) - 1e-6 / (1 + max(score, 0))
+        return score
 
     def step(self, dets):
         """dets: [{pos: (x, y) in frame heights, scale: torso length, color: Lab}] -> slot per detection, -1 = dropped."""
