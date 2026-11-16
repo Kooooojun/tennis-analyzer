@@ -21,7 +21,7 @@ function contrast(fg, bg) {
   return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
 }
 
-// 1. WebKit 390x844 portrait: scrolling to compare & stroke list leaves .player visible height <= 40% vh, no horizontal overflow;
+// 1. WebKit 390x844 portrait: scrolling to compare & stroke list leaves .player height <= 60% vh (for 16:9), no horizontal overflow;
 //    and WebKit 844x390 landscape keeps exact main layout dimensions.
 {
   const browser = await webkit.launch({ headless: true });
@@ -429,6 +429,59 @@ function contrast(fg, bg) {
         `${spec.name}: .vid-msg ${JSON.stringify(msgBox.m)} overflows .stage ${JSON.stringify(msgBox.st)}`
       );
 
+      await ctx.close();
+    }
+
+    // (e) iPhone 13 portrait: simultaneous .pose-msg and .vid-msg on both 16:9 and 9:16 stages must not overlap, stay inside .stage, and wrap <= 3 lines
+    {
+      const ctx = await browser.newContext({ ...devices["iPhone 13"] });
+      const page = await ctx.newPage();
+      await page.goto(URL, { waitUntil: "networkidle" });
+      await page.waitForSelector("body.ready");
+      await page.evaluate(() => go(DAY_KEYS[0], "video"));
+      await page.waitForFunction(() => S && v.readyState >= 2);
+
+      for (const mode of [{ label: "16:9", wide: true, ar: "16/9" }, { label: "9:16", wide: false, ar: "9/16" }]) {
+        const res = await page.evaluate(({ wide, ar }) => {
+          const player = document.querySelector(".player");
+          const stage = document.getElementById("stage");
+          const pm = stage.querySelector(".pose-msg");
+          const vm = stage.querySelector(".vid-msg");
+          player.classList.toggle("wide", wide);
+          stage.classList.toggle("wide", wide);
+          stage.style.aspectRatio = ar;
+          pm.textContent = "骨架資料載入中，請稍候…";
+          pm.hidden = false;
+          vm.textContent = "影片載入失敗（點此重試）";
+          vm.hidden = false;
+          vm.dataset.fail = "1";
+          const st = stage.getBoundingClientRect();
+          const pr = pm.getBoundingClientRect();
+          const vr = vm.getBoundingClientRect();
+          const pcs = getComputedStyle(pm);
+          const vcs = getComputedStyle(vm);
+          const maxH = cs => (parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3) * 3 + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 2;
+          return {
+            st: { left: st.left, right: st.right, top: st.top, bottom: st.bottom },
+            pr: { left: pr.left, right: pr.right, top: pr.top, bottom: pr.bottom, h: pr.height, maxH: maxH(pcs) },
+            vr: { left: vr.left, right: vr.right, top: vr.top, bottom: vr.bottom, h: vr.height, maxH: maxH(vcs), fontSize: parseFloat(vcs.fontSize) },
+          };
+        }, mode);
+        assert(res.vr.fontSize >= 12, `iPhone 13 ${mode.label}: .vid-msg fontSize ${res.vr.fontSize}px < 12px`);
+        for (const [name, box] of [[".pose-msg", res.pr], [".vid-msg", res.vr]]) {
+          assert(
+            box.left >= res.st.left - 0.5 && box.right <= res.st.right + 0.5 &&
+            box.top >= res.st.top - 0.5 && box.bottom <= res.st.bottom + 0.5,
+            `iPhone 13 ${mode.label}: ${name} ${JSON.stringify(box)} overflows .stage ${JSON.stringify(res.st)}`
+          );
+          assert(box.h <= box.maxH,
+            `iPhone 13 ${mode.label}: ${name} height ${box.h.toFixed(1)}px > 3-line max ${box.maxH.toFixed(1)}px`);
+        }
+        const disjoint =
+          res.pr.bottom <= res.vr.top + 0.5 || res.vr.bottom <= res.pr.top + 0.5 ||
+          res.pr.right <= res.vr.left + 0.5 || res.vr.right <= res.pr.left + 0.5;
+        assert(disjoint, `iPhone 13 ${mode.label}: .pose-msg ${JSON.stringify(res.pr)} overlaps .vid-msg ${JSON.stringify(res.vr)}`);
+      }
       await ctx.close();
     }
 
