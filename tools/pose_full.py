@@ -29,8 +29,10 @@ class Tracker:
         depth = abs(d["pos"][1] - self.depth[k]) / max(d["scale"], self.scale[k], 0.03)
         size = abs(np.log(max(d["scale"], 0.03) / max(self.scale[k], 0.03)))
         # 連續運動優先；大跳躍可能是剪接，位置不能蓋過外觀與長期深度。
-        continuity = max(1 - dp, 0) if gap == 1 else 0
-        return min(dp, 1) - continuity + 0.5 * (depth + size) + color
+        continuity = max(1 - dp, 0) if gap == 1 and color < 1 else 0
+        score = min(dp, 1) - continuity + 0.5 * (depth + size) + color
+        # 有空槽且外觀相近時，區域參照不能逼出新身分；同成本優先既有槽。
+        return min(score, self.NEW) if color < 0.5 and any(p is None for p in self.pos) else score
 
     def step(self, dets):
         """dets: [{pos: (x, y) in frame heights, scale: torso length, color: Lab}] -> slot per detection, -1 = dropped."""
@@ -54,7 +56,8 @@ class Tracker:
             d = dets[a]; out[a] = k
             if self.pos[k] is not None:
                 gap = self.f - self.last[k]; v = np.subtract(d["pos"], self.pos[k]) / gap
-                self.vel[k] = 0.5 * self.vel[k] + 0.5 * v if gap < 5 and np.hypot(*v) < max(d["scale"], 0.03) else np.zeros(2)
+                self.vel[k] = 0.5 * self.vel[k] + 0.5 * v if gap < 5 else np.zeros(2)
+                self.vel[k] *= min(1, max(d["scale"], 0.03) / max(np.hypot(*self.vel[k]), 0.03))
             self.pos[k] = d["pos"]; self.last[k] = self.f
             # 慢更新保留身分參照，避免短暫錯配迅速污染整個槽。
             self.col[k] = np.array(d["color"], float) if self.col[k] is None else 0.995 * self.col[k] + 0.005 * np.array(d["color"], float)

@@ -93,4 +93,28 @@ assert t.step([det(0.7, 0.6, WHITE)]) == [solo]
 t = Tracker(2)
 t.step([det(0.2, 0.5, WHITE), det(0.8, 0.5, WHITE)])
 assert sorted(t.step([det(0.8, 0.5, WHITE), det(0.2, 0.5, WHITE)])) == [0, 1]
+
+# 有空槽時，獨留者的深度、尺度或亮度小變化也不能拆槽。
+t = Tracker(4)
+[solo] = t.step([det(0.2, 0.6, WHITE)])
+assert t.step([det(0.7, 0.61, (94, 0, 0), 0.21)]) == [solo]
+
+# 離場後在不同深度回來，長期區域參照不能讓原本可接回的身分拆槽。
+t = Tracker(3)
+[solo] = t.step([det(0.2, 0.3, WHITE)])
+for _ in range(60): t.step([])
+assert t.step([det(0.2, 0.8, WHITE, 0.1)]) == [solo]
+
+# 缺一位時，不能以負的連續成本把不同外觀的人指到對方舊位置。
+t = Tracker(3)
+colors = ((65, 0, 0), (5, 0, 0), RED)
+ids = t.step([det(0.3, 0.5, colors[0]), det(0.55, 0.5, colors[1]), det(1.4, 0.7, colors[2])])
+assert t.step([det(0.55, 0.5, colors[0]), det(0.3, 0.5, colors[1])]) == ids[:2]
+
+# 速度超過一個軀幹時仍保留方向，不能直接清零而在交叉當格換號。
+t = Tracker(2)
+ids = t.step([det(0.2, 0.49, WHITE, 0.06), det(0.8, 0.51, WHITE, 0.06)])
+for i in range(1, 9):
+    x = 0.2 + 0.08 * i
+    assert t.step([det(x, 0.49, WHITE, 0.06), det(1 - x, 0.51, WHITE, 0.06)]) == ids, i
 print("ok")
