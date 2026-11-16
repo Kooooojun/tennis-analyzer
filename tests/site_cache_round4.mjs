@@ -34,7 +34,7 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
   async retryButton(page){
    await page.waitForFunction(()=>v.readyState>=2);await page.unroute('**/*.mp4*');
    const key=await page.evaluate(()=>S.src+'?retry-buttons');let broken=true;
-   await page.route('**/*retry-buttons',async route=>{if(broken)await route.fulfill({status:404,body:''});else {await new Promise(r=>setTimeout(r,1200));await route.continue();}});
+   await page.route('**/*retry-buttons*',async route=>{if(broken)await route.fulfill({status:404,body:''});else {await new Promise(r=>setTimeout(r,1200));await route.continue();}});
    await page.evaluate(key=>{ALL[S.id].src=key;load(S.id,false);},key);
    await page.waitForFunction(()=>v.parentElement.querySelector('[data-fail]'));broken=false;
    await page.evaluate(()=>v.parentElement.querySelector('.vid-msg').click());
