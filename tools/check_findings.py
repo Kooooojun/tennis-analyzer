@@ -74,7 +74,12 @@ def _change_errors(finding, scores, runs):
     """Check directional claims against the same score histories as trend.py."""
     text = finding.get("title", "") + "。" + finding.get("text", "")
     text = re.sub(r"(?:不能|無法|沒有|不足以|不代表|不算|不可)(?:判定|確認|說|視為|當作)?(?:確定)?(?:進退步|進步|退步|改善)", "", text)
-    clauses = [c for c in re.split(r"[。；，,！!?？\n]", text) if re.search(r"進步|退步|改善|變好|變差|更[好差穩]|比較[好差穩]|比.*穩|一致了", c)]
+    up, down = r"進步|改善|變好|(?:更|比較)(?:好|穩|一致)|比.*穩|一致了", r"退步|變差|(?:更|比較)差"
+    cross_session = re.search(r"前場|上場|上次|前次|之前|昨天|跨場|\d{1,2}/\d{1,2}", text)
+    drills = {c.get("drill") for c in finding.get("cite", []) if isinstance(c, dict) and c.get("drill") is not None}
+    clauses = [c for c in re.split(r"[。；，,！!?？\n]", text) if re.search(up + "|" + down, c)
+               and not re.search(r"下次|下一次|未來|建議|試著|希望|目標|請|先.*改善", c)
+               and not (not cross_session and len(drills) >= 2 and re.search(r"自拋|對打|高拋", c))]
     if not clauses: return []
     identities = {(c.get("player") or "me", c.get("kind")) for c in finding.get("cite", []) if isinstance(c, dict) and "kind" in c}
     if not identities: return ["進退步宣稱缺少球員與拍種的群組引用"]
@@ -106,6 +111,8 @@ def _change_errors(finding, scores, runs):
                 flag = flags.get(item)
                 if flag is None: errors.append(f"{name}沒有足夠的同版本、同機位誤差估計，不能宣稱進步或退步")
                 elif flag["flag"] == "在誤差內": errors.append(f"{name}變化在誤差內（差 {flag['diff']}，門檻 {flag['threshold']:.2f}），不能宣稱進步或退步")
+                elif re.search(up, clause) and flag["diff"] < 0 or re.search(down, clause) and flag["diff"] > 0:
+                    errors.append(f"{name}文字的進退步方向與實際差值 {flag['diff']} 相反")
     return errors
 
 

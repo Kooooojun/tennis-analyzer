@@ -89,4 +89,16 @@ assert errors('擊球時手腕高度（2D）更穩') == []
 # 真正超過門檻，既有數字核對與建議宣稱都可通過。
 a['groups'][0]['total']=3
 assert errors('總分進步') == []
+# 審查回歸：大變化也必須寫對方向；練習建議與同場比較不套跨場歷史閘門。
+assert errors('總分退步')
+a['groups'][0]['total']=9
+assert errors('總分進步')
+assert errors('總分退步') == []
+assert check(dict(findings=[dict(title='下次練習改善膝蓋彎曲',cite=cite)]),strokes,b,runs=[]) == []
+assert check(dict(findings=[dict(title='建議先改善膝蓋彎曲',cite=cite)]),strokes,b,runs=[]) == []
+within = [dict(s,drill='feed' if i<10 else 'rally',knee=128 if i<10 else 128+i%10*2) for i,s in enumerate(strokes)]
+finding = dict(title='這場自拋比對打更穩',cite=[dict(kind='FH',drill='feed',field='knee',stat='median',value=128),dict(kind='FH',drill='rally',field='knee',stat='median',value=137)])
+current = dict(b,groups=score.score_session(within,False))
+assert check(dict(findings=[finding]),within,current,runs=[]) == []
+assert check(dict(findings=[dict(finding,title='比前場更穩')]),within,current,runs=[])
 print('場內區間、差值門檻與建議核對測試通過')
