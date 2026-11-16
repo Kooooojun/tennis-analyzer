@@ -46,6 +46,7 @@ main.wideplayer{grid-template-columns:minmax(0,1fr)}  /* landscape clip: player 
 .vid-msg{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);background:rgba(0,0,0,.7);color:#fff;border:0;font:600 13px/1.2 -apple-system,'PingFang TC',sans-serif;padding:8px 12px;border-radius:6px;pointer-events:none;white-space:nowrap}
 .stage:has(.vid-msg:not([hidden])) canvas{visibility:hidden}
 .vid-msg[data-fail]{pointer-events:auto;cursor:pointer;text-decoration:underline}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0}
 .badge{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.6);color:#fff;font:600 12px/1 ui-monospace,Menlo,monospace;padding:6px 8px;border-radius:6px}
 .phase-badge{position:absolute;right:10px;top:10px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:13px;padding:5px 10px;border-radius:999px;display:none}
 .now{display:flex;align-items:center;gap:8px;margin-top:10px}
@@ -876,13 +877,24 @@ function stopDead(vid,preserve=false){
   $(vid===v?"play":"cmpPlay").textContent=vid===v?"▶ 播放":"▶ 同步播放";
 }
 function watchStall(vid){
-  const m=document.createElement("button"); m.type="button"; m.className="vid-msg"; m.tabIndex=0; m.setAttribute("aria-live","polite"); m.hidden=true; m.disabled=true; vid.parentElement.append(m);
-  const setMsg=(text,show=true)=>{ if(m.textContent!==text) m.textContent=text; m.hidden=!show; };
-  const hideMsg=()=>{ m.hidden=true; m.disabled=true; if(m.textContent) m.textContent=""; };
+  const m=document.createElement("button"); m.type="button"; m.className="vid-msg"; m.tabIndex=0; m.hidden=true; m.disabled=true;
+  const live=document.createElement("span"); live.className="sr-only vid-live"; live.setAttribute("role","status"); live.setAttribute("aria-live","polite");
+  vid.parentElement.append(m,live);
+  let loadingToken=null;
+  const setMsg=(text,announceText=text)=>{
+    if(m.textContent!==text) m.textContent=text;
+    m.hidden=false;
+    if(announceText==="影片下載中…"){
+      if(loadingToken===vid._loadToken) return;
+      loadingToken=vid._loadToken;
+    }
+    if(live.textContent!==announceText) live.textContent=announceText;
+  };
+  const hideMsg=()=>{ m.hidden=true; m.disabled=true; if(m.textContent) m.textContent=""; if(live.textContent) live.textContent=""; };
   let sig="", since=0, wait=0, tries=0, errorSince=0, progress=0, autoRetries=0, retryAt=0, hiddenAt=0, offAt=0, mediaSince=0, mediaSig="";
   let restore=null, keep=null, errorStatus=0;
   vid._cancelResume=()=>{ vid._resume=false; if(keep) keep[1]=false; };
-  vid._resetStall=()=>{ if(restore) vid.removeEventListener("loadedmetadata",restore); restore=keep=null; vid._want=vid._resume=vid._reloading=false; tries=wait=since=errorSince=errorStatus=autoRetries=retryAt=offAt=mediaSince=0; delete m.dataset.fail; hideMsg(); };
+  vid._resetStall=()=>{ if(restore) vid.removeEventListener("loadedmetadata",restore); restore=keep=null; loadingToken=null; vid._want=vid._resume=vid._reloading=false; tries=wait=since=errorSince=errorStatus=autoRetries=retryAt=offAt=mediaSince=0; delete m.dataset.fail; hideMsg(); };
   const pausePair=()=>{ if(vid!==v&&vid._want) cmpWait(); };
   const reload=(tap=false,still=false)=>{
     if(vid._fetching||!(vid.currentSrc||vid.src)){
@@ -908,7 +920,7 @@ function watchStall(vid){
     vid.addEventListener("loadedmetadata",restore,{once:true});
     vid._reloading=url; vid.src=url; releaseClips(); vid.playbackRate=vid===v?rate:cmpRate; vid.load(); prime(vid);
   };
-  const retry=(tap=false,still=false)=>{ if(still) stopDead(vid); if(vid===v&&!still&&m.dataset.fail&&keep?.[1]) vid._want=vid._resume=true; delete m.dataset.fail; m.disabled=true; tries=0; retryAt=0; setMsg("影片下載中…"); reload(tap,still); };
+  const retry=(tap=false,still=false)=>{ if(still) stopDead(vid); if(vid===v&&!still&&m.dataset.fail&&keep?.[1]) vid._want=vid._resume=true; delete m.dataset.fail; m.disabled=true; tries=0; retryAt=0; reload(tap,still); setMsg("影片下載中…"); };
   const fail=()=>{ keep=[keep?keep[0]:vid.readyState?vid.currentTime:null,!!vid._resume]; stopDead(vid,true); m.disabled=false; m.dataset.fail=1; setMsg("影片載不到，按這裡重試"); retryAt=autoRetries<3?Date.now()+15000*2**autoRetries:0; };
   m.onclick=()=>{ if(!m.dataset.fail) return; retry(vid===v,vid!==v); };
   const suspend=now=>{ since=wait=errorSince=mediaSince=0; if(!offAt) offAt=now; if((vid._want||vid._resume)&&!(vid._edgeWait&&$("vA")._want)&&(!vid.readyState||vid._reloading||vid.paused)) stopDead(vid); else if(!vid._want) vid._cancelResume(); };
@@ -943,7 +955,7 @@ function watchStall(vid){
     if(document.hidden||hiddenAt||!vid.offsetParent){ suspend(now); return; }
     resume(now);
     if(m.dataset.fail){ if(retryAt&&now>=retryAt){ autoRetries++; retry(false,vid!==v); } return; }
-    if(vid._fetching){ if(now-vid._fetchSince>=1000){ const e=CLIPS.get(vid._clipKey); setMsg("影片下載中…"+(e?.total?" "+Math.min(100,Math.floor(e.bytes/e.total*100))+"%":"")); } return; }
+    if(vid._fetching){ if(now-vid._fetchSince>=1000){ const e=CLIPS.get(vid._clipKey); setMsg("影片下載中…"+(e?.total?" "+Math.min(100,Math.floor(e.bytes/e.total*100))+"%":""),"影片下載中…"); } return; }
     if(!vid.currentSrc&&!vid.src) return;
     if(vid.error){
       if(!vid._badBlob&&(vid.error.code===3||vid.error.code===4&&(errorStatus===404||errorStatus===410))){ fail(); return; }

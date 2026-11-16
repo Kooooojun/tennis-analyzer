@@ -1,4 +1,4 @@
-// Keyboard & screen-reader retry E2E (issue #55): real Tab/Enter, aria-live single announcement, disabled reset.
+// Keyboard & screen-reader retry E2E (issue #55): real Tab/Enter, sr-only live region announcements, disabled reset.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
@@ -18,13 +18,23 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));
    await page.waitForFunction(()=>!!S&&v.readyState>=3&&!v.seeking);
 
-   await page.evaluate(()=>{
-    window.__failTexts=[];
-    const m=v.parentElement.querySelector('.vid-msg');
+   const initLive=await page.evaluate(()=>{
+    const stage=v.parentElement;
+    const m=stage.querySelector('.vid-msg');
+    const live=stage.querySelector('.vid-live[role="status"][aria-live="polite"]');
+    if(!live) return {exists:false};
+    const cs=getComputedStyle(live);
+    window.__announcements=[];
     new MutationObserver(()=>{
-     if(m.textContent.includes('影片載不到')) window.__failTexts.push(m.textContent);
-    }).observe(m,{childList:true,characterData:true,subtree:true});
+     const t=live.textContent.trim();
+     if(t) window.__announcements.push(t);
+    }).observe(live,{childList:true,characterData:true,subtree:true});
+    return {exists:true,display:cs.display,hidden:live.hidden,btnAriaLive:m?.getAttribute('aria-live')};
    });
+   assert.equal(initLive.exists,true,'頁面載入時必須已有常駐 live region');
+   assert.notEqual(initLive.display,'none','live region 在第一次宣告前就不可為 display:none');
+   assert.equal(initLive.hidden,false,'live region 不可設定 hidden');
+   assert.equal(initLive.btnAriaLive,null,'重試按鈕本身不應再有 aria-live');
 
    let broken=true;
    await page.route('**/*kbd-retry*',async route=>{
@@ -42,10 +52,15 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
 
    const failInfo=await page.evaluate(()=>{
     const m=v.parentElement.querySelector('.vid-msg');
-    return {ariaLive:m.getAttribute('aria-live'),failCount:window.__failTexts.length,disabled:m.disabled};
+    const list=[...window.__announcements];
+    return {
+     failCount:list.filter(t=>t.includes('影片載不到')).length,
+     loadingCount:list.filter(t=>t.includes('影片下載中')).length,
+     disabled:m.disabled,
+    };
    });
-   assert.equal(failInfo.ariaLive,'polite','失敗提示必須設定 aria-live="polite"');
-   assert.equal(failInfo.failCount,1,'失敗提示 DOM 文字變化應只發生 1 次');
+   assert.equal(failInfo.failCount,1,'失敗提示「影片載不到」應只宣告 1 次');
+   assert(failInfo.loadingCount<=1,'「影片下載中…」最多只宣告 1 次');
    assert.equal(failInfo.disabled,false,'失敗時重試按鈕應為可操作狀態');
 
    broken=false;
@@ -66,15 +81,26 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
    await page.waitForTimeout(250);
    assert(await page.evaluate(t=>v.currentTime>t+0.05,t0),'按 Enter 重試後影片必須實際恢復播放');
 
+   const countAtRecovery=await page.evaluate(()=>window.__announcements.length);
    await page.waitForTimeout(1200);
    const after=await page.evaluate(()=>{
     const m=v.parentElement.querySelector('.vid-msg');
-    return {hidden:m.hidden,disabled:m.disabled,text:m.textContent,failCount:window.__failTexts.length};
+    const list=[...window.__announcements];
+    return {
+     hidden:m.hidden,
+     disabled:m.disabled,
+     text:m.textContent,
+     total:list.length,
+     failCount:list.filter(t=>t.includes('影片載不到')).length,
+     loadingCount:list.filter(t=>t.includes('影片下載中')).length,
+    };
    });
    assert.equal(after.hidden,true,'恢復播放後提示應隱藏');
    assert.equal(after.disabled,true,'恢復播放後 disabled 狀態必須重設為 true');
-   assert.equal(after.text,'','恢復播放後應清空提示文字');
-   assert.equal(after.failCount,1,'恢復播放後不應再重複觸發失敗提示');
+   assert.equal(after.text,'','恢復播放後應清空按鈕文字');
+   assert.equal(after.failCount,1,'失敗→重試→恢復流程中「影片載不到」應只 1 次');
+   assert(after.loadingCount<=1,'失敗→重試→恢復流程中「影片下載中…」最多 1 次');
+   assert.equal(after.total,countAtRecovery,'恢復後不應有新宣告');
 
    // Verify disabled is also reset when recovery happens via loadedmetadata/canplay without clicking retry.
    broken=true;
@@ -99,7 +125,7 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
    });
    assert.equal(autoRecovered.hidden,true,'自動恢復時應隱藏提示');
    assert.equal(autoRecovered.disabled,true,'自動恢復時 disabled 必須重設為 true');
-   assert.equal(autoRecovered.text,'','自動恢復時應清空提示文字');
+   assert.equal(autoRecovered.text,'','自動恢復時應清空按鈕文字');
 
    assert.deepEqual(errors,[]);
    results.push({engine,pass:true});
