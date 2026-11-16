@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # run with -I: the script's folder is not on sys.path
 from platform_util import unlink
+from proxy import video_filter, map_pose
 
 
 class Tracker:
@@ -296,7 +297,7 @@ def main():
         # wrist speed at contact dropped (hit recall 88% -> 79%). A second, single-person landmarker keeps frame-to-frame tracking;
         # its skeleton replaces the slot standing in the same place. Costs a second model pass (about 2x time).
         one = mk(1) if N > 1 else None
-        it = frames(["-i", src], W, H) if fps >= 50 else frames(["-i", source, "-vf", f"fps={fps!r},scale={W}:{H}"], W, H)
+        it = frames(["-i", src], W, H) if fps >= 50 else frames(["-i", source, "-vf", f"fps={fps!r},{video_filter(SW, SH)}"], W, H)
         for img in it:
             mi = img_of(img); ts = int(n * 1000 / fps); r = lm.detect_for_video(mi, ts)
             fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy(); fc = np.full((N, 3), np.nan)
@@ -346,7 +347,8 @@ def main():
     tr = [correct_lr(p, w, SW / SH if crop else W / H, fps) for p, w in tr]
     if fps < 50 or crop:  # back on the proxy's 60 fps frame numbers, which every later step indexes by; after merge(), so one
         # person moving between slots is joined first, and never across a frame where the track jumped to someone else
-        tr = [(to60(p, fps, n60, c), to60(w, fps, n60, c)) for p, w in tr for c in [jumps(p, SW / SH)]]; n = n60
+        tr = [(to60(p, fps, n60, c), to60(w, fps, n60, c)) for p, w in tr for c in [jumps(p, SW / SH if crop else W / H)]]; n = n60
+    if crop: tr = [(map_pose(p, SW, SH), w) for p, w in tr]
     tr = sorted([t for t in tr if (~np.isnan(t[0][:, 0, 0])).any()], key=lambda t: -(~np.isnan(t[0][:, 0, 0])).sum()) or tr[:1]
     out = Path(out)
     for old in out.parent.glob("pose*_t*.npy"):  # a re-run may find fewer people: stale extra tracks would be read as people
