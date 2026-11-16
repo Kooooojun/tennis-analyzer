@@ -34,7 +34,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   async byteCeiling(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
    await page.evaluate(()=>{resetClip(v,'ceiling.mp4');Object.defineProperty(v,'currentSrc',{configurable:true,value:'http://example.test/ceiling.mp4'});Object.defineProperty(v,'readyState',{configurable:true,value:0});window.reloads=0;Object.defineProperty(v,'src',{configurable:true,get:()=> 'http://example.test/ceiling.mp4',set:()=>reloads++});setInterval(()=>v.dispatchEvent(new Event('progress')),2000);});
-   await page.clock.runFor(32000);assert.equal(await page.evaluate(()=>reloads),0);assert.equal(await page.evaluate(()=>!!v.parentElement.querySelector('[data-fail]:not([disabled])')),true);
+   await page.clock.runFor(25000);assert.equal(await page.evaluate(()=>reloads),1);assert.equal(await page.evaluate(()=>!!v.parentElement.querySelector('[data-fail]:not([disabled])')),true);
   },
   async recoveredBudget(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
@@ -105,7 +105,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   async byteProgress(page){
    await page.evaluate(()=>{go(DAY_KEYS[0],'stroke');});await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
    await page.evaluate(()=>{resetClip(v,'progress.mp4');Object.defineProperty(v,'currentSrc',{configurable:true,value:'progress.mp4'});Object.defineProperty(v,'readyState',{configurable:true,value:0});v._fetching=false;window.reloads=0;Object.defineProperty(v,'src',{configurable:true,get:()=> 'progress.mp4',set:()=>window.reloads++});setInterval(()=>v.dispatchEvent(new Event('progress')),2000);});
-   await page.clock.runFor(12500);assert.equal(await page.evaluate(()=>reloads),0);
+   await page.clock.runFor(12500);assert.equal(await page.evaluate(()=>reloads),1,'只有 progress 事件、沒有媒體進展也必須重載');
   },
   async lru(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
