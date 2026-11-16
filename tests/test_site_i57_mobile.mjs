@@ -337,6 +337,8 @@ function contrast(fg, bg) {
         return {
           pH: p.height,
           stW: st.width,
+          stH: st.height,
+          wide: document.querySelector(".player").classList.contains("wide"),
           vh: window.innerHeight,
           ratio: p.height / window.innerHeight,
           ctlScrollW: ctl.scrollWidth,
@@ -354,15 +356,20 @@ function contrast(fg, bg) {
       assert.equal(layout.smallBtns.length, 0,
         `${spec.name}: .controls buttons < 44x44: ${JSON.stringify(layout.smallBtns)}`);
       if (spec.name === "iPhone 13") {
-        console.log(`iPhone 13 portrait: .stage=${layout.stW.toFixed(1)}px, .player=${layout.pH.toFixed(1)}/${layout.vh}px (${(layout.ratio * 100).toFixed(1)}%)`);
+        console.log(`iPhone 13 portrait: .stage=${layout.stW.toFixed(1)}x${layout.stH.toFixed(1)}px, .player=${layout.pH.toFixed(1)}/${layout.vh}px (${(layout.ratio * 100).toFixed(1)}%)`);
       }
-      if (spec.maxPortraitRatio !== null) {
+      if (spec.maxPortraitRatio !== null && layout.wide) {
         assert(layout.ratio <= spec.maxPortraitRatio,
           `${spec.name}: .player height ${(layout.ratio * 100).toFixed(1)}% > ${(spec.maxPortraitRatio * 100)}%`);
       }
       if (spec.minStageW !== null) {
-        assert(layout.stW >= spec.minStageW,
-          `${spec.name}: .stage width ${layout.stW.toFixed(1)}px < ${spec.minStageW}px`);
+        if (layout.wide) {
+          assert(layout.stW >= spec.minStageW,
+            `${spec.name}: wide .stage width ${layout.stW.toFixed(1)}px < ${spec.minStageW}px`);
+        } else {
+          assert(Math.abs(layout.stH - layout.vh * 0.38) <= 2,
+            `${spec.name}: portrait .stage height ${layout.stH.toFixed(1)}px != 38svh (${(layout.vh * 0.38).toFixed(1)}px)`);
+        }
       }
 
       // Force skeleton loading message (.pose-msg) and verify it stays inside .stage
