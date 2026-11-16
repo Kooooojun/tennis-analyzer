@@ -14,7 +14,7 @@ export async function fixture(ref=process.env.SITE_REF){
  execFileSync('ffmpeg',['-v','error','-f','lavfi','-i',`testsrc2=s=640x360:r=60:d=${seconds}`,'-an','-c:v','libx264','-threads','1','-preset','ultrafast','-pix_fmt','yuv420p','-movflags','+faststart',clip]);
  const slowClip=path.join(scratch,'slow.mp4');
  execFileSync('ffmpeg',['-v','error','-i',clip,'-c','copy',slowClip]);
- const slowMedia=fs.readFileSync(slowClip),deadlines=new Map();
+ const slowMedia=fs.readFileSync(slowClip),deadlines=new Map(),stops=new Map();
  const media=fs.readFileSync(clip),html=()=>ref?execFileSync('git',['show',`${ref}:web/index.html`]):fs.readFileSync(new URL('../web/index.html',import.meta.url));
  const strokes=Array.from({length:25},(_,id)=>({id,video:'synthetic',src:`sessions/synthetic/clips/${id}.mp4`,n:seconds*60,kind:id%3===0?'BH':'FH',drill:'rally',player:'me',clock:`0:${String(id).padStart(2,'0')}`,contact:90,knee:110+id,prep:.5,size:[640,360],open_min:30,contact_h:50}));
  const session={id:'synthetic',label:'合成場次',date:'2026-01-01',players:['me'],sub:'合成資料',camera:'側面',showOpen:true,findings:[],presets:[],strokes};
@@ -36,11 +36,13 @@ export async function fixture(ref=process.env.SITE_REF){
    res.writeHead(range?206:200,{'Content-Type':'video/mp4','Content-Length':end-start+1,'Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${start}-${end}/${body.length}`}:{})});
    if(req.method==='HEAD')res.end();
    else if(hanging){res.write(body.subarray(start,start+64));res.flushHeaders();}
-   else if(drip&&end-start+1>64){
+   else if(drip&&end-start+1>64&&!(url.searchParams.has('dripStop')&&url.searchParams.has('_retry'))){
     const key=file+url.searchParams.get('case');if(!deadlines.has(key))deadlines.set(key,performance.now()+drip*1000);
+    const stopMs=Number(url.searchParams.get('dripStop'));if(stopMs&&!stops.has(key))stops.set(key,performance.now()+stopMs);
     const remaining=Math.max(250,deadlines.get(key)-performance.now()),chunk=Math.max(1,Math.ceil((end-start+1)/remaining*250));let offset=start;
     res.flushHeaders();const timer=setInterval(()=>{
-     const next=Math.min(end+1,offset+chunk);res.write(body.subarray(offset,next));event.bytes+=next-offset;event.chunks++;offset=next;
+     if(stops.has(key)&&performance.now()>=stops.get(key)){clearInterval(timer);return;}
+     const next=Math.min(end+1,offset+chunk);res.write(body.subarray(offset,next));event.bytes+=next-offset;event.chunks++;event.lastByte=performance.now();offset=next;
      if(offset>end){clearInterval(timer);res.end();}
     },250);res.on('close',()=>clearInterval(timer));
    }

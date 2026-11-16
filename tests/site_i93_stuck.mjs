@@ -35,16 +35,20 @@ try{
     async slowByteProgress(page){
      const before=f.events.length;
      await page.evaluate(url=>{
-      window.slowProgress=0;window.slowMetadataMs=0;const started=performance.now();
-      v.addEventListener('progress',e=>{if(e.isTrusted)slowProgress++;});v.addEventListener('loadedmetadata',()=>slowMetadataMs=performance.now()-started,{once:true});
+      window.slowProgress=0;window.slowMetadataMs=0;window.slowStates=[];const started=performance.now();
+      const sample=type=>slowStates.push({ms:Math.round(performance.now()-started),type,readyState:v.readyState,buffered:v.buffered.length?v.buffered.end(v.buffered.length-1):0});
+      const timer=setInterval(()=>sample('sample'),500);
+      v.addEventListener('progress',e=>{sample(e.isTrusted?'trusted':'untrusted');if(e.isTrusted)slowProgress++;});
+      v.addEventListener('loadedmetadata',()=>{slowMetadataMs=performance.now()-started;clearInterval(timer);},{once:true});
       ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=20&case='+Date.now();load(4,false);
      },f.url);
      await page.waitForFunction(()=>v.readyState>=3&&!v.seeking,null,{timeout:27500});
-     const state=await page.evaluate(()=>({metadataMs:Math.round(slowMetadataMs),progress:slowProgress}));
+     const state=await page.evaluate(()=>({metadataMs:Math.round(slowMetadataMs),progress:slowProgress,states:slowStates}));
      const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4')),retries=requests.filter(e=>e.query.includes('_retry')).length;
-     assert(state.metadataMs>=18000,`metadata 過早：${state.metadataMs}`);assert(state.progress>0);assert(requests.reduce((n,e)=>n+e.chunks,0)>=40);
+     assert(state.metadataMs>=18000,`metadata 過早：${state.metadataMs}`);assert(requests.reduce((n,e)=>n+e.chunks,0)>=40);
+     if(engine!=='webkit')assert(state.progress>0,'Chromium 必須有可信任下載進度');
      console.log(JSON.stringify({measurement:{...state,retries,requests:requests.length,chunks:requests.map(e=>e.chunks)}}));
-     assert.equal(retries,0,'持續有原生下載進展時不得重載');return {...state,retries,requests:requests.length,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
+     assert.equal(retries,0,'持續下載時不得重載');return {...state,retries,requests:requests.length,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
     },
     async slowByteCeiling(page){
      const before=f.events.length,start=performance.now();
@@ -59,9 +63,41 @@ try{
      await page.waitForFunction(()=>!!v.parentElement.querySelector('.vid-msg[data-fail]:not([disabled])'),null,{timeout:12000});
      const elapsedMs=Math.round(performance.now()-start),progress=await page.evaluate(()=>ceilingProgress);
      const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4')),retries=requests.filter(e=>e.query.includes('_retry')).length;
-     assert(elapsedMs>=29500&&elapsedMs<=34000,`媒體上限應約 30 秒，實際 ${elapsedMs} ms`);assert(progress>=20,'必須持續有可信任下載進度');
+     assert(elapsedMs>=29500&&elapsedMs<=34000,`媒體上限應約 30 秒，實際 ${elapsedMs} ms`);
+     if(engine!=='webkit')assert(progress>=20,'Chromium 必須持續有可信任下載進度');
      assert(requests.some(e=>e.chunks>=100),'伺服器必須持續傳送真實資料');assert.equal(retries,0);
      return {elapsedMs,progress,retries,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
+    },
+    async slowByteStops(page){
+     const before=f.events.length;
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=45&dripStop=2000&case='+Date.now();load(4,false);},f.url);
+     await page.waitForFunction(()=>v.readyState>=3&&!v.seeking&&v.src.includes('_retry'),null,{timeout:22000});
+     const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4'));
+     const lastByte=Math.max(...requests.filter(e=>!e.query.includes('_retry')).map(e=>e.lastByte||0));
+     const retry=requests.find(e=>e.query.includes('_retry')),inactivityMs=Math.round(retry.time-lastByte);
+     console.log(JSON.stringify({measurement:{engine,case:'slowByteStops',inactivityMs,requests}}));
+     assert(requests.reduce((n,e)=>n+e.chunks,0)>=6,'必須先傳真實資料再停流');
+     assert(inactivityMs>=9000&&inactivityMs<=13000,`停止下載後應約 10 秒重試，實際 ${inactivityMs} ms`);
+     return {inactivityMs,retries:requests.filter(e=>e.query.includes('_retry')).length};
+    },
+    async byteProbeCancelled(page){
+     const requests=[],finished=new Set();
+     page.on('request',r=>{if(r.resourceType()==='fetch'&&r.url().includes('drip=45'))requests.push(r);});
+     for(const event of ['requestfinished','requestfailed'])page.on(event,r=>finished.add(r));
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=45&case='+Date.now();load(4,false);},f.url);
+     await page.waitForTimeout(3500);
+     assert.equal(requests.length,engine==='webkit'?1:0,'只有進度不可見時才探測');
+     await page.evaluate(()=>load(8,false));await page.waitForFunction(()=>S.id===8&&v.readyState>=3&&!v.seeking);
+     await page.waitForFunction(()=>S.id===8&&!!S.frames);
+     assert(requests.every(r=>finished.has(r)),'換拍必須取消探測請求');
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=45&case='+Date.now();load(4,false);},f.url);
+     await page.waitForTimeout(3500);
+     const cancelled=Promise.all(requests.filter(r=>!finished.has(r)).map(request=>page.waitForEvent('requestfailed',{predicate:r=>r===request,timeout:1500})));
+     await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+     await cancelled;
+     assert.equal(requests.length,engine==='webkit'?2:0);
+     assert(requests.every(r=>finished.has(r)),'隱藏分頁必須取消探測請求');
+     return {probes:requests.length,cancelled:requests.filter(r=>!!r.failure()).length};
     },
     async poseFailure(page){
      let count=0;await page.route('**/pose/4.js*',()=>{count++;});
@@ -185,7 +221,7 @@ try{
      await page.evaluate(()=>load(8,false));await failed;
     },
    })){
-    if(['rapidH2','slowByteProgress','slowByteCeiling'].includes(name)&&engine==='webkit')continue;
+    if(name==='rapidH2'&&engine==='webkit')continue;
     if(process.env.SITE_CASES&&!process.env.SITE_CASES.split(',').includes(name))continue;
     const context=await browser.newContext({ignoreHTTPSErrors:true,...(engine==='webkit'?devices['iPhone 13']:{})}),page=await context.newPage(),errors=[];
     page.on('pageerror',e=>errors.push(e.message));
