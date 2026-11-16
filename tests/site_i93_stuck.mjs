@@ -70,7 +70,7 @@ try{
     },
     async slowByteStops(page){
      const before=f.events.length;
-     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=45&dripStop=2000&case='+Date.now();load(4,false);},f.url);
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=45&dripStop=4000&case='+Date.now();load(4,false);},f.url);
      await page.waitForFunction(()=>v.readyState>=3&&!v.seeking&&v.src.includes('_retry'),null,{timeout:22000});
      const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4'));
      const lastByte=Math.max(...requests.filter(e=>!e.query.includes('_retry')).map(e=>e.lastByte||0));
@@ -85,13 +85,13 @@ try{
      page.on('request',r=>{if(r.resourceType()==='fetch'&&r.url().includes('drip=45'))requests.push(r);});
      for(const event of ['requestfinished','requestfailed'])page.on(event,r=>finished.add(r));
      await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=45&case='+Date.now();load(4,false);},f.url);
-     await page.waitForTimeout(3500);
+     await page.waitForTimeout(5500);
      assert.equal(requests.length,engine==='webkit'?1:0,'只有進度不可見時才探測');
      await page.evaluate(()=>load(8,false));await page.waitForFunction(()=>S.id===8&&v.readyState>=3&&!v.seeking);
      await page.waitForFunction(()=>S.id===8&&!!S.frames);
      assert(requests.every(r=>finished.has(r)),'換拍必須取消探測請求');
      await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=45&case='+Date.now();load(4,false);},f.url);
-     await page.waitForTimeout(3500);
+     await page.waitForTimeout(5500);
      const cancelled=Promise.all(requests.filter(r=>!finished.has(r)).map(request=>page.waitForEvent('requestfailed',{predicate:r=>r===request,timeout:1500})));
      await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
      await cancelled;

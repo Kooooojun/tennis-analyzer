@@ -1067,8 +1067,8 @@ function watchStall(vid){
     if(!wait){ wait=since=mediaSince=now; sig=k; mediaSig=media; }
     if(media!==mediaSig){ mediaSig=media; mediaSince=now; }
     if(k!==sig){ sig=k; since=now; }
-    // WebKit exposes neither progress nor buffered bytes before metadata; observe real bytes without replacing its native stream.
-    if(!byteProbe&&!vid.readyState&&now-since>=1000&&/^https?:/.test(vid.src)) probeBytes();
+    // Allow native Range negotiation to finish; WebKit exposes no byte progress before metadata.
+    if(!byteProbe&&!vid.readyState&&now-since>=3000&&/^https?:/.test(vid.src)) probeBytes();
     if(now-mediaSince>=30000){ fail(); return; }
     if(now-since>=10000){ tries<1?reload():fail(); return; }
     if(now-wait>=1000) setMsg("影片下載中…");
