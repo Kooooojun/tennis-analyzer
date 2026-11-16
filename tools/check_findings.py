@@ -76,7 +76,7 @@ def _cite(c, strokes, groups, show_open=False):
 def _change_errors(finding, scores, runs):
     """Check directional claims against the same score histories as trend.py."""
     text = finding.get("title", "") + "。" + finding.get("text", "")
-    up, down = r"進步|改善|變好|(?:更|比較)(?:好|穩|一致)|比[^不沒無未非]*穩|一致了", r"退步|變差|(?:更|比較)差|不穩"
+    up, down = r"進步|改善|變好|(?:更|比較)(?:好|穩|一致)|比[^不沒無未非]*穩|一致了", r"退步|變差|(?:更|比較)差|(?:變得?|更)不穩|比[^不沒無未非]*不穩"
     cross_session = r"前場|上場|上次|前次|之前|昨天|跨場|\d{1,2}/\d{1,2}"
     drills = {c.get("drill") for c in finding.get("cite", []) if isinstance(c, dict) and c.get("drill") is not None}
     clauses = [c.strip() for c in re.split(r"[。；，,：:！!?？\n]", text) if re.search(up + "|" + down, c)]

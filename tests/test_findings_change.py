@@ -35,6 +35,9 @@ cases = [
     ('一致性比前場不穩', up, 'consistency', True),
     ('一致性變不穩', down, 'consistency', False),
     ('一致性變不穩', up, 'consistency', True),
+    ('膝蓋不穩', [down[-1]], 'knee', False),
+    ('一致性不穩', [down[-1]], 'consistency', False),
+    ('一致性不穩', noise, 'consistency', False),
     *[(t, noise, 'total', False) for t in (
         '總分無法判定是否退步', '不能說膝蓋更穩', '沒有變好', '不算變差', '無法判定膝蓋改善')],
     *[(t, noise, 'total', True) for t in (
@@ -51,6 +54,7 @@ for text, runs, metric, direction, expected in [
     ('觀察結果', noise, 'total', 'up', True),
     ('觀察結果', noise, 'total', 'down', True),
     ('下次練習改善膝蓋彎曲', noise, 'total', 'up', True),
+    ('膝蓋不穩', noise, 'knee', 'up', True),
     ('觀察結果', down, 'total', 'down', False),
     ('觀察結果', down, 'total', 'up', True),
     ('觀察結果', up, 'consistency', 'up', False),
