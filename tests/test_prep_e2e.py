@@ -16,8 +16,8 @@ import prep as prep_module
 with tempfile.TemporaryDirectory() as d:
     root = Path(d); (root / "videos" / "ratios").mkdir(parents=True)
     (root / "videos" / "ratios" / "clip.mp4").touch()
-    for wh, warned in (((1920, 1080), False), ((1080, 1920), False), ((1904, 1080), False),
-                       ((1760, 1000), False), ((1616, 900), False), ((891, 1600), False), ((909, 1600), False),
+    for wh, warned in (((1920, 1080), False), ((1080, 1920), False), ((1088, 1920), False), ((720, 1280), False),
+                       ((1904, 1080), False), ((1760, 1000), False), ((1616, 900), False), ((891, 1600), False), ((909, 1600), False),
                        ((1888, 1080), True), ((640, 480), True), ((480, 640), True)):
         calls = []; err = io.StringIO()
         with patch.object(prep_module, "R", root), patch.object(prep_module, "need_ffmpeg"), \
@@ -123,16 +123,20 @@ world.write_bytes(saved_world)
 assert prep("synth", "2").returncode == 0
 assert not (W / "b" / "pose_world_missing.txt").exists()
 
-# pose from an older algorithm (other version, or no pose_method.txt as before versions existed) is redone, once
+# pose from an older algorithm (other version, or no pose_method.txt as before versions existed) is redone, once;
+# even when people.txt and pose_world.npy are also missing, pose re-runs first without stale-work or missing-3D warnings.
 pose = W / "b" / "pose.npy"
 for stale_method in ("1\n", None):
     pm = W / "b" / "pose_method.txt"
     if stale_method: pm.write_text(stale_method, encoding="utf-8")
     else: pm.unlink()
+    (W / "b" / "people.txt").unlink(missing_ok=True)
+    (W / "b" / "pose_world.npy").unlink(missing_ok=True)
     t = pose.stat().st_mtime_ns
     r = prep("synth", "2")
     assert r.returncode == 0 and pose.stat().st_mtime_ns != t and "重算" in r.stdout, stale_method
     assert "沒有 3D 姿態" not in r.stderr and "舊 work" not in r.stderr, r.stderr
+    assert (W / "b" / "pose_world.npy").is_file() and (W / "b" / "people.txt").read_bytes() == b"2\n"
     t = pose.stat().st_mtime_ns
     assert prep("synth", "2").returncode == 0 and pose.stat().st_mtime_ns == t
 
@@ -188,6 +192,34 @@ cands = (D.parent / "cands.json").read_bytes()
 r = candidates(np.zeros((0, 3)))
 assert r.returncode == 0 and "擊球沒算" not in r.stderr, r.stderr
 assert (D.parent / "cands.json").read_bytes() == cands
+
+# Non-empty cands.json on a synthetic 3s clip with a real-looking swing: adding head/tail events warns once and leaves cands.json byte-identical.
+subprocess.run([sys.executable, str(REPO / "tests" / "make_synth.py"), str(tmp / "syn3"), "3", "960x540"], check=True)
+HV = R / "videos" / "hit_edge"; HV.mkdir()
+HW = R / "work" / "hit_edge"; HC = HW / "clip"; HC.mkdir(parents=True)
+shutil.copy(tmp / "syn3" / "land.mp4", HV / "clip.mp4")
+shutil.copy(tmp / "syn3" / "land.mp4", HC / "proxy.mp4")
+(HW / "videos.json").write_text('["clip"]\n', encoding="utf-8")
+P3 = np.full((180, 33, 3), np.nan, dtype=np.float32)
+P3[:, 0] = [0.5, 0.2, 1.0]
+P3[:, [11, 12]] = [[0.45, 0.35, 1.0], [0.55, 0.35, 1.0]]
+P3[:, [23, 24]] = [[0.45, 0.55, 1.0], [0.55, 0.55, 1.0]]
+P3[:, [27, 28]] = [[0.45, 0.85, 1.0], [0.55, 0.85, 1.0]]
+P3[:, 15] = [0.40, 0.45, 1.0]
+P3[:, 16] = [0.60, 0.45, 1.0]
+for f in range(75, 106):
+    P3[f, 16, 0] = 0.35 + (f - 75) * 0.02
+def hit_candidates(e):
+    np.save(HC / "pose.npy", P3)
+    np.save(HC / "events.npy", e)
+    return subprocess.run([str(pyv), str(R / "tools" / "candidates.py"), "hit_edge"], capture_output=True, text=True, encoding="utf-8")
+r = hit_candidates(np.array([[1.5, -20, 12]]))
+assert r.returncode == 0 and "擊球沒算" not in r.stderr, (r.stdout, r.stderr)
+cands_hit = (HW / "cands.json").read_bytes()
+assert len(json.loads(cands_hit)) == 1, cands_hit
+r = hit_candidates(np.array([[0.1, -20, 12], [1.5, -20, 12], [2.9, -20, 12]]))
+assert r.returncode == 0 and r.stderr.count("2 個擊球沒算") == 1, (r.stdout, r.stderr)
+assert (HW / "cands.json").read_bytes() == cands_hit
 
 # a failing step stops prep with that step's exit code, through the re-run-under-venv hop too
 (R / "tools" / "hits.py").write_text("import sys; sys.exit(7)\n", encoding="utf-8")

@@ -1,9 +1,9 @@
-# annotate.py <session> [video] — whole practice video re-encoded with skeleton, stroke numbers, player names and a small live-stats panel
+# annotate.py <session> [video] [--panel auto|tl|tr|bl|br] — whole practice video re-encoded with skeleton, stroke numbers, player names and a small live-stats panel
 # -> web/sessions/<s>/annotated_<video>.mp4 (1280x720, 60 fps, original audio), ready to send to a friend. No video argument = every video in the session.
 # Needs work/<s>/<video>/pose.npy (python tools/run.py prep.py). Stroke numbers and figures come from web/sessions/<s>/strokes.json (final numbers shown on the page);
 # without it you still get the skeleton + live knee angle. Frames are streamed ffmpeg -> draw -> ffmpeg, so memory does not grow with video length.
 # Drawing constants (fonts, colours, knee colouring) mirror tools/highlights.py, which is a script and cannot be imported.
-import json, subprocess, sys, time, numpy as np, cv2
+import argparse, json, math, subprocess, sys, time, numpy as np, cv2
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from common import ROOT, FPS, session, work, web, videos, load, tracks, track_file
@@ -21,6 +21,8 @@ JOINTS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]
 KIND = {"FH": "正拍", "BH": "反拍", "SV": "發球", "OH": "高壓"}; DRILL = {"feed": "自拋", "rally": "對打", "high": "高球"}
 PRE, POST = 30, 150  # a stroke's tag shows from 0.5 s before contact to 2.5 s after
 MINVIS = 0.3
+CORNERS = ("tl", "tr", "bl", "br")
+PANEL_W, PANEL_MX, PANEL_MY = 320, 10, 8
 _fonts = {}
 def F(n): return _fonts.setdefault(n, ImageFont.truetype(FONT, n))
 
@@ -77,7 +79,37 @@ def active(S, n):
     return next((x for x in reversed(S) if x["a"] <= n <= x["c"] + POST), None)  # latest stroke whose window covers this frame
 
 
-def annotate(s, name, src):
+def pose_bbox(p, W, H):
+    """Pixel bounding box (x0, y0, x1, y1) of visible JOINTS in one frame, or None."""
+    if p is None: return None
+    pts = [(float(p[j, 0]) * W, float(p[j, 1]) * H) for j in JOINTS if p[j, 2] >= MINVIS]
+    if not pts: return None
+    xs, ys = zip(*pts)
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _rect_score(r, b):
+    """(distance, -overlap_area) between panel rect r and player bbox b; higher is farther."""
+    dx = max(0.0, r[0] - b[2], b[0] - r[2]); dy = max(0.0, r[1] - b[3], b[1] - r[3])
+    if dx or dy: return math.hypot(dx, dy), 0.0
+    ov = max(0.0, min(r[2], b[2]) - max(r[0], b[0])) * max(0.0, min(r[3], b[3]) - max(r[1], b[1]))
+    return 0.0, -ov
+
+
+def panel_pos(bboxes, W, H, pw, ph, pos="auto"):
+    """Top-left (x0, y0) for the stats panel: fixed corner or farthest from all player bboxes."""
+    xr, yb = max(0, W - pw - PANEL_MX), max(0, H - ph - PANEL_MY)
+    corners = {"tl": (min(PANEL_MX, xr), min(PANEL_MY, yb)), "tr": (xr, min(PANEL_MY, yb)),
+               "bl": (min(PANEL_MX, xr), yb), "br": (xr, yb)}
+    if pos != "auto":
+        if pos not in corners: raise ValueError(f"invalid panel position {pos!r}; expected 'auto' or {CORNERS}")
+        return corners[pos]
+    if not bboxes: return corners["tl"]
+    best = max(CORNERS, key=lambda c: (*min(_rect_score((*corners[c], corners[c][0] + pw, corners[c][1] + ph), b) for b in bboxes), -CORNERS.index(c)))
+    return corners[best]
+
+
+def annotate(s, name, src, panel="auto"):
     Wd = work(s) / name
     if not (Wd / "pose.npy").exists(): sys.exit(f"missing work/{s}/{name}/pose.npy; run python tools/run.py prep.py {s}")
     ks = tracks(Wd)  # every tracked person is drawn; a stroke's tag sits on the body of the track that swung (strokes.json "track")
@@ -98,9 +130,11 @@ def annotate(s, name, src):
         if len(b) < W * H * 3: break
         img = np.frombuffer(b, np.uint8).reshape(H, W, 3).copy()
         st = active(S, n)
+        bboxes = []
         for k in ks:
             pk = poses[k]; p = pk[n] if n < len(pk) and not np.isnan(pk[n][0, 0]) else None
             if p is None: continue
+            if (bb := pose_bbox(p, W, H)) is not None: bboxes.append(bb)
             P = lambda j: (int(p[j, 0] * W), int(p[j, 1] * H)); ok = lambda j: p[j, 2] >= MINVIS
             for a, c in EDGES:
                 if ok(a) and ok(c): cv2.line(img, P(a), P(c), (255, 140, 70) if a % 2 == 0 and c % 2 == 0 else (90, 180, 255), 3, cv2.LINE_AA)  # BGR: right side (even landmark ids) orange, left blue, like highlights.py
@@ -112,8 +146,9 @@ def annotate(s, name, src):
                 nx, ny = P(0); who = (f" {st['player']}" if st.get("player") else "")
                 draw_text(img, nx, max(ny - 44, 30), f"#{st['no']:02d}{who}", 30, INK, "ma")
         if st is not None:
-            head, lines = stroke_info(st); x, y = 20, 16
-            roi = img[8:16 + 40 + 30 * len(lines) + 4, 10:330]; cv2.addWeighted(np.full_like(roi, (24, 20, 18)), 0.6, roi, 0.4, 0, roi)  # dim only the panel, not a full-frame copy
+            head, lines = stroke_info(st); pw, ph = PANEL_W, 52 + 30 * len(lines)
+            x0, y0 = panel_pos(bboxes, W, H, pw, ph, panel); x, y = x0 + 10, y0 + 8
+            roi = img[y0:y0 + ph, x0:x0 + pw]; cv2.addWeighted(np.full_like(roi, (24, 20, 18)), 0.6, roi, 0.4, 0, roi)  # dim only the panel, not a full-frame copy
             draw_text(img, x, y, head, 30, INK)
             for i, (t, col) in enumerate(lines): draw_text(img, x, y + 40 + i * 30, t, 24, col)
             if abs(n - st["c"]) <= 3: draw_text(img, W // 2, H - 24, "擊球", 44, GOLD, "ms")
@@ -130,13 +165,22 @@ def annotate(s, name, src):
     print(f"{name}: {n} frames ({n / FPS:.1f}s video, pose {len(pose)} frames), {len(S)} strokes, {W}x{H}, {dt:.0f}s ({n / FPS / dt:.2f}x realtime), {out.stat().st_size / 1e6:.1f} MB -> {out}")
 
 
+def parse_args(argv=None):
+    ap = argparse.ArgumentParser(description="Render annotated practice video with skeleton and live-stats panel.")
+    ap.add_argument("session", help="session folder under videos/")
+    ap.add_argument("video", nargs="?", help="optional single video stem/filename")
+    ap.add_argument("--panel", choices=("auto", *CORNERS), default="auto", help="stats panel corner (default: auto, avoids players)")
+    return ap.parse_args(argv)
+
+
 if __name__ == "__main__":
-    s = session(); names = videos(s)
-    if len(sys.argv) > 2:
-        want = Path(sys.argv[2]).stem
+    args = parse_args()
+    s = session([sys.argv[0], args.session]); names = videos(s)
+    if args.video is not None:
+        want = Path(args.video).stem
         if want not in names: sys.exit(f"{want} not in work/{s}/videos.json: {names}")
         names = [want]
     for name in names:
         src = next(iter(sorted(p for p in (ROOT / "videos" / s).iterdir() if p.stem == name and p.suffix.lower() in (".mov", ".mp4", ".m4v"))), None)
         if src is None: sys.exit(f"no video named {name} in videos/{s}/")
-        annotate(s, name, src)
+        annotate(s, name, src, panel=args.panel)

@@ -3,7 +3,7 @@
 import sys, json, tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from assemble import cands_fp, read_labels, player_of, bulk_warning, BULK_N, rename_warning
+from assemble import cands_fp, read_labels, player_of, bulk_warning, BULK_N, rename_warning, kind_source
 
 d = Path(tempfile.mkdtemp()); C = [dict(v="a", t=1.0, player="black"), dict(v="a", t=2.0, player="black")]
 (d / "cands.json").write_text(json.dumps(C), encoding="utf-8", newline="\n")
@@ -40,4 +40,22 @@ assert rename_warning([rr(2, "FH")], Cr, {2: "p2"}, hands) is None  # 沒預填�
 assert rename_warning([rr(3, "x")], Cr, {3: "p2"}, hands) is None and rename_warning([rr(3, "SV")], Cr, {3: "p2"}, hands) is None  # x、SV 不警告
 assert rename_warning([rr(4, "FH")], Cr, {4: None}, hands) is None and rename_warning([rr(4, "FH")], Cr, {4: "p1"}, hands) is None  # 沒改名
 assert rename_warning([rr(0, "FH")], [dict(player="p2", hand="R")], {0: "p2"}, hands) is None  # @同名（沒改名）不警告，即使 cands 的手與現在不同
+
+# 拍種來源（prefill / user / unknown）與改名警告：只對 prefill 或 unknown（舊檔相容）警告，使用者改過的不警告
+assert kind_source(rr(0, "FH"), dict(prefill="FH")) == "prefill"
+assert kind_source(rr(0, "BH"), dict(prefill="FH")) == "user"
+assert kind_source(rr(0, "FH"), dict(prefill="?")) == "user"
+assert kind_source(rr(0, "FH"), dict(player="p1", hand="R")) == "unknown"  # 舊檔沒有 prefill 欄位
+assert kind_source(rr(0, "FH"), dict(prefill=None)) == "unknown"
+
+Cp = [
+    dict(player="p1", hand="R", prefill="FH"),  # 0: 預填 FH
+    dict(player="p1", hand="R", prefill="BH"),  # 1: 預填 BH
+    dict(player="p1", hand="R", prefill="?"),   # 2: 未預填（使用者自己填）
+    dict(player="p1", hand="R"),                # 3: 舊檔無 prefill 欄位
+]
+w2 = rename_warning([rr(0, "FH"), rr(1, "FH"), rr(2, "FH"), rr(3, "FH")], Cp, {0: "p2", 1: "p2", 2: "p2", 3: "p2"}, hands)
+assert w2 and "0, 3" in w2 and "1" not in w2 and "2" not in w2, w2  # 0（預填未改）與 3（舊檔未知）警告；1（使用者改過）與 2（使用者自填）不警告
+assert rename_warning([rr(0, "FH")], Cp, {0: "p3"}, hands) is None  # 預填未改但改名前後同手：不警告
+assert rename_warning([rr(0, "BH")], Cp, {0: "p2"}, hands) is None  # 使用者改過且改名前後異手：不警告
 print("assemble labels OK")
