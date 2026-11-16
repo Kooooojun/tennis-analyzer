@@ -20,7 +20,8 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
    else { front=await context.newPage();
    if(engine==='chromium'){for(const p of [page,front])await p._connection.toImpl(p).delegate._mainFrameSession._client.send('Emulation.setFocusEmulationEnabled',{enabled:false});await front.bringToFront();}
    else await page._connection.toImpl(page).delegate._pageProxySession.send('Emulation.setActiveAndFocused',{active:false}); }
-   await page.waitForFunction(()=>document.hidden);
+   // 背景頁會停止 rAF，須用計時輪詢觀察 visibility。
+   await page.waitForFunction(()=>document.hidden,null,{polling:100});
    const beforePolicy=await page.evaluate(()=>({calls:hideCalls.length,states:[v,vA,vB].map(x=>({paused:x.paused,want:x._want}))}));
    if(mode==='native-pause')await page.evaluate(()=>{for(const x of [v,vA,vB])HTMLMediaElement.prototype.pause.call(x);});
    await new Promise(r=>setTimeout(r,25000));
