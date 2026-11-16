@@ -302,4 +302,81 @@ function contrast(fg, bg) {
   }
 }
 
+// 5. WebKit 4 device profiles: controls wrap (no overflow/clipping), portrait height limits, and .vid-msg retry button fits inside .stage
+{
+  const browser = await webkit.launch({ headless: true });
+  try {
+    const specs = [
+      { name: "iPhone 13", maxPortraitRatio: 0.4 },
+      { name: "iPhone 13 landscape", maxPortraitRatio: null },
+      { name: "iPhone SE", maxPortraitRatio: 0.5 },
+      { name: "iPhone SE landscape", maxPortraitRatio: null },
+    ];
+    for (const spec of specs) {
+      const ctx = await browser.newContext({ ...devices[spec.name] });
+      const page = await ctx.newPage();
+      await page.goto(URL, { waitUntil: "networkidle" });
+      await page.waitForSelector("body.ready");
+      await page.evaluate(() => go(DAY_KEYS[0], "video"));
+      await page.waitForFunction(() => S && v.readyState >= 2);
+
+      const layout = await page.evaluate(() => {
+        const p = document.querySelector(".player").getBoundingClientRect();
+        const ctl = document.querySelector(".player .controls");
+        const btns = [...ctl.querySelectorAll("button")].filter(b => getComputedStyle(b).display !== "none" && b.offsetParent !== null);
+        const out = btns.map(b => {
+          const r = b.getBoundingClientRect();
+          return { id: b.id || b.textContent, left: r.left, right: r.right };
+        }).filter(x => x.left < -0.5 || x.right > window.innerWidth + 0.5);
+        const cyc = document.getElementById("speedCyc");
+        return {
+          pH: p.height,
+          vh: window.innerHeight,
+          ratio: p.height / window.innerHeight,
+          ctlScrollW: ctl.scrollWidth,
+          ctlClientW: ctl.clientWidth,
+          outOfView: out,
+          cycVisible: getComputedStyle(cyc).display !== "none" && cyc.offsetParent !== null,
+        };
+      });
+      assert(layout.cycVisible, `${spec.name}: #speedCyc must be visible`);
+      assert(layout.ctlScrollW <= layout.ctlClientW,
+        `${spec.name}: .controls scrollWidth (${layout.ctlScrollW}) > clientWidth (${layout.ctlClientW})`);
+      assert.equal(layout.outOfView.length, 0,
+        `${spec.name}: .controls buttons out of viewport: ${JSON.stringify(layout.outOfView)}`);
+      if (spec.maxPortraitRatio !== null) {
+        assert(layout.ratio <= spec.maxPortraitRatio,
+          `${spec.name}: .player height ${(layout.ratio * 100).toFixed(1)}% > ${(spec.maxPortraitRatio * 100)}%`);
+      }
+
+      // Force video load failure (404) and verify .vid-msg retry button stays completely inside .stage
+      await page.route("**/*.mp4*", route => route.fulfill({ status: 404, body: "" }));
+      await page.evaluate(() => {
+        S.src = S.src.split("?")[0] + "?fail_probe=" + Date.now();
+        load(S.id, false);
+      });
+      await page.waitForSelector("#stage .vid-msg[data-fail]:not([hidden])");
+      const msgBox = await page.evaluate(() => {
+        const st = document.getElementById("stage").getBoundingClientRect();
+        const m = document.querySelector("#stage .vid-msg").getBoundingClientRect();
+        return {
+          st: { left: st.left, right: st.right, top: st.top, bottom: st.bottom, w: st.width, h: st.height },
+          m: { left: m.left, right: m.right, top: m.top, bottom: m.bottom, w: m.width, h: m.height },
+        };
+      });
+      assert(
+        msgBox.m.left >= msgBox.st.left - 0.5 &&
+        msgBox.m.right <= msgBox.st.right + 0.5 &&
+        msgBox.m.top >= msgBox.st.top - 0.5 &&
+        msgBox.m.bottom <= msgBox.st.bottom + 0.5,
+        `${spec.name}: .vid-msg ${JSON.stringify(msgBox.m)} overflows .stage ${JSON.stringify(msgBox.st)}`
+      );
+
+      await ctx.close();
+    }
+  } finally {
+    await browser.close();
+  }
+}
+
 console.log("test_site_i57_mobile.mjs: all assertions passed");
