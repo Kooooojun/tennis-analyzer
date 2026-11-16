@@ -29,7 +29,7 @@ try{
    check(colors.low.length===0||colors.low.every(neutral),`${engine.name()}: 低可見度圈須中性或省略`);
    check(colors.high.length===1&&colors.high.every(neutral),`${engine.name()}: 高度圈不判好壞`);
    check(colors.band.length>0&&colors.band.every(neutral),`${engine.name()}: 影片參考帶須中性`);
-   await page.evaluate(()=>{ALL.forEach((s,i)=>{s.contact_h=.53;s.contact_fwd=.4;s.vis=i===0?.4:.9;});go(DAY,'charts');drawCharts();});
+   await page.evaluate(()=>{ALL.forEach((s,i)=>{s.contact_h=.53;s.contact_fwd=.4;s.vis=i===0?.4:.9;});MED=dayStats(mine());drawChecks();go(DAY,'charts');drawCharts();});
    check(await page.locator('#stripHeight .lbl').textContent().then(t=>t.includes('擊球時手腕高度（2D）')&&t.includes('五格中位數')),`${engine.name()}: 圖表名稱與五格定義`);
    check(await page.locator('#stripHeight circle[data-id="0"]').getAttribute('data-hollow')==='1',`${engine.name()}: 低可見度空心點`);
    const band=await page.locator('#contactPlot rect').getAttribute('fill');

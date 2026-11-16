@@ -250,7 +250,7 @@ assert r["status"] == "資料不足" and r["verified"] is False, r  # 1 pass + 5
 print("verified status tests ok")
 
 # #101：新版與舊版同機位仍不可比較，前端連線的 series_key 也不同。
-old = dict(_entry(run("a"), A), score_version=9, series_key=["c", A["knee_src"], 9])
+old = _entry(run("a"), dict(A, score_version=9))
 new = _entry(run("b"), A)
 old["items"] = {**old["items"], "total": 1}
 assert new["score_version"] == 10 and old["series_key"] != new["series_key"]
