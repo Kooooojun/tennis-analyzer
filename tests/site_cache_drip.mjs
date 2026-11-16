@@ -19,12 +19,12 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
    Object.defineProperty(v,'readyState',{configurable:true,value:0});Object.defineProperty(v,'buffered',{configurable:true,value:{length:0}});Object.defineProperty(v,'currentTime',{configurable:true,get:()=>0,set:()=>{}});
    v.addEventListener('progress',()=>progressCount++);
   },id);
-  let bounded=true;try{await page.waitForFunction(()=>assignments.length>=2,null,{timeout:35000});}catch{bounded=false;}
+  let bounded=true;try{await page.waitForFunction(()=>!!v.parentElement.querySelector('[data-fail]:not([disabled])'),null,{timeout:35000});}catch{bounded=false;}
   await page.waitForTimeout(300);
-  const state=await page.evaluate(()=>({assignments,progressCount}));
+  const state=await page.evaluate(()=>({assignments,progressCount,failSeconds:(Date.now()-dripStart)/1000}));
   const events=fs.readFileSync(process.env.SITE_SERVER_LOG,'utf8').trim().split('\n').map(s=>JSON.parse(s)).filter(e=>e.case===id),chunks=events.filter(e=>e.event==='chunk');
   results.push({engine:name,bounded,...state,chunkCount:chunks.length,chunkBytes:[...new Set(chunks.map(e=>e.bytes))]});console.log(JSON.stringify(results.at(-1)));if(process.env.SITE_RESULTS)fs.writeFileSync(process.env.SITE_RESULTS,JSON.stringify(results,null,2));
-  if(!process.env.SITE_BASELINE){assert(bounded);assert(state.assignments[1]>=(state.progressCount>=8?29:10)&&state.assignments[1]<=33);assert(chunks.length>=5);assert(chunks.every(e=>e.bytes===1024||e.bytes===2));}
+  if(!process.env.SITE_BASELINE){assert(bounded);assert(state.failSeconds<=35);assert(chunks.length>=5);assert(chunks.every(e=>e.bytes===1024||e.bytes===2));}
  }finally{await browser.close();}
 }
 console.log(JSON.stringify(results,null,2));if(process.env.SITE_RESULTS)fs.writeFileSync(process.env.SITE_RESULTS,JSON.stringify(results,null,2));

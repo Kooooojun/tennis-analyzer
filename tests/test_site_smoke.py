@@ -143,4 +143,14 @@ if os.environ.get("SITE_E2E_URL"):
 if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "site_cache_round4.mjs")], check=True,
                    env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-round4"))} if os.environ.get("SITE_RESULTS") else {})})
+
+if os.environ.get("SITE_E2E_URL"):
+    subprocess.run(["node", str(R / "tests" / "site_cache_edges.mjs")], check=True,
+                   env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-edges"))} if os.environ.get("SITE_RESULTS") else {})})
+
+if os.environ.get("SITE_E2E_URL"):
+    subprocess.run(["node", str(R / "tests" / "site_cache_compare_edges.mjs")], check=True,
+                   env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-compare-edges"))} if os.environ.get("SITE_RESULTS") else {})})
+
+if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "test_site_i57_css.mjs")], check=True)

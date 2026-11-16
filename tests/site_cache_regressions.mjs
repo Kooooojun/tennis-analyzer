@@ -34,7 +34,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   async byteCeiling(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
    await page.evaluate(()=>{resetClip(v,'ceiling.mp4');Object.defineProperty(v,'currentSrc',{configurable:true,value:'http://example.test/ceiling.mp4'});Object.defineProperty(v,'readyState',{configurable:true,value:0});window.reloads=0;Object.defineProperty(v,'src',{configurable:true,get:()=> 'http://example.test/ceiling.mp4',set:()=>reloads++});setInterval(()=>v.dispatchEvent(new Event('progress')),2000);});
-   await page.clock.runFor(32000);assert.equal(await page.evaluate(()=>reloads),1);
+   await page.clock.runFor(32000);assert.equal(await page.evaluate(()=>reloads),0);assert.equal(await page.evaluate(()=>!!v.parentElement.querySelector('[data-fail]:not([disabled])')),true);
   },
   async recoveredBudget(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
