@@ -199,7 +199,10 @@ assert "來源比例 4:3" in r.stderr
 D = R / "work" / "silent" / "clip"
 cap = cv2.VideoCapture(str(D / "proxy.mp4")); ok, frame = cap.read(); cap.release()
 assert ok and frame.shape[:2] == (540, 960)
-assert frame[:, :118].max() < 4 and frame[:, 842:].max() < 4, "4:3 的左右黑邊"
+# H.264 去塊濾波會讓邊界少量溢色；核對黑邊內部，並另外確認內容邊界。
+assert frame[:, :104].max() < 4 and frame[:, 856:].max() < 4, "4:3 的左右黑邊"
+content_x = np.flatnonzero(frame.max(axis=(0, 2)) > 128)
+assert (content_x[0], content_x[-1]) == (120, 839), "4:3 內容須位於中央 720 px"
 assert frame[:, 122:838].mean() > 50, "原片內容等比例縮到 720×540"
 assert (D / "proxy_filter.txt").read_text(encoding="utf-8").strip() == "scale=720:540,setsar=1,pad=960:540:120:0:black"
 for name in ("audio.f32", "audio_hp.f32"):
