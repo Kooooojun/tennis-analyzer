@@ -22,7 +22,7 @@ try{
     const d=DAYS[DAY_KEYS[0]],mk=(keys)=>({player:d.players[0],kind:'FH',n:20,total:7,form:6,consistency:10,capped:true,power:5.8,uncapped:7.5,knee_src:'knee',score_version:10,form_metrics:keys,form_n:keys.length,metrics:{prep:{score:6,cons:10,n:20,status:'ok'}},score_set:[['consistency',...keys,'total'].sort(),['prep']]});
     d.scores={groups:[mk(['prep']),{...mk(['knee','prep']),kind:'BH'}]};
     window.countDay=d.id;window.countGroup=d.scores.groups[0];
-    window.TREND=[{player:d.players[0],kind:'FH',history:[{...countGroup,session:d.id,date:'2026-01-01',camera:'側面',items:{total:7,consistency:10}},{...countGroup,session:d.id,date:'2026-01-02',camera:'側面',items:{total:8,consistency:10}}],flags:[{item:'total',flag:'進步',base:7,now:8,diff:1}]}];
+    window.TREND=[{player:d.players[0],kind:'FH',history:[{...countGroup,session:d.id,date:'2026-01-01',camera:'側面',comparable:true,items:{total:7,consistency:10}},{...countGroup,session:d.id,date:'2026-01-02',camera:'側面',comparable:true,items:{total:8,consistency:10}}],flags:[{item:'total',flag:'進步',base:7,now:8,diff:1}]}];
     go(d.id,'overview');route();drawOverview();
    });
    const single=page.locator('.score').first();
@@ -41,6 +41,11 @@ try{
    const dot=home.locator('svg circle[aria-label*="只根據 1 項：準備時間"]').first();
    check(await dot.count()>0&&await dot.getAttribute('fill')==='var(--muted)',`${tag}：走勢點灰色、讀屏名稱`);
    check((await home.locator('.score-notes').allTextContents()).join('').includes('只根據 1 項：準備時間'),`${tag}：走勢旁可見文字`);
+   await page.evaluate(()=>{const t=TREND[0];window.countHistory=t.history;t.history=[...countHistory,{...countHistory[1],date:'undated',comparable:false,form_metrics:['knee','prep'],form_n:2}];drawHome();});
+   check(await muted(home.locator('.flags .single-metric'))&&(await home.locator('.flags').ariaSnapshot()).includes('只根據 1 項：準備時間'),`${tag}：有日期單項旗標不受無日期兩項尾筆影響`);
+   await page.evaluate(()=>{const t=TREND[0];t.history=[...countHistory.map(r=>({...r,form_metrics:['knee','prep'],form_n:2})),{...countHistory[1],date:'undated',comparable:false}];drawHome();});
+   check(await home.locator('.flags .single-metric').count()===0&&!(await home.locator('.flags').textContent()).includes('只根據'),`${tag}：有日期兩項旗標不誤用無日期單項尾筆`);
+   await page.evaluate(()=>{TREND[0].history=countHistory;drawHome();});
    const changed=await page.evaluate(()=>{
     const t=TREND[0],a=t.history[0];t.history[1]={...a,date:'2026-01-02',form_metrics:['knee'],score_set:[['consistency','knee','total'],['prep']],items:{total:9,consistency:10}};t.flags=[];drawHome();
     return {lines:$('home').querySelectorAll('svg polyline').length,text:$('home').textContent,aria:[...$('home').querySelectorAll('svg circle')].map(c=>c.getAttribute('aria-label'))};
@@ -50,7 +55,7 @@ try{
    check(gap,`${tag}：跳過無總分的舊場次後仍比較相鄰有效點`);
    if(process.env.SITE_RESULTS)await page.screenshot({path:`${process.env.SITE_RESULTS}-${engine.name()}-${mobile?'mobile':'desktop'}-changed.png`,fullPage:true});
    await page.evaluate(()=>{go(countDay,'video');route();cmpLoad({...ALL[0],kind:'FH',player:countGroup.player},{...ALL[1],kind:'BH',player:countGroup.player});});
-   check((await page.locator('#capA').textContent()).includes('項目不同')&&(await page.locator('#capB').textContent()).includes('項目不同'),`${tag}：比較兩邊項目不同`);
+   check(!(await page.locator('#capA').textContent()).includes('項目不同')&&!(await page.locator('#capB').textContent()).includes('項目不同'),`${tag}：單拍比較不顯示總分採計差異提示`);
    await page.evaluate(()=>{delete countGroup.form_metrics;delete countGroup.form_n;delete countGroup.score_set;go(countDay,'overview');route();drawOverview();drawHome();});
    check(!(await page.locator('.score').first().textContent()).includes('只根據'),`${tag}：舊分數不亂標`);
    check(!await muted(page.locator('.score').first().locator('.total')),`${tag}：舊總分維持顏色`);

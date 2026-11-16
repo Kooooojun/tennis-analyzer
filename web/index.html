@@ -1201,7 +1201,6 @@ function drawPresets(){
 function cmpLoad(a,b){
   resetClip(vA,clipSrc(a)); resetClip(vB,clipSrc(b));
   A=a; B=b; $("selA").value=sKey(A); $("selB").value=sKey(B); $("capA").innerHTML=capFor(A); $("capB").innerHTML=capFor(B);
-  if(differentItems(scoreGroup(A),scoreGroup(B))) for(const id of ["capA","capB"]){ const note=document.createElement("span"); note.className="metric-note"; note.textContent="項目不同"; $(id).append(note); }
   cancelUnusedPoses();
   [...$("presets").children].forEach(x=>x.classList.toggle("on",dayNo(...x._p.a)===A&&dayNo(...x._p.b)===B));
   const go=()=>{ if(vA.readyState&&vB.readyState){ const want=canResume(vA)&&canResume(vB); cmpGoto(cmpCur); vA._reloading=vB._reloading=false; if(want) cmpStart(); } };  // each clip stops itself first, so one that never loads can't leave the other looping
@@ -1344,7 +1343,7 @@ function drawHome(){
       const sc=g.length?[...g].sort((a,b)=>(a.n<5)-(b.n<5)).map(g=>{const note=formNote(g);return `<span>${esc(NAMES[g.kind]||g.kind)} <b class="${note?"single-metric":""}">${g.total==null?"–":g.total.toFixed(1)}</b>${note?`<span class="metric-note">${esc(note)}</span>`:""}</span>`;}).join(" "):"未評分";
       return `<li><a href="#d${encodeURIComponent(d.id)}/overview" data-p="${esc(p)}"><b>${esc(d.label)}${d.slug?`<span class="slug">${esc(d.slug)}</span>`:""}</b><span class="sc">${sc}</span><span class="meta">${n} 拍 · ${esc(d.camera||"沒寫鏡頭")}</span></a></li>`;
     }).join("");
-    const trend=tr.map(t=>`<h3>${esc(NAMES[t.kind]||t.kind)}・分數走勢</h3>`+(t.history.length<2?`<p class="hint">只有 ${t.history.length} 場有評分，還不能看走勢。</p>`:`<svg class="spark" data-player="${esc(p)}" data-kind="${esc(t.kind)}"></svg>`)+flagList(t.flags,t.history.at(-1))).join("");
+    const trend=tr.map(t=>`<h3>${esc(NAMES[t.kind]||t.kind)}・分數走勢</h3>`+(t.history.length<2?`<p class="hint">只有 ${t.history.length} 場有評分，還不能看走勢。</p>`:`<svg class="spark" data-player="${esc(p)}" data-kind="${esc(t.kind)}"></svg>`)+flagList(t.flags,t.history.findLast(r=>r.comparable))).join("");
     return `<div class="card"><h2>${esc(PN(p))}</h2><p class="hint" style="margin:0 0 6px">${days.length} 場</p><ul class="sess">${rows}</ul>${trend||(LOAD_FAIL.includes("分數走勢")?"":`<p class="hint">還沒有評分趨勢（跑 tools/score.py 和 tools/trend.py）。</p>`)}</div>`;
   }).join("")+`</div><p class="caveat">分數走勢只比同一個鏡頭位置的場次（docs/scoring.md §6）。缺點改善 = 原本低於 6 分的項目進步；優點退步 = 原本 8 分以上的項目退步。</p>`;
   $("home").querySelectorAll("a[data-p]").forEach(a=>a.addEventListener("click",()=>{ pfilter=a.dataset.p; }));
