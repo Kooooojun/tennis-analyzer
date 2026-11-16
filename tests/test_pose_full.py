@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from pose_full import to60, crop_box, crop_to_full, distinct, real, keep, jumps, frames
+from pose_full import to60, crop_box, crop_to_full, distinct, real, keep, jumps, frames, sample
 import numpy as np
 
 # --- to60: source-fps rows -> 60 fps rows (failure 5, 6) ---
@@ -97,5 +97,26 @@ for bad in (b"", b"not a video at all" * 1000):
     finally: os.unlink(fn)
 try: list(frames(["-i", "/nonexistent/x.mp4"], 64, 36)); raise AssertionError("no error for a missing file")
 except SystemExit: pass
+
+# --- sample: the crop probe takes every step-th frame, ceil(n / step) of them, with options old ffmpeg (4.x) knows ---
+syn = ["-f", "lavfi", "-i", "testsrc=size=64x36:rate=60:duration=1"]  # 60 frames
+for step in (1, 7, 30, 61): assert len(list(frames(sample(syn, step), 64, 36))) == -(-60 // step), step
+assert not any(o in sample(["-i", "x"], 30) for o in ("-fps_mode", "-vsync"))
+
+# --- frames: a caller that stops early (break, exception) leaves no ffmpeg behind and is not an ffmpeg failure ---
+import subprocess
+procs = []; _Popen = subprocess.Popen
+class Rec(_Popen):
+    def __init__(self, *a, **k): super().__init__(*a, **k); procs.append(self)
+subprocess.Popen = Rec
+try:
+    g = frames(["-f", "lavfi", "-i", "testsrc=size=64x36:rate=60:duration=600"], 64, 36); next(g); g.close()  # 1 frame, then stop
+    assert procs and procs[-1].poll() is not None, "ffmpeg still running after the reader stopped"
+    try:
+        for f in frames(["-f", "lavfi", "-i", "testsrc=size=64x36:rate=60:duration=600"], 64, 36): raise KeyError("caller")
+    except KeyError: pass  # the caller's own error comes through, not SystemExit
+    assert procs[-1].poll() is not None
+finally:
+    subprocess.Popen = _Popen
 
 print("ok")

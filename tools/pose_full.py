@@ -142,7 +142,7 @@ def keep(a, prev, aspect):
     if real(a): return True
     if prev is None: return False
     (h, L), (q, M) = hip_torso(a, aspect), hip_torso(prev, aspect)
-    return bool(np.hypot(*(h - q)) < 0.5 * max(L, M))
+    return bool(np.hypot(*(h - q)) < 0.5 * np.fmax(L, M))
 
 
 def jumps(P, aspect, k=0.8):
@@ -165,11 +165,21 @@ def frames(cmd, W, H):
     import subprocess, tempfile
     with tempfile.TemporaryFile() as err:  # a file, not a pipe: ffmpeg cannot block on a full stderr while we read stdout
         p = subprocess.Popen(["ffmpeg", "-v", "error", *cmd, "-an", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE, stderr=err)
-        while len(b := p.stdout.read(W * H * 3)) == W * H * 3:  # one frame at a time: a 1080p clip never sits in memory
-            yield np.frombuffer(b, np.uint8).reshape(H, W, 3)
-        p.stdout.close()
-        if p.wait():
+        eof = False
+        try:
+            while len(b := p.stdout.read(W * H * 3)) == W * H * 3:  # one frame at a time: a 1080p clip never sits in memory
+                yield np.frombuffer(b, np.uint8).reshape(H, W, 3)
+            eof = True
+        finally:
+            if not eof: p.terminate()  # the caller stopped early (break, exception): not an ffmpeg failure
+            p.stdout.close(); p.wait()
+        if p.returncode:
             err.seek(0); sys.exit(f"ffmpeg failed ({p.returncode}) on {' '.join(cmd)}: {err.read().decode(errors='replace').strip()[-500:]}")
+
+
+def sample(inp, step):
+    """ffmpeg arguments for every step-th frame of input `inp`: framestep is in every ffmpeg (select needs -fps_mode, 5.1+)."""
+    return [*inp, "-vf", f"framestep={step}"]
 
 
 def main():
@@ -187,13 +197,13 @@ def main():
     if source:
         from prep import probe_rate  # ffprobe, as prep.py read it: size after rotation, exact average fps
         SW, SH, r = probe_rate(source)
-        if not r: print(f"warning: no frame rate for {source}; pose runs on the 60 fps proxy (repeated frames for a low-fps source)", file=sys.stderr)
-        elif r < 50: fps = r
+        if r and r < 50: fps = r
         probe = mk(N, "IMAGE"); step = max(1, n60 // 60)
-        found = [len(probe.detect(img_of(f)).pose_landmarks) for f in frames(["-i", src, "-vf", f"select=not(mod(n\\,{step}))", "-fps_mode", "passthrough"], W, H)]  # -vsync is gone in ffmpeg 9
+        found = [len(probe.detect(img_of(f)).pose_landmarks) for f in frames(sample(["-i", src], step), W, H)]
         probe.close()
         if not found: sys.exit(f"no frames decoded from {src}")
         crop = use_crop(found)
+        if not r: print(f"warning: no frame rate for {source}; " + ("crops decode it at 60 fps" if crop else "pose runs on the 60 fps proxy (repeated frames for a low-fps source)"), file=sys.stderr)
     # below 50 fps every decoded frame is taken as n / fps: the ffmpeg fps filter puts a variable-rate phone video on that
     # constant grid by its real timestamps (a no-op for constant-rate sources), as the proxy's fps=60 does
     print(f"mode: {'crop' if crop else 'full frame'}, {fps:.3f} fps", flush=True)
