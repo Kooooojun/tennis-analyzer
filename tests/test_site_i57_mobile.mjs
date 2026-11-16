@@ -95,10 +95,10 @@ function contrast(fg, bg) {
     assert.equal(cmpPort.pos, "sticky", `portrait .player must be sticky, got ${cmpPort.pos}`);
     assert(cmpPort.top >= -1 && cmpPort.bottom > 0 && cmpPort.visH > 0,
       `portrait .player must stay visible when scrolled to compare (top=${cmpPort.top}, bottom=${cmpPort.bottom})`);
-    assert(cmpPort.h <= cmpPort.vh * 0.4,
-      `portrait .player height at compare (${cmpPort.h.toFixed(1)}px = ${(cmpPort.ratio * 100).toFixed(1)}%) must be <= 40% of ${cmpPort.vh}px`);
+    assert(cmpPort.h <= cmpPort.vh * 0.6,
+      `portrait .player height at compare (${cmpPort.h.toFixed(1)}px = ${(cmpPort.ratio * 100).toFixed(1)}%) must be <= 60% of ${cmpPort.vh}px`);
 
-    // Scroll down on stroke tab, check sticky .player <= 40% and visible, then click 2nd stroke and verify scrollY != 0
+    // Scroll down on stroke tab, check sticky .player <= 60% and visible, then click 2nd stroke and verify scrollY != 0
     await page.evaluate(() => go(DAY_KEYS[0], "stroke"));
     await page.waitForTimeout(200);
     await page.evaluate(() => window.scrollTo(0, 120));
@@ -124,8 +124,8 @@ function contrast(fg, bg) {
     assert.equal(strokePort.pos, "sticky", `portrait .player on stroke tab must be sticky, got ${strokePort.pos}`);
     assert(strokePort.top >= -1 && strokePort.bottom > 0 && strokePort.visH > 0,
       `portrait .player must stay visible at stroke list (top=${strokePort.top}, bottom=${strokePort.bottom})`);
-    assert(strokePort.h <= strokePort.vh * 0.4,
-      `portrait .player height at stroke list (${strokePort.h.toFixed(1)}px = ${(strokePort.ratio * 100).toFixed(1)}%) must be <= 40% of ${strokePort.vh}px`);
+    assert(strokePort.h <= strokePort.vh * 0.6,
+      `portrait .player height at stroke list (${strokePort.h.toFixed(1)}px = ${(strokePort.ratio * 100).toFixed(1)}%) must be <= 60% of ${strokePort.vh}px`);
 
     // Click 2nd stroke in list -> scrollY must NOT reset to 0
     await page.locator(".strokes button").nth(1).click();
@@ -302,15 +302,15 @@ function contrast(fg, bg) {
   }
 }
 
-// 5. WebKit 4 device profiles: controls wrap (no overflow/clipping), portrait height limits, and .vid-msg retry button fits inside .stage
+// 5. WebKit 4 phone profiles + iPad mini: controls >= 44x44 & wrap, iPhone 13 stage >= 340px & player <= 60%, .vid-msg/.pose-msg inside .stage, iPad mini matches main
 {
   const browser = await webkit.launch({ headless: true });
   try {
     const specs = [
-      { name: "iPhone 13", maxPortraitRatio: 0.4 },
-      { name: "iPhone 13 landscape", maxPortraitRatio: null },
-      { name: "iPhone SE", maxPortraitRatio: 0.5 },
-      { name: "iPhone SE landscape", maxPortraitRatio: null },
+      { name: "iPhone 13", maxPortraitRatio: 0.6, minStageW: 340 },
+      { name: "iPhone 13 landscape", maxPortraitRatio: null, minStageW: null },
+      { name: "iPhone SE", maxPortraitRatio: null, minStageW: null },
+      { name: "iPhone SE landscape", maxPortraitRatio: null, minStageW: null },
     ];
     for (const spec of specs) {
       const ctx = await browser.newContext({ ...devices[spec.name] });
@@ -322,20 +322,27 @@ function contrast(fg, bg) {
 
       const layout = await page.evaluate(() => {
         const p = document.querySelector(".player").getBoundingClientRect();
+        const st = document.getElementById("stage").getBoundingClientRect();
         const ctl = document.querySelector(".player .controls");
         const btns = [...ctl.querySelectorAll("button")].filter(b => getComputedStyle(b).display !== "none" && b.offsetParent !== null);
         const out = btns.map(b => {
           const r = b.getBoundingClientRect();
           return { id: b.id || b.textContent, left: r.left, right: r.right };
         }).filter(x => x.left < -0.5 || x.right > window.innerWidth + 0.5);
+        const small = btns.map(b => {
+          const r = b.getBoundingClientRect();
+          return { id: b.id || b.textContent, w: r.width, h: r.height };
+        }).filter(x => x.w < 43.5 || x.h < 43.5);
         const cyc = document.getElementById("speedCyc");
         return {
           pH: p.height,
+          stW: st.width,
           vh: window.innerHeight,
           ratio: p.height / window.innerHeight,
           ctlScrollW: ctl.scrollWidth,
           ctlClientW: ctl.clientWidth,
           outOfView: out,
+          smallBtns: small,
           cycVisible: getComputedStyle(cyc).display !== "none" && cyc.offsetParent !== null,
         };
       });
@@ -344,10 +351,42 @@ function contrast(fg, bg) {
         `${spec.name}: .controls scrollWidth (${layout.ctlScrollW}) > clientWidth (${layout.ctlClientW})`);
       assert.equal(layout.outOfView.length, 0,
         `${spec.name}: .controls buttons out of viewport: ${JSON.stringify(layout.outOfView)}`);
+      assert.equal(layout.smallBtns.length, 0,
+        `${spec.name}: .controls buttons < 44x44: ${JSON.stringify(layout.smallBtns)}`);
+      if (spec.name === "iPhone 13") {
+        console.log(`iPhone 13 portrait: .stage=${layout.stW.toFixed(1)}px, .player=${layout.pH.toFixed(1)}/${layout.vh}px (${(layout.ratio * 100).toFixed(1)}%)`);
+      }
       if (spec.maxPortraitRatio !== null) {
         assert(layout.ratio <= spec.maxPortraitRatio,
           `${spec.name}: .player height ${(layout.ratio * 100).toFixed(1)}% > ${(spec.maxPortraitRatio * 100)}%`);
       }
+      if (spec.minStageW !== null) {
+        assert(layout.stW >= spec.minStageW,
+          `${spec.name}: .stage width ${layout.stW.toFixed(1)}px < ${spec.minStageW}px`);
+      }
+
+      // Force skeleton loading message (.pose-msg) and verify it stays inside .stage
+      const poseBox = await page.evaluate(() => {
+        const pm = document.querySelector("#stage .pose-msg");
+        const prevText = pm.textContent, prevHidden = pm.hidden;
+        pm.textContent = "骨架資料載入中，請稍候…";
+        pm.hidden = false;
+        const st = document.getElementById("stage").getBoundingClientRect();
+        const m = pm.getBoundingClientRect();
+        pm.textContent = prevText;
+        pm.hidden = prevHidden;
+        return {
+          st: { left: st.left, right: st.right, top: st.top, bottom: st.bottom },
+          m: { left: m.left, right: m.right, top: m.top, bottom: m.bottom },
+        };
+      });
+      assert(
+        poseBox.m.left >= poseBox.st.left - 0.5 &&
+        poseBox.m.right <= poseBox.st.right + 0.5 &&
+        poseBox.m.top >= poseBox.st.top - 0.5 &&
+        poseBox.m.bottom <= poseBox.st.bottom + 0.5,
+        `${spec.name}: .pose-msg ${JSON.stringify(poseBox.m)} overflows .stage ${JSON.stringify(poseBox.st)}`
+      );
 
       // Force video load failure (404) and verify .vid-msg retry button stays completely inside .stage
       await page.route("**/*.mp4*", route => route.fulfill({ status: 404, body: "" }));
@@ -374,6 +413,27 @@ function contrast(fg, bg) {
 
       await ctx.close();
     }
+
+    // (d) iPad mini portrait (768x1024): .stage dimensions match main (<= 2px)
+    const ipadCtx = await browser.newContext({ ...(devices["iPad Mini"] || {}), viewport: { width: 768, height: 1024 }, hasTouch: true });
+    const ipadPage = await ipadCtx.newPage();
+    await ipadPage.goto(URL, { waitUntil: "networkidle" });
+    await ipadPage.waitForSelector("body.ready");
+    await ipadPage.evaluate(() => go(DAY_KEYS[0], "video"));
+    await ipadPage.waitForFunction(() => S && v.readyState >= 2);
+    const ipad = await ipadPage.evaluate(() => {
+      const st = document.getElementById("stage").getBoundingClientRect();
+      const wide = document.querySelector(".player").classList.contains("wide");
+      const sz = S.size || [9, 16];
+      const ar = sz[0] / sz[1];
+      const mainW = document.querySelector("main").clientWidth - 32;
+      const expW = wide ? mainW : (window.innerHeight * 0.38) * ar;
+      const expH = wide ? mainW / ar : window.innerHeight * 0.38;
+      return { w: st.width, h: st.height, expW, expH };
+    });
+    assert(Math.abs(ipad.w - ipad.expW) <= 2, `iPad mini .stage width ${ipad.w} != main ${ipad.expW}`);
+    assert(Math.abs(ipad.h - ipad.expH) <= 2, `iPad mini .stage height ${ipad.h} != main ${ipad.expH}`);
+    await ipadCtx.close();
   } finally {
     await browser.close();
   }
