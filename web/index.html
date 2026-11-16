@@ -109,6 +109,9 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:10px 0 2px}
 .presets button.on{background:var(--accent);color:var(--accent-ink)}
 .duo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .duo .side{min-width:0;display:flex;flex-direction:column;gap:6px}
+.duo .pick{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.duo .pick select{flex:1 1 120px;min-width:0}
+.duo .pick button{flex:none;white-space:nowrap;font-size:12.5px;padding:6px 10px}
 .duo .stage{max-height:62vh;width:100%}
 .duo .stage video{opacity:0}
 .duo .cap{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
@@ -136,7 +139,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   header{padding-block:12px 4px} h1{font-size:18px}
   body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top, 0px);z-index:10;background:var(--bg)}
   main{grid-template-columns:minmax(0,1fr);gap:12px;padding-top:4px}
-  .player,.player.wide{position:sticky;top:env(safe-area-inset-top, 0px);z-index:5;width:100%;max-width:none;min-width:0;margin:0;background:var(--bg);padding:8px 0 6px;border-bottom:1px solid var(--line)}
+  .player,.player.wide{position:static;width:100%;max-width:none;min-width:0;margin:0;background:var(--bg);padding:8px 0 6px;border-bottom:1px solid var(--line)}
   .player .stage{width:auto;height:38vh;height:38svh;margin:0 auto;border-radius:10px;touch-action:pan-y}
   .player .stage.wide{width:100%;height:auto}
   .duo .stage{max-height:none;width:100%}
@@ -292,12 +295,18 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
       <div class="presets" id="presets"></div>
       <div class="duo">
         <div class="side">
-          <select id="selA" aria-label="左邊的擊球"></select>
+          <div class="pick">
+            <select id="selA" aria-label="左邊的擊球"></select>
+            <button type="button" id="useCurA" title="帶入目前播放器這一拍">帶入目前這一拍</button>
+          </div>
           <div class="stage"><video id="vA" playsinline muted preload="metadata"></video><canvas id="cvA"></canvas><div class="badge" id="badgeA">–</div><div class="pose-msg" hidden></div></div>
           <div class="cap" id="capA"></div>
         </div>
         <div class="side">
-          <select id="selB" aria-label="右邊的擊球"></select>
+          <div class="pick">
+            <select id="selB" aria-label="右邊的擊球"></select>
+            <button type="button" id="useCurB" title="帶入目前播放器這一拍">帶入目前這一拍</button>
+          </div>
           <div class="stage"><video id="vB" playsinline muted preload="metadata"></video><canvas id="cvB"></canvas><div class="badge" id="badgeB">–</div><div class="pose-msg" hidden></div></div>
           <div class="cap" id="capB"></div>
         </div>
@@ -1129,6 +1138,7 @@ cmpSeek.oninput=()=>cmpGoto(+cmpSeek.value);
 speedButtons($("cmpSpeeds"),()=>cmpRate,s=>{cmpRate=s;vA.playbackRate=vB.playbackRate=s;});
 fillSelect($("selA")); fillSelect($("selB"));
 $("selA").onchange=()=>cmpLoad(fromKey($("selA").value),B); $("selB").onchange=()=>cmpLoad(A,fromKey($("selB").value));
+$("useCurA").onclick=()=>{ if(S) cmpLoad(S,B); }; $("useCurB").onclick=()=>{ if(S) cmpLoad(A,S); };
 for(const c of [cvA,cvB]) c.addEventListener("click",()=>$("cmpPlay").click());
 
 addEventListener("resize",()=>{ if(S) render(cur); cmpRender(cmpCur); if(TAB==="charts"&&$("home").hidden) drawCharts(); });
