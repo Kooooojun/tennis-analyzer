@@ -123,6 +123,31 @@ assert group_claim('力量分退步','power') == []
 left['groups'][0].update(total=9,uncapped=9.1)
 right['groups'][0].update(total=6.5,uncapped=9.8)
 assert group_claim('未壓前總分進步','uncapped') == []
+# 合成分數的計分集合變更不能冒充技術進步；力量與未壓前總分同樣核對。
+changed_left,changed_right=[copy.deepcopy(left),copy.deepcopy(right)]
+changed_left['groups'][0]['metrics']['prep']['score']=None
+changed_left['groups'][0]['form_metrics']=['knee']
+changed_left['groups'][0]['form']=4
+changed_right['groups'][0]['form']=7
+assert check(dict(findings=[dict(title='技術分進步',cite=[dict(kind='FH',metric='form',value=7)])]),strokes,changed_right,runs=[changed_left,changed_right])
+for metric in ('power','uncapped'):
+    changed_left,changed_right=[copy.deepcopy(left),copy.deepcopy(right)]
+    changed_left['groups'][0][metric]=4
+    changed_right['groups'][0][metric]=7
+    changed_left['groups'][0]['metrics']['wrist_speed']=dict(score=4,cons=None)
+    changed_right['groups'][0]['metrics']['wrist_speed']=dict(score=4,cons=None)
+    changed_right['groups'][0]['metrics']['leg_load']=dict(score=10,cons=None)
+    if metric=='uncapped':
+        changed_left['groups'][0]['metrics']['prep']['score']=None
+        changed_left['groups'][0]['form_metrics']=['knee']
+    assert check(dict(findings=[dict(title='這個分數進步',cite=[dict(kind='FH',metric=metric,value=7)])]),strokes,changed_right,runs=[changed_left,changed_right])
+# 技術集合不受力量項目增減影響；未壓前總分仍要求一致性集合相同。
+changed_left,changed_right=[copy.deepcopy(left),copy.deepcopy(right)]
+changed_left['groups'][0]['metrics']['wrist_speed']=dict(score=None,cons=None)
+changed_right['groups'][0]['metrics']['wrist_speed']=dict(score=4,cons=None)
+assert check(dict(findings=[dict(title='技術分退步',cite=[dict(kind='FH',metric='form',value=8)])]),strokes,changed_right,runs=[changed_left,changed_right]) == []
+changed_left['groups'][0]['metrics']['contact_h']['cons']=None
+assert check(dict(findings=[dict(title='未壓前總分進步',cite=[dict(kind='FH',metric='uncapped',value=9.8)])]),strokes,changed_right,runs=[changed_left,changed_right])
 # 不具名宣稱只取同球員、拍種的引用；無效引用須回報而非拋例外。
 assert check(dict(findings=[dict(title='這個分數退步',cite=[dict(kind='FH',metric=1,value=8)])]),strokes,right,runs=[left,right])
 print('場內區間、差值門檻與建議核對測試通過')

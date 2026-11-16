@@ -6,6 +6,7 @@ import re
 import numpy as np
 from platform_util import utf8_stdout
 from trend import NAMES, _entry, compare
+from score import METRICS
 
 utf8_stdout()
 
@@ -88,6 +89,9 @@ def _change_errors(finding, scores, runs):
         h = _entry(run, group)
         h["items"].update({k: group.get(k) for k in GROUP_KEYS})
         h["uncertainty"].update(group.get("uncertainty", {}))
+        form = sorted(m for m, x in group["metrics"].items() if x["score"] is not None and not METRICS.get(m, {}).get("power"))
+        power = sorted(m for m, x in group["metrics"].items() if x["score"] is not None and METRICS.get(m, {}).get("power"))
+        h["component_sets"] = {"form": form, "power": power, "uncapped": [form, h["cons_set"]]}
         h["items"].update({m + ".cons": x["cons"] for m, x in group["metrics"].items()})
         h["uncertainty"].update({m + ".cons": x.get("uncertainty", {}).get("cons") for m, x in group["metrics"].items()})
         return h

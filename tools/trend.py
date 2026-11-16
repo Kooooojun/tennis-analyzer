@@ -23,6 +23,8 @@ def compare(history):
         # total / consistency average over whichever metrics were scored, so only compare sessions that scored the same set
         # consistency-only metrics (score always None) still feed them, so the set of metrics with a cons must match too (Codex PR #3)
         same = [h for h in prev if item not in ("total", "consistency") or (_scored(h["items"]) == _scored(last["items"]) and set(h.get("cons_set") or []) == set(last.get("cons_set") or []))]
+        # Additional composite claims from check_findings carry their own relevant component sets.
+        same = [h for h in same if item not in last.get("component_sets", {}) or h.get("component_sets", {}).get(item) == last["component_sets"][item]]
         same = [h for h in same if h["items"].get(item) is not None][-BASE_N:]
         sem = lambda h: (h.get("uncertainty", {}).get(item) or {}).get("sem")
         if v is None or not same or any(sem(h) is None or not math.isfinite(sem(h)) or sem(h) < 0 for h in [last, *same]): continue
