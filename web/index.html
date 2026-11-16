@@ -483,23 +483,40 @@ function series(s){
 
 // ---------- skeletons: data.js has each stroke's summary, sessions/<s>/pose/<id>.js its frames/world, fetched when the stroke is on screen ----------
 const POSE_WAIT=new Map();  // stroke → redraws waiting for its pose file
+const POSE_ACTIVE=new Map();  // visible player → stroke; redraws keep the same retry budget
 window.POSE=(day,id,p)=>{ const s=DAYS[day]?.data[id]; if(s) Object.assign(s,p); };
 function cancelPose(s){ const p=POSE_WAIT.get(s); if(p){ POSE_WAIT.delete(s); p.controller?.abort(); p.el.onload=p.el.onerror=null; p.el.remove(); } }
 function poseShown(s){ return shown(v)&&S===s||shown(vA)&&A===s||shown(vB)&&B===s; }
-function cancelUnusedPoses(){
-  for(const s of POSE_WAIT.keys()) if(!poseShown(s)) cancelPose(s);
+function visiblePoses(){
+  const current=new Map([[v,S],[vA,A],[vB,B]].filter(([vid,s])=>!document.hidden&&s&&shown(vid)));
+  for(const [vid,s] of POSE_ACTIVE) if(current.get(vid)!==s) POSE_ACTIVE.delete(vid);
+  return new Set(current.values());
 }
-function needPose(s,retry=0){  // <script> keeps file:// support; late files only populate their own stroke's cache
-  if(s.frames||s._poseErr||POSE_WAIT.has(s)||s===S&&mainLoadTimer) return;
-  const el=document.createElement("script"), p={el,elapsed:0,last:Date.now(),hidden:document.hidden}; POSE_WAIT.set(s,p);
+function cancelUnusedPoses(){
+  const keep=visiblePoses();
+  for(const s of POSE_WAIT.keys()) if(!keep.has(s)) cancelPose(s);
+}
+function needPose(s,background=false){  // <script> keeps file:// support; late files only populate their own stroke's cache
+  if(s.frames||s===S&&mainLoadTimer) return;
+  const views=[[v,S],[vA,A],[vB,B]].filter(([vid,current])=>current===s&&shown(vid));
+  if(!background&&(!views.length||document.hidden)) return;
+  background=background&&!views.length;
+  if(!background){
+    if(s._poseFails>=4&&views.some(([vid])=>POSE_ACTIVE.get(vid)!==s)) s._poseFails=0;
+    for(const [vid] of views) POSE_ACTIVE.set(vid,s);
+  }
+  const pending=POSE_WAIT.get(s); if(pending){ if(!background) pending.background=false; return; }
+  if(s._poseFails>=4||s._poseErrAt&&(background||Date.now()-s._poseErrAt<5000)) return;
+  const el=document.createElement("script"), p={el,background,started:Date.now(),elapsed:0,last:Date.now(),hidden:document.hidden}; POSE_WAIT.set(s,p);
   p.done=()=>{
     if(POSE_WAIT.get(s)!==p) return;
     cancelPose(s);
-    if(!s.frames){ if(!retry) needPose(s,1); else s._poseErr=true; }
+    if(!s.frames){ s._poseErrAt=Date.now(); s._poseFails=(s._poseFails||0)+1; }
+    else { s._poseErrAt=0; s._poseFails=0; }
     if(S) render(cur); cmpRender(cmpCur);  // redraw only the current selection, never the file that just arrived
   };
   el.onload=el.onerror=p.done;
-  const src=`sessions/${encodeURIComponent(s.day)}/pose/${s.id}.js?v=${(window.SESSION_VER||{})[s.day]||""}`+(retry?`&_retry=${Date.now()}`:"");
+  const src=`sessions/${encodeURIComponent(s.day)}/pose/${s.id}.js?v=${(window.SESSION_VER||{})[s.day]||""}`+(s._poseErrAt?`&_retry=${Date.now()}`:"");
   if(location.protocol==="file:"){ el.src=src; document.head.append(el); }
   else {  // Removing an external script does not cancel its download in Chrome; fetch makes cancellation real.
     p.controller=new AbortController();
@@ -510,7 +527,16 @@ function needPose(s,retry=0){  // <script> keeps file:// support; late files onl
   }
 }
 document.addEventListener("visibilitychange",()=>{ for(const p of POSE_WAIT.values()){ p.hidden=document.hidden; p.last=Date.now(); } });
-setInterval(()=>{ const now=Date.now(); for(const [s,p] of [...POSE_WAIT]){ if(!document.hidden&&!p.hidden&&poseShown(s)) p.elapsed+=now-p.last; p.last=now; p.hidden=document.hidden; if(p.elapsed>=8000) p.done(); } },250);
+setInterval(()=>{
+  const now=Date.now();
+  for(const [s,p] of [...POSE_WAIT]){
+    if(!document.hidden&&!p.hidden&&poseShown(s)) p.elapsed+=now-p.last;
+    p.last=now; p.hidden=document.hidden;
+    if(p.background&&now-p.started>=15000) cancelPose(s);
+    else if(p.elapsed>=8000) p.done();
+  }
+  for(const s of visiblePoses()) needPose(s);
+},250);
 
 // ---------- drawing one video frame's overlay ----------
 const ZB=new Map();
@@ -524,11 +550,11 @@ function zoomBox(s){
 function fitCanvas(cv){ const dpr=devicePixelRatio||1, r=cv.getBoundingClientRect(); const w=Math.round(r.width*dpr), h=Math.round(r.height*dpr); if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; } const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); return {g,W:r.width,H:r.height}; }
 function paint(cv, vid, s, f, opt){
   const {g,W,H}=fitCanvas(cv); g.clearRect(0,0,W,H);
-  const msg=cv.parentElement.querySelector(".pose-msg"); msg.hidden=!s||!!s.frames; if(s&&!s.frames) msg.textContent=s._poseErr?"骨架載不到，影片照常播放":"骨架載入中…";
+  if(s&&!s.frames&&shown(vid)) needPose(s);
+  const msg=cv.parentElement.querySelector(".pose-msg"); msg.hidden=!s||!!s.frames; if(s&&!s.frames) msg.textContent=s._poseFails>=4?"骨架載不到，影片照常播放":"骨架載入中…";
   if(!s) return;
   const vw=vid.videoWidth||(s.size||[540,960])[0], vh=vid.videoHeight||(s.size||[540,960])[1];
   if(!s.frames){  // no skeleton yet: still show the clip (compare stages hide the <video> and draw it here)
-    if(cv.offsetParent) needPose(s);
     if(opt.zoom&&vid.readyState>=2){ const sc=Math.min(W/vw,H/vh); g.drawImage(vid,(W-vw*sc)/2,(H-vh*sc)/2,vw*sc,vh*sc); }
     return;
   }
@@ -803,7 +829,7 @@ const LATER=new Map();
 // the comparison clips also wait until scrolled near (_near), so opening the video tab fetches only the main clip
 const shown=vid=>!!vid.offsetParent&&vid._near!==false;
 function whenShown(vid,fn){ if(shown(vid)){ LATER.delete(vid); fn(); } else LATER.set(vid,fn); }
-const NEAR=new IntersectionObserver(es=>{ for(const e of es){ const vid=e.target; vid._near=e.isIntersecting; if(LATER.has(vid)&&shown(vid)){ const fn=LATER.get(vid); LATER.delete(vid); fn(); } } },{rootMargin:"100px"});
+const NEAR=new IntersectionObserver(es=>{ for(const e of es){ const vid=e.target; vid._near=e.isIntersecting; if(LATER.has(vid)&&shown(vid)){ const fn=LATER.get(vid); LATER.delete(vid); fn(); } } visiblePoses(); cmpRender(cmpCur); },{rootMargin:"100px"});
 for(const vid of [$("vA"),$("vB")]){ vid._near=false; NEAR.observe(vid); }
 // Cache complete neighbor preloads; a cache miss streams immediately through the native player.
 const CLIPS=new Map(), CLIP_LIMIT=Math.min(window.CLIP_CACHE_LIMIT||Infinity,(matchMedia("(max-width:820px)").matches||navigator.deviceMemory<=4?30:80)*1024*1024);
@@ -862,7 +888,7 @@ async function preloadNeighbors(s){
   if(!list.length) return;
   prefetchFor=s;
   const neighbors=i<0?list.slice(0,2):[list[(i+1)%list.length],list[(i-1+list.length)%list.length]];
-  for(const neighbor of new Set(neighbors)) if(neighbor!==s) needPose(neighbor);
+  for(const neighbor of new Set(neighbors)) if(neighbor!==s) needPose(neighbor,true);
   for(const key of new Set(neighbors.map(clipSrc).filter(key=>key!==clipSrc(s)))){
     if(run!==prefetchRun||!shown(v)||S!==s) return;
     const task=clipFetch(key,true); prefetch=CLIPS.get(key);
@@ -1021,7 +1047,7 @@ function updateTitle(){
 function load(id, scroll, defer=false){
   clearTimeout(mainLoadTimer); mainLoadTimer=null;
   const key=clipSrc(ALL[id]); cancelPrefetch(); resetClip(v,key);
-  S=ALL[id]; S._poseErr=false; N=S.n??S.frames.length; seek.max=N-1;  // n: frame count in data.js; older builds only have frames
+  S=ALL[id]; N=S.n??S.frames.length; seek.max=N-1;  // n: frame count in data.js; older builds only have frames
   cancelUnusedPoses();
   S.phases=[{f:S.contact-48,name:"準備"},...(S.prep!=null?[{f:S.contact-Math.round(S.prep*FPS),name:"引拍完成"}]:[]),{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}].sort((a,b)=>a.f-b.f);  // 引拍完成 can fall before 準備 or after 向前揮拍
   $("phases").innerHTML=""; for(const p of S.phases){ const b=document.createElement("button"); b.textContent=p.name; b.onclick=()=>goto(p.f); $("phases").append(b); }
@@ -1065,7 +1091,7 @@ function goto(f){ f=Math.max(0,Math.min(N-1,f)); hold(v); v._pendingFrame=f; v.c
 function drawChart(f){
   const c=$("chart"), {g,W,H}=fitCanvas(c); g.clearRect(0,0,W,H);
   const pad={l:30,r:6,t:8,b:18}; c._map=px=>Math.round((px-pad.l)/(W-pad.l-pad.r)*(N-1));
-  if(!S.frames){ g.font="12px -apple-system,'PingFang TC',sans-serif"; g.fillStyle=css("--muted"); g.fillText(S._poseErr?"骨架載不到，沒有曲線":"骨架載入中…",pad.l,H/2); return; }
+  if(!S.frames){ g.font="12px -apple-system,'PingFang TC',sans-serif"; g.fillStyle=css("--muted"); g.fillText(S._poseFails>=4?"骨架載不到，沒有曲線":"骨架載入中…",pad.l,H/2); return; }
   const ser=series(S), x=i=>pad.l+i/(N-1)*(W-pad.l-pad.r), y=(val,lo,hi)=>pad.t+(1-(val-lo)/(hi-lo))*(H-pad.t-pad.b);
   g.font="11px ui-monospace,Menlo,monospace"; g.strokeStyle=css("--line"); g.fillStyle=css("--muted"); g.lineWidth=1;
   for(const deg of [60,120,180]){ const yy=y(deg,40,185); g.beginPath(); g.moveTo(pad.l,yy); g.lineTo(W-pad.r,yy); g.stroke(); g.fillText(deg+"°",0,yy+4); }
@@ -1132,7 +1158,7 @@ function drawPresets(){
 }
 function cmpLoad(a,b){
   resetClip(vA,clipSrc(a)); resetClip(vB,clipSrc(b));
-  A=a; B=b; A._poseErr=B._poseErr=false; $("selA").value=sKey(A); $("selB").value=sKey(B); $("capA").innerHTML=capFor(A); $("capB").innerHTML=capFor(B);
+  A=a; B=b; $("selA").value=sKey(A); $("selB").value=sKey(B); $("capA").innerHTML=capFor(A); $("capB").innerHTML=capFor(B);
   cancelUnusedPoses();
   [...$("presets").children].forEach(x=>x.classList.toggle("on",dayNo(...x._p.a)===A&&dayNo(...x._p.b)===B));
   const go=()=>{ if(vA.readyState&&vB.readyState){ const want=canResume(vA)&&canResume(vB); cmpGoto(cmpCur); vA._reloading=vB._reloading=false; if(want) cmpStart(); } };  // each clip stops itself first, so one that never loads can't leave the other looping
@@ -1259,7 +1285,6 @@ function route(){
   if(!PLAYER_TABS.includes(TAB)){ cancelPrefetch(); cancelUnusedPoses(); }
   if(TAB==="charts") drawCharts();
   for(const [vid,fn] of LATER){ if(!vid.isConnected) LATER.delete(vid); else if(shown(vid)){ LATER.delete(vid); fn(); } }  // drop reel <video>s that drawSummary replaced
-  for(const [vid,s] of [[v,S],[vA,A],[vB,B]]) if(s&&shown(vid)){ s._poseErr=false; needPose(s); }
   if(S){ render(cur); cmpRender(cmpCur); }  // canvases were 0x0 while hidden
 }
 addEventListener("hashchange",route);

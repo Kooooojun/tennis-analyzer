@@ -15,13 +15,14 @@ try{
     async poseTimeout(page){
      const requests=[];await page.route('**/pose/4.js*',route=>{requests.push(route.request().url());if(requests.length===1)return;return route.continue();});
      await page.evaluate(()=>load(4,false));await page.waitForFunction(()=>S.id===4);
-     await page.waitForFunction(()=>!!S.frames,null,{timeout:10500});
+     await page.waitForFunction(()=>!!S.frames,null,{timeout:15500});
      assert.equal(requests.length,2);assert(new URL(requests[1]).searchParams.has('_retry'));
     },
     async poseFailure(page){
      let count=0;await page.route('**/pose/4.js*',()=>{count++;});
-     await page.evaluate(()=>load(4,false));await page.waitForFunction(()=>S._poseErr,null,{timeout:18000});
-     assert.equal(count,2);assert.match(await page.locator('#stage .pose-msg').textContent(),/骨架載不到/);
+     const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>load(4,false));await started;
+     for(let n=1;n<=4;n++){await page.clock.runFor(8500);assert.equal(await page.evaluate(()=>S._poseFails),n);if(n<4)await page.clock.runFor(5000);}
+     assert.equal(count,4);assert.match(await page.locator('#stage .pose-msg').textContent(),/骨架載不到/);
     },
     async poseVisibleTime(page){
      let count=0;await page.route('**/pose/4.js*',route=>{count++;if(count>1)return route.continue();});
@@ -29,7 +30,7 @@ try{
      await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
      await page.clock.runFor(20000);assert.equal(count,1);
      await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
-     await page.clock.runFor(5000);await page.waitForFunction(()=>!!S.frames,null,{timeout:1500});assert.equal(count,2);
+     await page.clock.runFor(10000);await page.waitForFunction(()=>!!S.frames,null,{timeout:1500});assert.equal(count,2);
     },
     async stall(page){return stalled(page,false,'once');},
     async missedVisibility(page){return stalled(page,true,'once');},
@@ -55,18 +56,18 @@ try{
     },
     async neighborPoseRecovery(page){
      let allow=false,count=0;await page.route('**/pose/13.js*',route=>{count++;return allow?route.continue():route.fulfill({status:503,body:''});});
-     await page.evaluate(()=>load(12,false));await page.waitForFunction(()=>ALL[13]._poseErr,null,{timeout:5000});assert.equal(count,2);
+     await page.evaluate(()=>load(12,false));await page.waitForFunction(()=>ALL[13]._poseErrAt,null,{timeout:5000});assert.equal(count,1);
      allow=true;await page.evaluate(()=>go(DAY,'video'));await page.waitForFunction(()=>TAB==='video');
      await page.locator('#vA').scrollIntoViewIfNeeded();await page.evaluate(()=>cmpLoad(ALL[13],ALL[14]));
-     await page.waitForFunction(()=>!!A.frames,null,{timeout:2000});assert.equal(count,3);
+     await page.waitForFunction(()=>!!A.frames,null,{timeout:6500});assert.equal(count,2);
     },
     async poseLeaveOverview(page){return leavePose(page,'overview');},
     async poseLeaveHome(page){return leavePose(page,'home');},
     async poseRouteRecovery(page){
      let allow=false;await page.route('**/pose/4.js*',route=>allow?route.continue():route.fulfill({status:503,body:''}));
-     await page.evaluate(()=>load(4,false));await page.waitForFunction(()=>S._poseErr);allow=true;
+     await page.evaluate(()=>load(4,false));await page.waitForFunction(()=>S._poseErrAt);allow=true;
      await page.evaluate(()=>go(DAY,'overview'));await page.waitForFunction(()=>TAB==='overview');
-     await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>!!S.frames,null,{timeout:2000});
+     await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>!!S.frames,null,{timeout:6500});
     },
     async poseCompareVisibleTime(page){
      await page.setViewportSize({width:390,height:500});
@@ -74,9 +75,43 @@ try{
      await page.evaluate(()=>go(DAY,'video'));await page.waitForFunction(()=>TAB==='video');await page.locator('#vA').scrollIntoViewIfNeeded();
      const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>cmpLoad(ALL[4],ALL[6]));await started;
      await page.evaluate(()=>scrollTo(0,0));await page.waitForFunction(()=>!shown(vA));
-     await page.clock.runFor(20000);assert.equal(count,1);assert.equal(await page.evaluate(()=>!!A._poseErr),false);
+     await page.clock.runFor(20000);assert.equal(count,1);assert.equal(await page.evaluate(()=>!!A._poseErrAt),false);
      await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>shown(vA));
-     await page.clock.runFor(8500);await page.waitForFunction(()=>!!A.frames,null,{timeout:1500});assert.equal(count,2);
+     await page.clock.runFor(13500);await page.waitForFunction(()=>!!A.frames,null,{timeout:1500});assert.equal(count,2);
+    },
+    async poseCompareRouteRetry(page){
+     let allow=false,count=0;await page.route('**/pose/4.js*',route=>{count++;return allow?route.continue():route.fulfill({status:503,body:''});});
+     await page.evaluate(()=>go(DAY,'video'));await page.waitForFunction(()=>TAB==='video');await page.locator('#vA').scrollIntoViewIfNeeded();
+     const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>cmpLoad(ALL[4],ALL[6]));await started;await page.waitForFunction(()=>!POSE_WAIT.has(A));
+     await page.evaluate(()=>{window.compareScroll=scrollY;addEventListener('hashchange',()=>{if(TAB==='video')scrollTo(0,compareScroll);});go(DAY,'overview');});
+     await page.waitForFunction(()=>TAB==='overview'&&vA._near===false);await page.clock.runFor(5500);allow=true;
+     const before=count;await page.evaluate(()=>go(DAY,'video'));await page.waitForFunction(()=>shown(vA));
+     await page.waitForFunction(()=>!!A.frames,null,{timeout:1500});assert.equal(count,before+1);assert.equal(await page.locator('#vA').locator('..').locator('.pose-msg').isVisible(),false);
+    },
+    async poseScrollRetry(page){
+     await page.setViewportSize({width:390,height:500});
+     let allow=false,count=0;await page.route('**/pose/4.js*',route=>{count++;return allow?route.continue():route.fulfill({status:503,body:''});});
+     await page.evaluate(()=>go(DAY,'video'));await page.waitForFunction(()=>TAB==='video');await page.evaluate(()=>scrollTo(0,0));await page.waitForFunction(()=>!shown(vA));
+     const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>{cmpLoad(ALL[4],ALL[6]);load(3,false);});await started;
+     await page.waitForTimeout(500);await page.waitForFunction(()=>!POSE_WAIT.has(ALL[4]));await page.clock.runFor(5500);allow=true;
+     const before=count;await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>!!A.frames,null,{timeout:1500});assert.equal(count,before+1);
+    },
+    async poseRetryBudget(page){
+     let allow=false,count=0;await page.route('**/pose/4.js*',route=>{count++;return allow?route.continue():route.fulfill({status:503,body:''});});
+     const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>load(4,false));await started;await page.waitForFunction(()=>!POSE_WAIT.has(S));
+     assert.equal(count,1);
+     for(let n=2;n<=4;n++){await page.clock.runFor(4500);assert.equal(count,n-1);await page.clock.runFor(1000);await page.waitForFunction(()=>!POSE_WAIT.has(S));assert.equal(count,n);}
+     assert.match(await page.locator('#stage .pose-msg').textContent(),/骨架載不到/);await page.clock.runFor(30000);assert.equal(count,4);assert.equal(await page.evaluate(()=>POSE_WAIT.has(S)),false);
+     allow=true;await page.evaluate(()=>go(DAY,'overview'));await page.waitForFunction(()=>TAB==='overview');await page.clock.runFor(5500);
+     await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>!!S.frames,null,{timeout:1500});assert.equal(count,5);return {failedRequests:4,reentryRequests:1};
+    },
+    async poseBackgroundTimeout(page){
+     let count=0;const inflight=new Set();page.on('request',r=>{if(r.url().includes('/pose/4.js'))inflight.add(r);});
+     for(const event of ['requestfinished','requestfailed'])page.on(event,r=>inflight.delete(r));
+     await page.route('**/pose/4.js*',()=>{count++;});const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>load(3,false));await started;
+     await page.clock.runFor(14000);assert.equal(inflight.size,1);
+     const failed=page.waitForEvent('requestfailed',{predicate:r=>r.url().includes('/pose/4.js'),timeout:1500});await page.clock.runFor(1500);await failed;
+     assert.equal(await page.evaluate(()=>POSE_WAIT.has(ALL[4])),false);assert.equal(inflight.size,0);await page.clock.runFor(20000);assert.equal(count,1);return {requests:count,inflight:inflight.size};
     },
     async deferredPlayGesture(page){
      await page.evaluate(()=>{
@@ -110,7 +145,7 @@ try{
     const context=await browser.newContext({ignoreHTTPSErrors:true,...(engine==='webkit'?devices['iPhone 13']:{})}),page=await context.newPage(),errors=[];
     page.on('pageerror',e=>errors.push(e.message));
     try{
-     if(['poseVisibleTime','noSource','poseLeaveOverview','poseLeaveHome','poseCompareVisibleTime'].includes(name))await page.clock.install();
+     if(['poseFailure','poseVisibleTime','noSource','poseLeaveOverview','poseLeaveHome','poseCompareVisibleTime','poseCompareRouteRetry','poseScrollRetry','poseRetryBudget','poseBackgroundTimeout'].includes(name))await page.clock.install();
      await page.goto(f.url);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>S&&v.readyState>=3&&!v.seeking);
      await page.waitForTimeout(650);const details=await test(page);assert.deepEqual(errors,[]);results.push({engine,case:name,pass:true,...details});
     }catch(e){results.push({engine,case:name,pass:false,error:e.message,errors});}
@@ -128,7 +163,7 @@ async function leavePose(page,tab){
  const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>load(4,false));await started;
  await page.evaluate(tab=>{if(tab==='home')location.hash='#home';else go(DAY,tab);},tab);
  await page.waitForFunction(tab=>tab==='home'?!$('home').hidden:TAB===tab,tab);
- await page.clock.runFor(20000);assert.equal(await page.evaluate(()=>POSE_WAIT.has(S)||!!S._poseErr),false);allow=true;
+ await page.clock.runFor(20000);assert.equal(await page.evaluate(()=>POSE_WAIT.has(S)||!!S._poseErrAt),false);allow=true;
  await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>!!S.frames,null,{timeout:2000});
  assert.equal(count,2);assert.equal(await page.locator('#stage .pose-msg').isVisible(),false);
 }
@@ -147,7 +182,7 @@ async function stalled(page,missed,mode){
 }
 async function rapid(page,slow){
  await page.evaluate(()=>{go(DAY_KEYS[0],'video');scrollTo(0,0);});await page.waitForFunction(()=>TAB==='video');
- await page.evaluate(()=>{cancelPrefetch();CLIPS.clear();for(const s of ALL){delete s.frames;delete s.world;delete s._poseErr;}load(0,false);});
+ await page.evaluate(()=>{cancelPrefetch();CLIPS.clear();for(const s of ALL){delete s.frames;delete s.world;delete s._poseErrAt;delete s._poseFails;}load(0,false);});
  await page.waitForFunction(()=>S.id===0&&v.readyState>=3);await page.waitForTimeout(700);
  await page.evaluate(()=>{cancelPrefetch();const first=ALL[24],entry=CLIPS.get(first.src);if(entry?.url)URL.revokeObjectURL(entry.url);CLIPS.delete(first.src);delete first.frames;});
  const requests=[],inflight=new Set(),cancelled=[];
