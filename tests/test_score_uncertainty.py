@@ -158,7 +158,14 @@ def compound_claim(title):
 assert compound_claim('總分進步且一致性改善')
 assert compound_claim('總分進步且膝蓋更穩')
 assert compound_claim('總分與一致性進步')
+assert compound_claim('總分與一致性更好')
 assert compound_claim('總分退步但一致性改善') == []
+for r,knee in [(compound_left,4),(compound_right,7)]:
+    r['groups'][0]['metrics']['knee']['score']=knee
+    r['groups'][0]['metrics']['knee']['uncertainty']['score']['sem']=0.1
+assert compound_claim('總分退步但膝蓋與一致性改善') == []
+assert compound_claim('膝蓋與一致性改善但總分退步') == []
+
 for r,knee,cons in [(compound_left,7,5),(compound_right,9,5)]:
     r['groups'][0]['metrics']['knee'].update(score=knee,cons=cons)
     r['groups'][0]['metrics']['knee']['uncertainty']={'score':{'sem':0.1,'ci':[1,10]},'cons':{'sem':0.1,'ci':[1,10]}}

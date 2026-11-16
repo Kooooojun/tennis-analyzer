@@ -84,8 +84,15 @@ def _change_errors(finding, scores, runs):
     if not clauses: return []
     split_clauses = []
     for clause in clauses:
-        parts = re.split(r"而且|並且|但是|同時|以及|且|但|而|與|及|、", clause)
-        split_clauses.extend(parts if len(parts) > 1 and all(re.search(up + "|" + down, p) for p in parts) else [clause])
+        parts = re.split(r"(而且|並且|但是|同時|以及|且|但|而|與|及|、)", clause)
+        pending = parts[0]
+        for i in range(1, len(parts), 2):
+            if re.search(up + "|" + down, pending) and re.search(up + "|" + down, "".join(parts[i + 1:])):
+                split_clauses.append(pending)
+                pending = parts[i + 1]
+            else:
+                pending += parts[i] + parts[i + 1]
+        split_clauses.append(pending)
     clauses = split_clauses
     identities = {(c.get("player") or "me", c.get("kind")) for c in finding.get("cite", []) if isinstance(c, dict) and "kind" in c}
     if not identities: return ["進退步宣稱缺少球員與拍種的群組引用"]
@@ -123,7 +130,7 @@ def _change_errors(finding, scores, runs):
                 items = cited_items
             if re.search(r"穩|一致", clause):
                 metric_items = [m for m in items if m.removesuffix(".cons") in group["metrics"]]
-                if re.search(r"進步|退步|改善|變好|變差", clause):
+                if re.search(r"進步|退步|改善|變好|變差|(?:更|比較)(?:好|差)", clause):
                     specific = [m for m in metric_items if m.endswith(".cons") or re.search(re.escape(names.get(m, m)) + r"(?:的|變得)?(?:一致性|更穩|比較穩)", clause)]
                     items = [m for m in items if m not in specific and not (m == "consistency" and specific)]
                 else:
