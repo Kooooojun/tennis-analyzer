@@ -12,7 +12,8 @@ hand_of = lambda r: C.get("hand", r.get("hand", "R")) if r.get("hand_guess") or 
 err = max([abs(v - r[k]) for r in d for m in [measure_clip(r["frames"], r["contact"], r.get("size"), r.get("world"), hand_of(r))]
            for k in ("knee", "knee3d", "contact_h", "contact_fwd", "elbow") if r.get(k) is not None and (v := m.get(k)) is not None], default=0)  # None now = gated (e.g. contact_fwd for a front / back camera), not 0; prep follows the previous hit, which this check does not pass
 off = lambda r: C.get("off", {}).get(str(r["id"] + 1), C.get("default_off", 0))
-hits = [(r["video"], r.get("player"), r["t"] + off(r) / 60) for r in d if r["id"] + 1 not in C.get("drop", [])]
+untrusted = lambda r: C.get("set", {}).get(str(r["id"] + 1), {}).get("contact_untrusted", r.get("contact_untrusted")) is True
+hits = [(r["video"], r.get("player"), r["t"] + off(r) / 60) for r in d if r["id"] + 1 not in C.get("drop", []) and not untrusted(r)]
 def prev_in_clip(r, c):
     """Clip frame of the same player's previous kept hit in this video (None if none or before the clip), bounds the prep search."""
     t = r["t"] + off(r) / 60; ts = [h for v, p, h in hits if v == r["video"] and p == r.get("player") and h < t - 1e-6]
@@ -24,9 +25,13 @@ for r in d:
     if no in C.get("drop", []): continue
     df = off(r); c = r["contact"] + df
     r.update(C.get("set", {}).get(str(no), {}))
-    old = r["contact_h"]; r.update(measure_clip(r["frames"], c, r.get("size"), r.get("world"), hand_of(r), prev_in_clip(r, c))); r["contact"] = c
-    r.update(arm_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], hand_of(r), {"one": True, "two": False}.get(r.get("backhand"), C.get("one_hand_bh") is True)))  # profile first; refine.json "hand" / "one_hand_bh" only for strokes made before profiles
-    r.update(form_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], hand_of(r)))
+    old = r["contact_h"]; m = measure_clip(r["frames"], c, r.get("size"), r.get("world"), hand_of(r), prev_in_clip(r, c))
+    m.update(arm_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], hand_of(r), {"one": True, "two": False}.get(r.get("backhand"), C.get("one_hand_bh") is True)))  # profile first; refine.json "hand" / "one_hand_bh" only for strokes made before profiles
+    m.update(form_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], hand_of(r)))
+    if r.get("contact_untrusted") is True:
+        m = {k: None for k in m}
+        m.update(knee_warn=True, knee_warn_why="contact")  # Exclude this stroke from the group's knee-source vote too.
+    r.update(m); r["contact"] = c
     r["t"] = round(r["t"] + df / 60, 3)
     m, sec = divmod(r["t"], 60); r["clock"] = f"{r['video']}·{int(m)}:{sec:04.1f}"
     if df != C.get("default_off", 0) or str(no) in C.get("set", {}):

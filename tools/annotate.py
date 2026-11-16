@@ -63,7 +63,7 @@ def stroke_info(x):
     if x.get("prep") is not None: lines.append((f"準備時間 {x['prep']:.2f}s", INK))
     if x.get("contact_h") is not None:
         lines.extend([("擊球時手腕高度（2D）", INK), (f"{x['contact_h'] * 100:.0f}（髖＝0、肩＝100）", INK), ("接觸格附近五格中位數", INK)])
-    if x.get("knee_warn"): lines.append(("這拍角度不準", BAD))
+    if x.get("knee_warn"): lines.append(("擊球格不可信，這拍不量" if x.get("knee_warn_why") == "contact" else "這拍角度不準", BAD))
     return head, lines
 
 

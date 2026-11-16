@@ -498,7 +498,7 @@ const armCheck = s => {  // [headline, detail] or null when no check applies to 
   if(s.bh_elbow_conf!=null) return ["參考："+T(s.bh_elbow_ok,"手臂看起來接近伸直","手臂看起來偏彎"), "單手反拍。參考："+T(s.bh_front_ok,"擊球點在身前","擊球點不在身前")+"。"+WHY];
   return null;
 };
-const kneeWarn = s => !s.knee_warn ? "" : s.knee_warn_why==="view" ? "這拍鏡頭在正前或正後方，膝角看不準" : (d=>`這拍角度不準（${[s.knee3d!=null&&`3D ${Math.round(s.knee3d)}°`,d!=null&&`2D ${Math.round(d)}°`].filter(Boolean).join(" 與 ")||"3D 與 2D"} 差太多）`)(s.knee3d!=null?s.knee2d:s.knee);  // the DAYS loader moves the 2D angle to knee2d only when a 3D one replaces it
+const kneeWarn = s => !s.knee_warn ? "" : s.knee_warn_why==="contact" ? "擊球格不可信，這拍不量" : s.knee_warn_why==="view" ? "這拍鏡頭在正前或正後方，膝角看不準" : (d=>`這拍角度不準（${[s.knee3d!=null&&`3D ${Math.round(s.knee3d)}°`,d!=null&&`2D ${Math.round(d)}°`].filter(Boolean).join(" 與 ")||"3D 與 2D"} 差太多）`)(s.knee3d!=null?s.knee2d:s.knee);  // the DAYS loader moves the 2D angle to knee2d only when a 3D one replaces it
 const SER = new Map();
 function series(s){
   if(SER.has(s)) return SER.get(s);
@@ -838,7 +838,7 @@ function drawList(){
     const b=document.createElement("button"); b.dataset.id=s.id;
     const bad = s.kind==="FH" && s.knee>150;
     const dn=drillName(s);
-    b.innerHTML=`<span class="row"><span class="tag ${esc(s.kind)}">${esc(NAMES[s.kind]||s.kind)}</span><span class="clock">${esc(s.clock)}</span></span><span class="mini ${bad?"bad":""}">膝 ${s.knee==null?"–":kSrcOf(s)+" "+Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
+    b.innerHTML=`<span class="row"><span class="tag ${esc(s.kind)}">${esc(NAMES[s.kind]||s.kind)}</span><span class="clock">${esc(s.clock)}</span></span><span class="mini ${bad?"bad":""}">${s.knee_warn_why==="contact"?esc(kneeWarn(s)):`膝 ${s.knee==null?"–":kSrcOf(s)+" "+Math.round(s.knee)+"°"}${s.knee_warn?"⚠":""}`}${dn?" · "+dn:""}${DAYS[DAY].players.length>1?" · "+esc(PN(who(s))):""}</span>`;
     b.title=strokeLabel(s);
     b.onclick=()=>load(s.id,"list"); box.append(b);  // load() scrolls to a non-sticky (landscape) player once it knows the clip's shape
   }
@@ -1193,7 +1193,7 @@ let A=null, B=null, cmpCur=0, cmpRate=0.25, cmpRequest=null;
 const PRESETS=Object.values(DAYS).flatMap(d=>(d.presets||[]).map(p=>{ const a=Array.isArray(p.a)?p.a:[d.id,p.a], b=Array.isArray(p.b)?p.b:[d.id,p.b]; return {day:a[0]===b[0]&&a[0]===d.id?d.id:"*",a,b,label:p.label}; })).filter(p=>p.a[0] in DAYS&&p.b[0] in DAYS);
 const sKey=s=>s.day+":"+s.id, fromKey=k=>{ const [d,i]=k.split(":"); return DAYS[d].data[+i]; };
 function fillSelect(sel){ sel.innerHTML=DAY_KEYS.map(k=>[k,DAYS[k]]).map(([k,d])=>`<optgroup label="${esc(d.label)}">`+d.data.map(s=>`<option value="${esc(sKey(s))}">${esc(d.label)} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</option>`).join("")+"</optgroup>").join(""); }
-function capFor(s){ const r=Math.round; return `<b>${esc(DAYS[s.day].label)} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${s.knee==null?"–":kSrcOf(s)+" "+r(s.knee)+"°"}${s.knee_warn?"⚠不準":""} · 轉肩 ${s.open_min==null?"–":r(s.open_min)+"%"} · 擊球時手腕高度（2D） ${s.contact_h==null?"–":r(hPct(s))}</span>`; }
+function capFor(s){ const r=Math.round; return `<b>${esc(DAYS[s.day].label)} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">${s.knee_warn_why==="contact"?esc(kneeWarn(s)):`膝 ${s.knee==null?"–":kSrcOf(s)+" "+r(s.knee)+"°"}${s.knee_warn?"⚠不準":""}`} · 轉肩 ${s.open_min==null?"–":r(s.open_min)+"%"} · 擊球時手腕高度（2D） ${s.contact_h==null?"–":r(hPct(s))}</span>`; }
 function drawPresets(){
   $("presets").innerHTML="";
   for(const p of PRESETS.filter(p=>p.day===DAY||p.day==="*")){ const b=document.createElement("button"); b.textContent=p.label; b._p=p; b.onclick=()=>cmpLoad(dayNo(...p.a),dayNo(...p.b)); $("presets").append(b); }
