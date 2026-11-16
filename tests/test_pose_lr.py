@@ -56,6 +56,18 @@ for x in (p, w):
 a, b = correct_lr(p, w, 1)
 assert np.array_equal(a, p) and np.array_equal(b, w)
 
+# Consistent endpoints alone cannot justify doubling the forearm lengths into crossed arms.
+p, w = body(); p[:, [13, 14]] = p[:, [14, 13]]
+exchange(p, [15, 17, 19, 21], [16, 18, 20, 22])
+a, _ = correct_lr(p, w, 1)
+assert np.array_equal(a, p)
+
+# An unseen elbow cannot supply the geometry check for a wrist correction.
+p, w = body(); p[5:8, [13, 14], :2] = np.nan
+exchange(p, [15, 17, 19, 21], [16, 18, 20, 22])
+a, _ = correct_lr(p, w, 1)
+assert np.array_equal(a, p, equal_nan=True)
+
 # Long/clipped intervals, holes, changes of person and weak anchors cannot be repaired safely.
 for kind in ("long", "start", "end", "gap", "world_gap", "person", "confidence", "zero"):
     p, w = body()

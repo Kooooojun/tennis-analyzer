@@ -182,6 +182,9 @@ def correct_lr(P, W, aspect, fps=60):
             vis = P[[a - 1, b]][:, [left[0], right[0]], 2]
             if not np.all(vis.max(1) >= 0.5): continue
             if distance(q[a - 1], q[b]) >= distance(q[a - 1], q[b, ::-1]): continue
+            parent = p[a:b, [left[0] - 2, right[0] - 2], :2] * (aspect, 1)
+            if not np.isfinite(parent).all(): continue
+            if np.any(distance(parent, q[a:b, ::-1]) > 2 * distance(parent, q[a:b])): continue
             p[a:b, left + right] = P[a:b, right + left]
             z = W[:, [left[0], right[0]]]
             if not np.isfinite(z[a - 1:b + 1]).all(): continue
