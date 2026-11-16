@@ -92,6 +92,8 @@ jobs:
           set +e; python tools/run.py _seven.py; rc=$?; set -e
           rm tools/_seven.py; [ $rc = 7 ] || { echo "run.py returned $rc, want 7"; exit 1; }
       - name: unit tests + prep.py E2E on a synthetic clip with the real models (each file is a plain-assert script)
+        env:
+          PYTHONUNBUFFERED: "1"
         run: |
           fail=0
           for f in tests/test_*.py tools/test_*.py; do

@@ -73,7 +73,7 @@ sys.path.insert(0, str(REPO / "tools")); from platform_util import venv_python
 pyv = venv_python(R)
 sp = subprocess.run([str(pyv), "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"], capture_output=True, text=True, check=True).stdout.strip()
 Path(sp, "parent_env.pth").write_text("\n".join(site.getsitepackages() + [site.getusersitepackages()]) + "\n", encoding="utf-8")
-subprocess.run([sys.executable, str(REPO / "tests" / "make_synth.py"), str(tmp / "syn"), "1", "960x540"], check=True)
+subprocess.run([sys.executable, str(REPO / "tests" / "make_synth.py"), str(tmp / "syn"), "0.4", "960x540"], check=True)
 V = R / "videos" / "synth"; V.mkdir(parents=True)
 shutil.copy(tmp / "syn" / "land.mp4", V / "b.mp4"); shutil.copy(tmp / "syn" / "port.mp4", V / "A x.MOV")
 old = 1_600_000_000
@@ -96,7 +96,10 @@ for d in ("A x", "b"):
     got = {p.name for p in (W / d).iterdir()}
     assert got == want, (d, got ^ want)
     assert (W / d / "people.txt").read_bytes() == b"2\n"
-import cv2
+import cv2, numpy as np
+for d in ("A x", "b"):
+    assert np.load(W / d / "sounds.npy").shape == (1, 4), d
+    assert np.load(W / d / "events.npy").shape == (0, 3), d
 c = cv2.VideoCapture(str(W / "A x" / "proxy.mp4")); assert (c.get(3), c.get(4)) == (540, 960), "portrait proxy"
 c = cv2.VideoCapture(str(W / "b" / "proxy.mp4")); assert (c.get(3), c.get(4)) == (960, 540)
 del c
@@ -163,7 +166,7 @@ assert "沒有 3D 姿態" not in prep("synth", "2").stderr
 
 # Real ffmpeg, pose, hits and events on a silent 4:3 clip; no fake audio/model outputs.
 silent = R / "videos" / "silent"; silent.mkdir()
-subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=640x480:r=60:d=1",
+subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=640x480:r=60:d=0.4",
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", str(silent / "clip.mp4")], check=True)
 os.utime(silent / "clip.mp4", (old, old))
 r = prep("silent", "1")
@@ -172,7 +175,7 @@ assert "來源比例 4:3" in r.stderr
 D = R / "work" / "silent" / "clip"
 for name in ("audio.f32", "audio_hp.f32"):
     audio = np.fromfile(D / name, dtype=np.float32)
-    assert len(audio) == 16000 and not audio.any(), (name, audio.shape)
+    assert len(audio) == 6400 and not audio.any(), (name, audio.shape)
 assert np.load(D / "sounds.npy").shape == (0, 4) and np.load(D / "events.npy").shape == (0, 3)
 assert not list(D.glob("*.part"))
 before = {p: p.stat().st_mtime_ns for p in D.iterdir() if p.name not in ALWAYS}
@@ -185,7 +188,7 @@ np.save(D / "pose_t1.npy", np.load(D / "pose.npy"))
 def candidates(e):
     np.save(D / "events.npy", e)
     return subprocess.run([str(pyv), str(R / "tools" / "candidates.py"), "silent"], capture_output=True, text=True, encoding="utf-8")
-r = candidates(np.array([[0.1, -20, 12], [0.9, -20, 12]]))
+r = candidates(np.array([[0.1, -20, 12], [0.3, -20, 12]]))
 assert r.returncode == 0 and r.stderr.count("2 個擊球沒算") == 1, (r.stdout, r.stderr)
 assert "影片太短" in r.stderr
 cands = (D.parent / "cands.json").read_bytes()
