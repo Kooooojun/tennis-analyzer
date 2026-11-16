@@ -134,4 +134,20 @@ t = Tracker(3)
 ids = t.step([det(0.2, 0.3, (40, 0, 0))])
 t.step([])
 assert t.step([det(0.26, 0.34, (65, 0, 0), 0.22)]) == ids
+
+# 僅一人可見且亮度改變時，位置仍須區分近槽，避免平均色永久分裂。
+t = Tracker(2)
+seen = np.zeros((102, 2), bool); col = np.full((102, 2, 3), np.nan)
+dets = [det(0.2, 0.5, WHITE), det(1.0, 0.5, BLACK)] + [det(1.0, 0.5, WHITE)] * 100
+for f, d in enumerate(dets):
+    [k] = t.step([d]); seen[f, k] = True; col[f, k] = d["color"]
+means = np.array([col[seen[:, k], k].mean(0) for k in range(2)])
+assert len(merge(seen, means)) == 1
+
+# 同色相向運動也可能沿畫面縱向交叉。
+t = Tracker(2)
+ids = t.step([det(0.49, 0.2, WHITE, 0.06), det(0.51, 0.8, WHITE, 0.06)])
+for i in range(1, 16):
+    y = 0.2 + 0.04 * i
+    assert t.step([det(0.49, y, WHITE, 0.06), det(0.51, 1 - y, WHITE, 0.06)]) == ids, i
 print("ok")
