@@ -1,7 +1,7 @@
 # hits.py <audio_hp.f32> <audio.f32> <sounds.npy> — hit-sound candidates, rows (t, pk, on, bb).
 # t: onset start in s. pk: peak dB. on: dB above the last 0.5 s (median). bb: broadband SNR in dB, the mean over 5 bands
 # (100 Hz-8 kHz) of the first 40 ms against the 0.25-0.05 s before; it comes from the unfiltered audio.
-# The threshold is low (6 dB) on purpose: on wall-1 a racket hit is only 8-25 dB above the echo under the bridge, so the old
+# The threshold is low (6 dB) on purpose: on 對牆影片 A a racket hit is only 8-25 dB above the echo, so the old
 # 18 dB caught 4%. events.py decides which candidates are hits (hand speed + bb); a ball bouncing on the ground has
 # almost no energy below 1 kHz (bb ~2 dB) while a racket hit has (bb ~11 dB), so bb must use the unfiltered audio.
 import sys

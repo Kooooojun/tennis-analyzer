@@ -1,6 +1,6 @@
 # 慣用手測試（純邏輯）：把右手的真實資料左右鏡像，hand="L" 的結果必須與原資料 hand="R" 相同。
 # 用法（repo 根目錄）：.venv/bin/python tests/test_hand.py   需要 testset/labels/private_names.json（私有影片的別名 -> 實際名稱，不進 git）、
-# 對牆影片 A 的 pose.npy 與 strokes.json；第 5 段另需網路左手影片 A／B 的姿態。
+# 對牆影片 A 的 pose.npy 與 strokes.json；第 5 段另需網路片 E／F 的姿態。
 # CI 排除：需要私人資料（testset/、work/），.github/workflows/ci.yml 不跑這支。
 import json, sys, numpy as np
 from pathlib import Path
@@ -14,7 +14,7 @@ VIDS = PN.get("wall_a") or ["?"]; V0 = VIDS[0]; WD = ROOT / PN.get("wall_dir", "
 NEED = [NAMES, STROKES, WD / V0 / "pose_t1.npy", WD / V0 / "events.npy", ROOT / f"testset/labels/hits_{V0}.csv"]
 NEED += [WD / v / f for v in VIDS for f in ("pose.npy", "pose_world.npy")]
 if not all(p.exists() for p in NEED):  # private footage-derived data, only on the owner's machine
-    print("skip: test_hand needs local wall-1 data"); sys.exit(0)
+    print("略過：test_hand 需要本機對牆影片 A 的資料"); sys.exit(0)
 
 # MediaPipe 33 點、web 用的 17 點（common.KEEP 順序）裡的左右對換表
 SW33 = list(range(33)); SW17 = list(range(17))
@@ -34,7 +34,7 @@ def close(a, b, tol, tag):
         if x != x and y != y: continue  # NaN 對 NaN
         assert abs(x - y) <= tol.get(k, 0.011), (tag, k, x, y)
 
-# 1. clip 版：35 拍 wall-1（含 3D world）
+# 1. clip 版：35 拍 對牆影片 A（含 3D world）
 S = json.load(open(STROKES, encoding="utf-8")); off = 0
 for s in S:
     fr = s["frames"]; wd = s.get("world")
@@ -91,8 +91,8 @@ for bad_cfg in ({"a": {"hand": "left"}}, {"a": {"hand": "R", "backhand": "3"}}, 
     except ValueError: pass
 print("設定檔 OK")
 
-# 5. 真實左手（網路左手影片 A：一人前方固定機位；B：兩位左手球員輪流發球、有剪接）。不是鏡像：真的左手姿態，hand="L" 對 "R"。
-# 門檻 = 2026-11-15 量到的數字（eval-labels-c19），只防退步；不為了過關調 kind.py。B 只用已標 @player 的拍，兩人都是左手，不算左右手混合測試。
+# 5. 真實左手（網路片 E／F）。不是鏡像：真的左手姿態，hand="L" 對 "R"。
+# 門檻 = 2026-11-15 量到的數字（eval-labels-c19），只防退步；不為了過關調 kind.py。網路片 F 只用已標 @player 的拍，兩人都是左手，不算左右手混合測試。
 from metrics import arm_checks
 from common import KEEP
 LEFTY = [ROOT / d for d in PN.get("lefty", [])]
@@ -114,7 +114,7 @@ if len(LEFTY) == 2 and all(_lefty_ok(d) for d in LEFTY):
         got[len(got)] = (len(S), c)
     (na, a), (nb, b) = got[0], got[1]
     assert a["L"]["ok"] > a["R"]["ok"] and b["L"]["ok"] > b["R"]["ok"], got  # 左手設 L 的 FH/BH 對率要比當右手好
-    assert a["L"]["fb"] == 42 and a["L"]["ok"] >= 24 and b["L"]["ok"] >= 13, got  # 量到 A 24/42（FH 8/17、BH 16/25）、B 13/17
+    assert a["L"]["fb"] == 42 and a["L"]["ok"] >= 24 and b["L"]["ok"] >= 13, got  # 量到 E 24/42（FH 8/17、BH 16/25）、F 13/17
     assert a["L"]["elbow"] == na and b["L"]["elbow"] == nb and a["L"]["fwd"] >= 0.85 * na and b["L"]["fwd"] >= 0.85 * nb, got
     assert b["L"]["sv"] >= 15 and b["L"]["sv_has"] / b["L"]["sv"] >= 0.4, got  # 發球手臂有結論：量到 11/17；當右手只有 4/17
     print("真實左手 OK", {i: (n, c["L"]["ok"], c["R"]["ok"]) for i, (n, c) in got.items()})

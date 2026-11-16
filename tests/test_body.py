@@ -53,7 +53,7 @@ assert r["wrist_speed"] > 4 and r["trunk_share"] < 0.05, r  # 0.5*pi / 0.4 s / 0
 r2 = kinematics(swing(body(), 0.3), J, c); assert r2["trunk_share"] > 0.15, r2
 # 8: one-frame wrist glitch does not set the peak
 b = swing(body()); b[c - 10, 6] += [2.0, 0]; r3 = kinematics(b, J, c); assert near(r3["wrist_speed"], r["wrist_speed"], 1.0), (r3, r)
-# 8: a 4-frame wrist glitch during the backswing (wall-1 #33) does not set the peak: the peak is searched in the forward swing only
+# 8: a 4-frame wrist glitch during the backswing (對牆影片 A #33) does not set the peak: the peak is searched in the forward swing only
 b = swing(body()); b[c - 24:c - 20, 6] += [[1.5, -0.5], [0.2, 0.6], [1.2, -0.3], [-0.4, 0.5]]; r3 = kinematics(b, J, c); assert near(r3["wrist_speed"], r["wrist_speed"], 1.0), (r3, r)
 # walking: everything translates together -> hip-relative speeds unchanged
 b = swing(body(), 0.3); b[:, :, 0] += 0.01 * f[:, None]; r4 = kinematics(b, J, c); assert near(r4["trunk_share"], r2["trunk_share"], 0.03), (r4, r2)
