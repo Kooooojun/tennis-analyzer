@@ -211,6 +211,10 @@ main.noplayer>.col{max-width:820px}
 .sess .meta{grid-column:1;font-size:12px;color:var(--muted)}
 .sess .sc{grid-row:1/3;grid-column:2;align-self:center;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
 .sess .sc b{font-size:20px;color:var(--ink)}
+@media (max-width:600px){
+  .sess .sc{grid-column:1/-1;grid-row:2;text-align:left;display:flex;flex-wrap:wrap;gap:4px 12px}
+  .sess .meta{grid-column:1/-1;grid-row:3}
+}
 .spark{width:100%;height:170px;display:block}
 .flags{list-style:none;padding:0;margin:6px 0 0;display:grid;gap:4px}
 .flags li{font-size:13px;padding:5px 9px;border-radius:6px;background:var(--chip);border-left:3px solid var(--line)}
@@ -222,16 +226,19 @@ main.noplayer>.col{max-width:820px}
 .score .total{font:700 40px/1 -apple-system,"PingFang TC",system-ui,sans-serif;font-variant-numeric:tabular-nums}
 .score .total small{font-size:15px;font-weight:400;color:var(--muted)}
 .score .sub2{font-size:13px;color:var(--muted)}
+.ci{font-size:12px;font-weight:400;color:var(--muted);white-space:nowrap}
+.score .total .ci,.bars .ci,.score-cons{display:block;line-height:1.5}
+.score-cons{font-size:12px;color:var(--muted)}
 .single-metric,.sess .sc b.single-metric{color:var(--muted)}
 .metric-note{display:block;font-size:12px;font-weight:400;color:var(--muted)}
 .score-notes{margin:4px 0 8px;padding-left:20px;color:var(--muted);font-size:12px}
-.bars{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 8px;align-items:center;margin-top:10px;font-size:13px}
+.bars{display:grid;grid-template-columns:minmax(0,1fr) minmax(12px,.4fr) auto;gap:6px 8px;align-items:center;margin-top:10px;font-size:13px}
 .bars .bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
 .bars .bar i{display:block;height:100%;background:var(--accent)}
 .bars .num{font-variant-numeric:tabular-nums;text-align:right;min-width:3.5em}
 .bars .na{color:var(--muted);font-size:12px}
 .cite{display:flex;flex-wrap:wrap;gap:4px;margin:2px 0 4px}
-.cite span{font-size:11.5px;color:var(--muted);background:var(--chip);border-radius:4px;padding:1px 6px;font-variant-numeric:tabular-nums}
+.cite span{font-size:12px;color:var(--muted);background:var(--chip);border-radius:4px;padding:1px 6px;font-variant-numeric:tabular-nums}
 .highlights{list-style:none;padding:0;margin:0;display:grid;gap:6px}
 .highlights button{width:100%;text-align:left;background:var(--chip);border-color:transparent;border-left:3px solid var(--warn);border-radius:6px}
 .highlights button.good{border-left-color:var(--good)} .highlights button.info{border-left-color:var(--line)}
@@ -283,6 +290,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
     <div class="card" data-tab="advice">
       <h2>這場的建議</h2>
       <div id="findings"></div>
+      <p class="caveat">分數括號為 95% 區間，是同一場內抽樣的誤差，不是跨日重測。區間不足表示尚未估計，或重抽未全數通過閘門。</p>
       <p class="caveat" id="caveatAdvice"></p>
       <p class="caveat" id="handAdvice" hidden></p>
     </div>
@@ -446,6 +454,9 @@ const ITEM = {total:"總分", uncapped:"未壓前總分", form:"技術", consist
 const STAT = {median:"中位數", mean:"平均", min:"最小", max:"最大", n:"拍數", score:"分數", cons:"一致性分", spread:"散佈"};
 const formNote = g => g?.form_n===1&&g.form_metrics?.length===1?`只根據 1 項：${ITEM[g.form_metrics[0]]||g.form_metrics[0]}`:"";
 const differentItems = (a,b) => a?.score_set!=null&&b?.score_set!=null&&JSON.stringify(a.score_set)!==JSON.stringify(b.score_set);
+const intervalText = u => u?.ci?`（${u.ci.map(x=>x.toFixed(1)).join("–")}）`:"（區間不足）";
+const scoreInterval = u => `<span class="ci">${intervalText(u)}</span>`;
+const scoreText = (v,u) => v==null?"–":v.toFixed(1)+scoreInterval(u);
 const scoreGroup = s => DAYS[s.day||DAY].scores?.groups?.find(g=>g.player===who(s)&&g.kind===s.kind);
 const esc = x => String(x).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // landmark id → index in the trimmed per-frame arrays
@@ -683,7 +694,10 @@ function citeText(c){  // one cite from notes.json (docs/scoring.md §8) in plai
   const f=ITEM[c.metric||c.field]||c.metric||c.field, v=c.value;
   if(c.stroke!=null) return `#${String(c.stroke).padStart(2,"0")} ${f} ${v}`;
   const g=[c.player&&c.player!=="me"?PN(c.player):"", NAMES[c.kind]||c.kind||"", c.drill==="feed"?"自拋":c.drill==="rally"?"對打":c.drill==="high"?"高拋":""].filter(Boolean).join("・");
-  return `${g} ${f} ${STAT[c.stat]||c.stat||""} ${v}`.trim();
+  const groupScore=["total","form","consistency","power","uncapped"].includes(c.metric);
+  const scored=c.metric&&(groupScore||["score","cons"].includes(c.stat||"score")), sg=scored?scoreGroup(c):null;
+  const u=groupScore?sg?.uncertainty?.[c.metric]:sg?.metrics?.[c.metric]?.uncertainty?.[c.stat||"score"];
+  return `${g} ${f} ${STAT[c.stat]||c.stat||""} ${v}${scored?intervalText(u):""}`.trim();
 }
 
 // ---------- 總覽: scores.json per player and kind, top findings, trend flags ----------
@@ -699,19 +713,19 @@ function drawOverview(){
     h+=`<div class="scores">`+[...sc.groups].sort((a,b)=>(a.n<5)-(b.n<5)).map(g=>{  // stable: few-stroke groups ("參考就好") after the real ones
       const rows=Object.entries(g.metrics).map(([m,x])=>{
         const ok=x.status==="ok"||x.status==null, s=ok?x.score:null;
-        const val=!ok?`<span class="na">資料不足</span>`:s==null?`<span class="na">只評一致性 ${r1(x.cons)}</span>`:r1(s);
+        const val=!ok?`<span class="na">資料不足</span>`:s==null?`<span class="na">只評一致性 ${scoreText(x.cons,x.uncertainty?.cons)}</span>`:scoreText(s,x.uncertainty?.score)+(x.cons==null?"":`<span class="score-cons">一致性 ${scoreText(x.cons,x.uncertainty?.cons)}</span>`);
         return `<span>${ITEM[m]||m}</span><span class="bar"><i style="width:${(s??0)*10}%"></i></span><span class="num" title="中位數 ${x.median??"–"}，${x.n} 拍${m.startsWith("knee")?`，膝角來源 ${g.knee_src==="knee3d"?"3D":"2D"}`:""}">${val}</span>`;
       }).join("");
       const flags=(window.TREND||[]).filter(t=>t.player===g.player&&t.kind===g.kind&&t.history.at(-1)?.session===d.id).flatMap(t=>t.flags);
       const note=formNote(g), cls=note?" single-metric":"";
-      return `<div class="score"><div class="top"><span class="total${cls}">${r1(g.total)}<small> / 10</small></span><span class="sub2">${multi?esc(PN(g.player))+" · ":""}${esc(NAMES[g.kind]||g.kind)} ${g.n} 拍<br><span class="form-value${cls}">技術 ${r1(g.form)}</span> · 一致性 ${r1(g.consistency)}${note?`<span class="metric-note">${esc(note)}</span>`:""}${g.capped?`<br>力量 ${r1(g.power)}，總分被壓低（<span class="${cls.trim()}">未壓前 ${r1(g.uncapped)}</span>）`:""}${g.n<5?`<br><b class="few">拍數少，參考就好</b>`:""}</span></div><div class="bars">${rows}</div>${flagList(flags,g)}</div>`;
+      return `<div class="score"><div class="top"><span class="total${cls}">${r1(g.total)}<small> / 10</small>${g.total==null?"":scoreInterval(g.uncertainty?.total)}</span><span class="sub2">${multi?esc(PN(g.player))+" · ":""}${esc(NAMES[g.kind]||g.kind)} ${g.n} 拍<br><span class="form-value${cls}">技術 ${scoreText(g.form,g.uncertainty?.form)}</span><br>一致性 ${scoreText(g.consistency,g.uncertainty?.consistency)}${note?`<span class="metric-note">${esc(note)}</span>`:""}${g.capped?`<br>力量 ${scoreText(g.power,g.uncertainty?.power)}，總分被壓低（<span class="${cls.trim()}">未壓前 ${scoreText(g.uncapped,g.uncertainty?.uncapped)}</span>）`:""}${g.n<5?`<br><b class="few">拍數少，參考就好</b>`:""}</span></div><div class="bars">${rows}</div>${flagList(flags,g)}</div>`;
     }).join("")+`</div>`;
     const ck=(sc.checks||[]).filter(c=>(c.passed||0)+(c.failed||0)+(c.unclear||0)>0), vck=ck.filter(c=>c.verified===true), rck=ck.filter(c=>c.verified!==true);  // no verified field (older scores.json) = reference
     const words=c=>(c.field?c.field==="bh_front_ok":/身前/.test(c.name))?["判在身前","判不在身前"]:c.field||/伸直|彎/.test(c.name)?["判伸直","判彎"]:["判通過","判沒通過"];
     const ckLine=(c,w)=>`${multi?esc(PN(c.player))+" · ":""}${esc(c.name)}：${w}、看不出來 ${c.unclear||0}${(c.unclear||0)>((c.passed||0)+(c.failed||0)+(c.unclear||0))/2?"，一半以上看不出來":""}`;
     if(vck.length) h+=`<h3>姿勢檢查</h3><ul class="flags">`+vck.map(c=>(c.passed||0)+(c.failed||0)?`<li class="${c.failed?"down":"up"}">${ckLine(c,`✓ 通過 ${c.passed||0}、✗ 沒通過 ${c.failed||0}`)}</li>`:`<li>${ckLine(c,"每一拍都判斷不了")}</li>`).join("")+`</ul>`;
     if(rck.length) h+=`<h3>姿勢檢查・參考（未驗證）</h3><ul class="flags armref">`+rck.map(c=>`<li>${ckLine(c,(w=>`${w[0]} ${c.passed||0}、${w[1]} ${c.failed||0}`)(words(c)))}</li>`).join("")+`</ul><p class="caveat">這幾項沒有足夠驗證（彎手臂在測試資料裡一拍都沒抓到），看不出來的拍可能有問題，不要當成沒問題。</p>`;
-    h+=`<p class="caveat">1–10 分，怎麼算見 docs/scoring.md。灰色「資料不足」= 能用的拍不到一半，不打分。</p>`;
+    h+=`<p class="caveat">1–10 分；括號為 95% 區間，是同一場內抽樣的誤差，不是跨日重測。區間不足表示尚未估計，或重抽未全數通過閘門。灰色「資料不足」不打分；方法見 docs/scoring.md。</p>`;
   }
   const fs=[...(d.findings||[])].sort((a,b)=>(!!a.info-!!b.info)).slice(0,3);
   if(fs.length) h+=`<h3>本場重點</h3><ul class="highlights">`+fs.map(f=>`<li><button class="${f.good?"good":f.info?"info":""}" data-go="advice">${f.good?"✓":"△"} ${esc(f.title)}</button></li>`).join("")+`</ul>`;
@@ -719,7 +733,7 @@ function drawOverview(){
   $("overview").querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(DAY,b.dataset.go));
 }
 function flagList(flags,g){
-  return flags.length?`<ul class="flags">`+flags.map(f=>{const note=f.item==="total"?formNote(g):"";return `<li class="${f.diff>0?"up":"down"}"><span class="${note?"single-metric":""}">${f.flag}：${ITEM[f.item]||f.item} ${f.base} → ${f.now}</span>${note?`<span class="metric-note">${esc(note)}</span>`:""}</li>`;}).join("")+`</ul>`:"";
+  return flags.length?`<ul class="flags">`+flags.map(f=>{const note=f.item==="total"?formNote(g):"";return `<li class="${f.flag==="在誤差內"?"":f.diff>0?"up":"down"}"><span class="${note?"single-metric":""}">${esc(f.flag)}：${ITEM[f.item]||esc(f.item)} ${f.base} → ${f.now}</span>${note?`<span class="metric-note">${esc(note)}</span>`:""}</li>`;}).join("")+`</ul>`:"";
 }
 function drawTrend(){
   const keys=DAY_KEYS, st=Object.fromEntries(keys.map(k=>[k,dayStats(DAYS[k].data)])), r=x=>x==null?"–":Math.round(x), dg=x=>x==null?"–":Math.round(x)+"°", dk=kTxt;
@@ -1340,12 +1354,12 @@ function drawHome(){
     const tr=T.filter(t=>t.player===p);
     const rows=days.map(d=>{
       const g=(d.scores?.groups||[]).filter(g=>g.player===p), n=d.data.filter(s=>who(s)===p).length;
-      const sc=g.length?[...g].sort((a,b)=>(a.n<5)-(b.n<5)).map(g=>{const note=formNote(g);return `<span>${esc(NAMES[g.kind]||g.kind)} <b class="${note?"single-metric":""}">${g.total==null?"–":g.total.toFixed(1)}</b>${note?`<span class="metric-note">${esc(note)}</span>`:""}</span>`;}).join(" "):"未評分";
+      const sc=g.length?[...g].sort((a,b)=>(a.n<5)-(b.n<5)).map(g=>{const note=formNote(g);return `<span>${esc(NAMES[g.kind]||g.kind)} <b class="${note?"single-metric":""}">${scoreText(g.total,g.uncertainty?.total)}</b>${note?`<span class="metric-note">${esc(note)}</span>`:""}</span>`;}).join(" "):"未評分";
       return `<li><a href="#d${encodeURIComponent(d.id)}/overview" data-p="${esc(p)}"><b>${esc(d.label)}${d.slug?`<span class="slug">${esc(d.slug)}</span>`:""}</b><span class="sc">${sc}</span><span class="meta">${n} 拍 · ${esc(d.camera||"沒寫鏡頭")}</span></a></li>`;
     }).join("");
-    const trend=tr.map(t=>`<h3>${esc(NAMES[t.kind]||t.kind)}・分數走勢</h3>`+(t.history.length<2?`<p class="hint">只有 ${t.history.length} 場有評分，還不能看走勢。</p>`:`<svg class="spark" data-player="${esc(p)}" data-kind="${esc(t.kind)}"></svg>`)+flagList(t.flags,t.history.findLast(r=>r.comparable))).join("");
+    const trend=tr.map(t=>`<h3>${esc(NAMES[t.kind]||t.kind)}・各場分數與 95% 區間</h3>`+(t.history.length<2?`<p class="hint">只有 ${t.history.length} 場有評分，還不能看走勢。</p>`:`<svg class="spark" data-player="${esc(p)}" data-kind="${esc(t.kind)}"></svg>`)+flagList(t.flags,t.history.findLast(r=>r.comparable))).join("");
     return `<div class="card"><h2>${esc(PN(p))}</h2><p class="hint" style="margin:0 0 6px">${days.length} 場</p><ul class="sess">${rows}</ul>${trend||(LOAD_FAIL.includes("分數走勢")?"":`<p class="hint">還沒有評分趨勢（跑 tools/score.py 和 tools/trend.py）。</p>`)}</div>`;
-  }).join("")+`</div><p class="caveat">分數走勢只比同一個鏡頭位置的場次（docs/scoring.md §6）。缺點改善 = 原本低於 6 分的項目進步；優點退步 = 原本 8 分以上的項目退步。</p>`;
+  }).join("")+`</div><p class="caveat">括號與誤差條為 95% 區間：同一場內抽樣的誤差，不是跨日重測。只比同機位、同版本與相同評分項目的場次，差值未超過誤差門檻標「在誤差內」；少於 10 拍不判進退步。缺點改善 = 原本低於 6 分的項目進步；優點退步 = 原本 8 分以上的項目退步。</p>`;
   $("home").querySelectorAll("a[data-p]").forEach(a=>a.addEventListener("click",()=>{ pfilter=a.dataset.p; }));
   $("home").querySelectorAll("svg.spark").forEach(svg=>drawSpark(svg,T.find(t=>t.player===svg.dataset.player&&t.kind===svg.dataset.kind)));
 }
@@ -1365,15 +1379,18 @@ function drawSpark(svg,t){  // total + consistency per session, oldest left
     g.forEach((j,k)=>xs[j]=px+(k-(g.length-1)/2)*step);
   });
   const x=i=>xs[i], y=v=>pt+(1-(v-1)/9)*(H-pt-pb);
-  const mk=(tag,a)=>{ const e=document.createElementNS(NS,tag); for(const k in a) e.setAttribute(k,a[k]); svg.append(e); return e; };
+  const mk=(tag,a,parent=svg)=>{ const e=document.createElementNS(NS,tag); for(const k in a) e.setAttribute(k,a[k]); parent.append(e); return e; };
   for(const v of [1,4,7,10]){ mk("line",{x1:pl,x2:W-pr,y1:y(v),y2:y(v),stroke:"var(--line)"}); mk("text",{x:pl-5,y:y(v)+3,"text-anchor":"end","font-size":10,fill:"var(--muted)"}).textContent=v; }
   for(const [key,col,w] of [["consistency","var(--muted)",1.5],["total","var(--accent)",2.5]]){
     const pts=h.map((r,i)=>[i,r.items[key]]).filter(([,v])=>v!=null), seg=r=>r.camera?r.camera+"|"+r.knee_src+"|"+r.score_version:NaN;  // NaN: an unnamed camera never joins a neighbour
-    for(let a=0,b=1;a<pts.length;a=b++){ while(b<pts.length&&seg(h[pts[b][0]])===seg(h[pts[b-1][0]])&&!differentItems(h[pts[b-1][0]],h[pts[b][0]])) b++; if(b-a>1) mk("polyline",{points:pts.slice(a,b).map(([i,v])=>`${x(i)},${y(v)}`).join(" "),fill:"none",stroke:key==="total"&&formNote(h[pts[a][0]])?"var(--muted)":col,"stroke-width":w}); }  // different camera / knee source / version / scored items: not joined
+    for(let a=0,b=1;a<pts.length;a=b++){ while(b<pts.length&&seg(h[pts[b][0]])===seg(h[pts[b-1][0]])&&!differentItems(h[pts[b-1][0]],h[pts[b][0]])) b++; if(b-a>1) mk("polyline",{points:pts.slice(a,b).map(([i,v])=>`${x(i)},${y(v)}`).join(" "),fill:"none",stroke:key==="total"&&pts.slice(a,b).some(([i])=>formNote(h[i]))?"var(--muted)":col,"stroke-width":w,...(key==="consistency"?{"stroke-dasharray":"4 3"}:{})}); }  // different camera / knee source / version / scored items: not joined
     for(const [j,[i,v]] of pts.entries()){ const radius=Math.max(2,Math.min(key==="total"?4.5:3,i?(x(i)-x(i-1))*.45:Infinity,i<h.length-1?(x(i+1)-x(i))*.45:Infinity));
-      const note=key==="total"?formNote(h[i]):"", changed=key==="total"&&j>0&&differentItems(h[pts[j-1][0]],h[i]);
-      const label=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v} · 鏡頭：${h[i].camera||"沒寫"}${note?` · ${note}`:""}${changed?" · 項目不同":""}`;
-      const c=mk("circle",{cx:x(i),cy:y(v),r:radius,fill:note?"var(--muted)":col,role:"img",tabindex:0,"aria-label":label}); const tt=document.createElementNS(NS,"title"); tt.textContent=label; c.append(tt); }
+      const note=key==="total"?formNote(h[i]):"", changed=key==="total"&&j>0&&seg(h[pts[j-1][0]])===seg(h[i])&&differentItems(h[pts[j-1][0]],h[i]), ci=h[i].uncertainty?.[key]?.ci, color=note?"var(--muted)":col;
+      if(ci){const bar=mk("g",{class:"error-bar","data-key":key,stroke:color,"stroke-width":1.5});
+        mk("line",{x1:x(i),x2:x(i),y1:y(ci[0]),y2:y(ci[1])},bar);
+        for(const end of ci)mk("line",{x1:x(i)-4,x2:x(i)+4,y1:y(end),y2:y(end)},bar);}
+      const label=`${DAYS[h[i].session]?.label||h[i].session} ${ITEM[key]} ${v}${ci?`，95% 區間 ${ci.map(x=>x.toFixed(1)).join("–")}`:"，區間不足"} · 鏡頭：${h[i].camera||"沒寫"}${note?` · ${note}`:""}${changed?" · 項目不同":""}`;
+      const c=mk("circle",{cx:x(i),cy:y(v),r:radius,fill:key==="consistency"?"var(--panel)":color,stroke:color,role:"img",tabindex:0,"aria-label":label}); const tt=document.createElementNS(NS,"title"); tt.textContent=label; c.append(tt); }
   }
   let lx=-1e9;
   const last=gx(keys.at(-1));
@@ -1383,8 +1400,8 @@ function drawSpark(svg,t){  // total + consistency per session, oldest left
     lx=px; mk("text",{x:px,y:H-38,"text-anchor":keys.length<2?"middle":i===0?"start":i===keys.length-1?"end":"middle","font-size":10,fill:"var(--muted)"}).textContent=d?mdOf(d):"無日期";
   });
   mk("text",{x:pl,y:H-6,"font-size":10,fill:"var(--accent)"}).textContent="● 總分";
-  mk("text",{x:pl+52,y:H-6,"font-size":10,fill:"var(--muted)"}).textContent="● 一致性";
-  const totals=h.filter(r=>r.items.total!=null), notes=totals.flatMap((r,i)=>{const note=formNote(r),changed=i>0&&differentItems(totals[i-1],r);return note||changed?[`${DAYS[r.session]?.label||r.session}：${[note,changed?"項目不同":""].filter(Boolean).join("；")}`]:[];});
+  mk("text",{x:pl+52,y:H-6,"font-size":10,fill:"var(--muted)"}).textContent="○ 一致性（虛線）";
+  const totals=h.filter(r=>r.items.total!=null), notes=totals.flatMap((r,i)=>{const note=formNote(r),prev=totals[i-1],changed=i>0&&r.camera&&r.camera===prev.camera&&r.knee_src===prev.knee_src&&r.score_version===prev.score_version&&differentItems(prev,r);return note||changed?[`${DAYS[r.session]?.label||r.session}：${[note,changed?"項目不同":""].filter(Boolean).join("；")}`]:[];});
   if(notes.length){const list=document.createElement("ul");list.className="score-notes";for(const text of notes){const li=document.createElement("li");li.textContent=text;list.append(li);}svg.after(list);}
 }
 route();

@@ -28,6 +28,7 @@ BASE_KINDS = ("FH", "BH")  # metrics without `kinds` apply here (knee etc. are n
 KINDS = ("FH", "BH", "SV")  # SV group exists only when the session has SV strokes
 MIN_N, MIN_N_CONS = 3, 5
 MIN_COVER = 0.5  # usable strokes / strokes in the group; below it the metric says 資料不足 (docs/scoring.md §1)
+BOOTSTRAP_N, BOOTSTRAP_SEED = 1000, 20261116
 SCORE_VERSION = 10  # 10: contact_h consistency only; no absolute wrist-height target. 9: lean None for a camera within 30 deg of front/back (a whole front/back session can turn lean into 資料不足), tilt drops frames whose 3D shoulders overlap along the camera axis; old sessions need refine.py re-run for the new values (serve-form-view-gates). 8: prep followed back past 1.0 s when the window start is the minimum; prep_trunc (lower bound) strokes left out of prep; prep along the 3D swing axis for a front / back camera (prep-window-direction). 7: BH knee / open_min consistency only, turn out of the power cap, consistency spread centred per (video, drill) (score-groups-consistency). 6: knee view gate (camera within 30 deg of front/back -> knee_warn) + kinematics get visibility-masked xy (knee-view-gate). 5: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate (body-kinematics). 4: + finish, reach, tilt, lean, stance and the SV group (serve-finish). 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
 
 
@@ -119,10 +120,34 @@ def score_group(strokes, show_open, kind="FH"):
                 form_metrics=form_metrics, form_n=len(form_metrics))
 
 
-def score_session(strokes, show_open):
+def bootstrap_group(strokes, show_open, kind="FH"):
+    """Within-video resampling through the official scorer, including its quality gates."""
+    group = score_group(strokes, show_open, kind)
+    clips = {}
+    for s in strokes: clips.setdefault(str(s.get("video")), []).append(s)
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    samples = [score_group([clip[i] for clip in clips.values() for i in rng.integers(0, len(clip), len(clip))], show_open, kind)
+               for _ in range(BOOTSTRAP_N)]
+
+    def interval(value, values):
+        if value is None: return None
+        valid = [v for v in values if v is not None and math.isfinite(v)]
+        # A failed gate is not zero; incomplete draws cannot establish an unconditional interval.
+        complete = len(valid) == BOOTSTRAP_N
+        return dict(ci=[float(x) for x in np.percentile(valid, [2.5, 97.5])] if complete else None,
+                    sem=float(np.std(valid, ddof=1)) if complete else None, valid=len(valid), samples=BOOTSTRAP_N)
+
+    group["uncertainty"] = {k: interval(group[k], [s[k] for s in samples]) for k in ("total", "form", "consistency", "power", "uncapped")}
+    for m, metric in group["metrics"].items():
+        metric["uncertainty"] = {k: interval(metric[k], [s["metrics"][m][k] for s in samples]) for k in ("score", "cons", "median", "spread")}
+    return group
+
+
+def score_session(strokes, show_open, with_uncertainty=False):
     who = lambda s: s.get("player") or "me"  # "player": null counts as "me" too
     keys = sorted({(who(s), s["kind"]) for s in strokes if s["kind"] in KINDS})
-    return [dict(player=p, kind=k, **score_group([s for s in strokes if who(s) == p and s["kind"] == k], show_open, k))
+    scorer = bootstrap_group if with_uncertainty else score_group
+    return [dict(player=p, kind=k, **scorer([s for s in strokes if who(s) == p and s["kind"] == k], show_open, k))
             for p, k in keys]
 
 
@@ -154,7 +179,7 @@ def check_session(strokes):
 if __name__ == "__main__":
     from common import session, web, load, save
     s = session(); D = web(s); notes = load(D / "notes.json", {})
-    G = score_session(load(D / "strokes.json"), notes.get("showOpen") is True)
+    G = score_session(load(D / "strokes.json"), notes.get("showOpen") is True, with_uncertainty=True)
     save(D / "scores.json", dict(score_version=SCORE_VERSION, session=s, date=notes.get("date", s), camera=notes.get("camera") or "", show_open=notes.get("showOpen") is True, groups=G, checks=check_session(load(D / "strokes.json"))))
     for g in G:
         ms = "  ".join(f"{m} {x['score']}（中位 {x['median']}，{x['n']} 拍，一致 {x['cons']}）" for m, x in g["metrics"].items())

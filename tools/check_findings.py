@@ -5,6 +5,8 @@ import sys
 import re
 import numpy as np
 from platform_util import utf8_stdout
+from trend import NAMES, _entry, compare
+from score import METRICS
 
 utf8_stdout()
 
@@ -42,6 +44,8 @@ def _cite(c, strokes, groups, show_open=False):
     """None if the cite checks out, else the reason."""
     who = lambda s: s.get("player") or "me"
     if not isinstance(c, dict): return "cite 的每一項要是物件"
+    if "change" in c and (c["change"] not in ("up", "down") or "stroke" in c or not isinstance(c.get("metric"), str) or c.get("stat", "score") not in ("score", "cons")):
+        return "change 只能是 up／down，且須引用分數或分項一致性"
     if "stroke" in c:
         n = c["stroke"]
         if not isinstance(n, int) or not 1 <= n <= len(strokes): return f"拍 #{n} 不存在"
@@ -69,7 +73,91 @@ def _cite(c, strokes, groups, show_open=False):
     return "cite 要有 stroke、metric 或 stat"
 
 
-def check(notes, strokes, scores):
+def _change_errors(finding, scores, runs):
+    """Check directional claims against the same score histories as trend.py."""
+    text = finding.get("title", "") + "。" + finding.get("text", "")
+    up, down = r"進步|改善|變好|(?:更|比較)(?:好|穩|一致)|比[^不沒無未非]*穩|一致了", r"退步|變差|(?:更|比較)差|(?:變得?|更)不穩|比[^不沒無未非]*不穩"
+    cross_session = r"前場|上場|上次|前次|之前|昨天|跨場|\d{1,2}/\d{1,2}"
+    drills = {c.get("drill") for c in finding.get("cite", []) if isinstance(c, dict) and c.get("drill") is not None}
+    clauses = [c.strip() for c in re.split(r"[。；，,：:！!?？\n]|但是|而且|所以|因此|但|而", text) if re.search(up + "|" + down, c)]
+    split_clauses = []
+    for clause in clauses:
+        parts = re.split(r"(而且|並且|但是|同時|以及|且|但|而|與|及|、)", clause)
+        pending = parts[0]
+        for i in range(1, len(parts), 2):
+            if re.search(up + "|" + down, pending) and re.search(up + "|" + down, "".join(parts[i + 1:])):
+                split_clauses.append(pending)
+                pending = parts[i + 1]
+            else:
+                pending += parts[i] + parts[i + 1]
+        split_clauses.append(pending)
+    clauses = [c for c in split_clauses
+               if not re.search(r"(?:不能|無法|沒有|不足以|不代表|不算|不可).*?(?:" + up + "|" + down + ")", c)
+               and not (not re.search(cross_session, c) and re.match(r"下次|下一次|未來|建議|試著|希望|目標|請|先改善", c))
+               and not (not re.search(cross_session, text) and len(drills) >= 2 and re.search(r"自拋|對打|高拋", c))]
+    declared = [c for c in finding.get("cite", []) if isinstance(c, dict) and c.get("change") in ("up", "down") and isinstance(c.get("metric"), str)]
+    if not clauses and not declared: return []
+    identities = {(c.get("player") or "me", c.get("kind")) for c in finding.get("cite", []) if isinstance(c, dict) and "kind" in c}
+    if not identities: return ["進退步宣稱缺少球員與拍種的群組引用"]
+
+    def entry(run, group):
+        h = _entry(run, group)
+        h["items"].update({k: group.get(k) for k in GROUP_KEYS})
+        h["uncertainty"].update(group.get("uncertainty") or {})
+        form = sorted(m for m, x in group["metrics"].items() if x["score"] is not None and not METRICS.get(m, {}).get("power"))
+        power = sorted(m for m, x in group["metrics"].items() if x["score"] is not None and METRICS.get(m, {}).get("power"))
+        h["component_sets"] = {"form": form, "power": power, "uncapped": [form, h["cons_set"]]}
+        h["items"].update({m + ".cons": x["cons"] for m, x in group["metrics"].items()})
+        h["uncertainty"].update({m + ".cons": (x.get("uncertainty") or {}).get("cons") for m, x in group["metrics"].items()})
+        return h
+
+    errors = []
+    for player, kind in identities:
+        group = next((g for g in scores.get("groups", []) if (g["player"], g["kind"]) == (player, kind)), None)
+        if group is None:
+            errors.append(f"{kind}沒有足夠的誤差估計，不能宣稱進步或退步")
+            continue
+        history = []
+        for run in runs:
+            if run.get("session") == scores.get("session") or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(run.get("date"))): continue
+            if (str(run["date"]), run.get("session", "")) >= (str(scores.get("date", "")), scores.get("session", "")): continue
+            old = next((g for g in run.get("groups", []) if (g["player"], g["kind"]) == (player, kind)), None)
+            if old is not None: history.append(entry(run, old))
+        history.sort(key=lambda h: (h["date"], h["session"]))
+        flags = {f["item"]: f for f in compare([*history, entry({"session": "", **scores}, group)])} if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(scores.get("date"))) else {}
+        names = {**NAMES, "form": "技術", "power": "力量", "uncapped": "未壓前總分"}
+        cited_items = [c["metric"] + (".cons" if c.get("stat") == "cons" else "") for c in finding.get("cite", []) if isinstance(c, dict) and isinstance(c.get("metric"), str)
+                       and (c.get("player") or "me", c.get("kind")) == (player, kind)]
+        cited_cons = [m for m in cited_items if m.endswith(".cons")]
+        claims = [(c["metric"] + (".cons" if c.get("stat") == "cons" else ""), c["change"]) for c in declared
+                  if (c.get("player") or "me", c.get("kind")) == (player, kind)]
+        for clause in clauses:
+            mentioned = re.findall("|".join(re.escape(n) for n in sorted(names.values(), key=len, reverse=True)), clause)
+            items = [item for item, name in names.items() if name in mentioned]
+            if not items or items == ["consistency"] and cited_cons:
+                items = cited_cons or cited_items
+            if re.search(r"穩|一致", clause):
+                if cited_cons: items = [m for m in items if m != "consistency"] + cited_cons
+                metric_items = [m for m in items if m.removesuffix(".cons") in group["metrics"]]
+                if re.search(r"進步|退步|改善|變好|變差|(?:更|比較)(?:好|差)", clause):
+                    specific = [m for m in metric_items if m.endswith(".cons") or re.search(re.escape(names.get(m, m)) + r"(?:的|變得)?(?:一致性|更穩|比較穩)", clause)]
+                    items = [m for m in items if m not in specific and not (m == "consistency" and specific)]
+                else:
+                    specific, items = metric_items, [m for m in items if m in GROUP_KEYS and names[m] in mentioned]
+                items += [m if m.endswith(".cons") else m + ".cons" for m in specific]
+                items = items or ["consistency"]
+            claims += [(item, direction) for item in set(items or ["total"]) for direction, pattern in (("up", up), ("down", down)) if re.search(pattern, clause)]
+        for item, direction in sorted(set(claims)):
+            name = names.get(item.removesuffix(".cons"), item) + ("一致性" if item.endswith(".cons") else "")
+            flag = flags.get(item)
+            if flag is None: errors.append(f"{name}沒有足夠的誤差估計，不能宣稱進步或退步（需同版本、同機位可比資料）")
+            elif flag["flag"] == "在誤差內": errors.append(f"{name}變化在誤差內（差 {flag['diff']}，門檻 {flag['threshold']:.2f}），不能宣稱進步或退步")
+            elif direction == "up" and flag["diff"] < 0 or direction == "down" and flag["diff"] > 0:
+                errors.append(f"{name}進退步方向與實際差值 {flag['diff']} 相反")
+    return errors
+
+
+def check(notes, strokes, scores, runs=()):
     """Return one error string per failing finding ('#<k> <title>: reason; reason')."""
     out = []
     for i, f in enumerate(notes.get("findings", []), 1):
@@ -77,6 +165,7 @@ def check(notes, strokes, scores):
         if not isinstance(cites, list): cites = []
         if not cites: errs.append("沒有引用（cite）")
         errs += [r for r in (_cite(c, strokes, scores.get("groups", []), scores.get("show_open") is True) for c in cites) if r]
+        errs += _change_errors({**f, "cite": cites}, scores, runs)
         vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
         text = f.get("text", "")
         U = r"(?:°|%|％|秒)"
@@ -103,6 +192,7 @@ if __name__ == "__main__":
     from common import session, web, load
     D = web(session())
     if not (D / "scores.json").exists(): sys.exit(f"缺 scores.json：先跑 .venv/bin/python tools/score.py {D.name}")
-    errs = check(load(D / "notes.json"), load(D / "strokes.json"), load(D / "scores.json"))
+    runs = [load(p) for p in D.parent.glob("*/scores.json")]
+    errs = check(load(D / "notes.json"), load(D / "strokes.json"), load(D / "scores.json"), runs=runs)
     print("\n".join(errs) if errs else f"ok：{len(load(D / 'notes.json').get('findings', []))} 條 findings 的引用都對得上")
     sys.exit(1 if errs else 0)
