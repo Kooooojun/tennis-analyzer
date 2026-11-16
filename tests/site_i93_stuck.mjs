@@ -46,6 +46,23 @@ try{
      console.log(JSON.stringify({measurement:{...state,retries,requests:requests.length,chunks:requests.map(e=>e.chunks)}}));
      assert.equal(retries,0,'持續有原生下載進展時不得重載');return {...state,retries,requests:requests.length,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
     },
+    async slowByteCeiling(page){
+     const before=f.events.length,start=performance.now();
+     await page.evaluate(url=>{
+      window.ceilingProgress=0;v.addEventListener('progress',e=>{if(e.isTrusted)ceilingProgress++;});
+      ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=45&case='+Date.now();load(4,false);
+     },f.url);
+     await page.waitForTimeout(22000);
+     const failed=()=>page.locator('#stage .vid-msg[data-fail]:not([disabled])');
+     assert.equal(await failed().count(),0,'持續下載不得在 30 秒前失敗');
+     assert.equal(f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4')&&e.query.includes('_retry')).length,0,'持續下載不得重載');
+     await page.waitForFunction(()=>!!v.parentElement.querySelector('.vid-msg[data-fail]:not([disabled])'),null,{timeout:12000});
+     const elapsedMs=Math.round(performance.now()-start),progress=await page.evaluate(()=>ceilingProgress);
+     const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4')),retries=requests.filter(e=>e.query.includes('_retry')).length;
+     assert(elapsedMs>=29500&&elapsedMs<=34000,`媒體上限應約 30 秒，實際 ${elapsedMs} ms`);assert(progress>=20,'必須持續有可信任下載進度');
+     assert(requests.some(e=>e.chunks>=100),'伺服器必須持續傳送真實資料');assert.equal(retries,0);
+     return {elapsedMs,progress,retries,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
+    },
     async poseFailure(page){
      let count=0;await page.route('**/pose/4.js*',()=>{count++;});
      const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>load(4,false));await started;
@@ -168,7 +185,7 @@ try{
      await page.evaluate(()=>load(8,false));await failed;
     },
    })){
-    if(['rapidH2','slowByteProgress'].includes(name)&&engine==='webkit')continue;
+    if(['rapidH2','slowByteProgress','slowByteCeiling'].includes(name)&&engine==='webkit')continue;
     if(process.env.SITE_CASES&&!process.env.SITE_CASES.split(',').includes(name))continue;
     const context=await browser.newContext({ignoreHTTPSErrors:true,...(engine==='webkit'?devices['iPhone 13']:{})}),page=await context.newPage(),errors=[];
     page.on('pageerror',e=>errors.push(e.message));
