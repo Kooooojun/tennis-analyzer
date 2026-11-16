@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from common import ROOT, FPS, session, work, web, videos, load, tracks, track_file
 from platform_util import h264_args
+from proxy import map_pose
 
 LONG = 1280  # long side of the output, px
 FONTS = ["/System/Library/Fonts/STHeiti Medium.ttc", "/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc",
@@ -119,6 +120,7 @@ def annotate(s, name, src, panel="auto"):
     sp = web(s) / "strokes.json"; allS = load(sp) if sp.exists() else []
     S = starts(sorted(({**x, "no": i + 1, "c": round(x["t"] * FPS)} for i, x in enumerate(allS) if x["video"] == vn), key=lambda x: x["c"]))
     w, h = probe(src); sc = LONG / max(w, h); W, H = int(round(w * sc / 2)) * 2, int(round(h * sc / 2)) * 2
+    if (Wd / "proxy_filter.txt").exists(): poses = {k: map_pose(p, w, h, inverse=True) for k, p in poses.items()}
     out = web(s) / f"annotated_{name}.mp4"; out.parent.mkdir(parents=True, exist_ok=True)
     vcodec = h264_args("6000k", 22)
     dec = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(src), "-an", "-vf", f"scale={W}:{H},fps={FPS}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"], stdout=subprocess.PIPE)

@@ -53,12 +53,32 @@ macOS 的 `h264_videotoolbox` 控制實驗：兩次完全相同的 main ffmpeg �
 
 METHOD 維持原值。16:9 延用既有濾鏡與快取，不因本次改版重算。非 16:9 的 `proxy_filter.txt` 記錄成功輸出的完整空間濾鏡；缺記錄或濾鏡不同時，重新執行 prep 會先重建 proxy，再依相依時間戳重算姿態、球軌與事件。版本記錄在 ffmpeg 成功之後才寫入，失敗可續跑。
 
-之後需重跑 candidates 產生原片座標正確的 sheet，依既有流程核對候選與標註，再更新下游產物；既有標註不會自動當作重新核對過。只有 proxy 的 fallback sheet 保持 proxy 座標。
+之後需重跑 candidates 產生原片座標正確的 sheet，依既有流程核對候選與標註，再更新下游產物；既有標註不會自動當作重新核對過。只有 proxy 的 fallback sheet 保持 proxy 座標。原片標註影片也需重新匯出；新補邊場次以相同版本記錄辨識，繪圖前反映射所有軌，骨架、標籤、避讓框與即時 2D 膝角共用原片座標。
+
+## 2D 座標使用處查核
+
+以 `rg` 搜尋姿態載入、影格解碼、匯出、繪圖與量測呼叫，逐一核對使用的畫面與尺寸：
+
+| 使用處 | 狀態與理由 |
+|---|---|
+| `pose_full.py` 原片裁切／低 fps 全畫面 | 已處理；前者儲存前映射，後者解碼即補邊，統一輸出 proxy 座標 |
+| `candidates.py` 原片 sheet／`frames()` | 已處理；解碼原片後反映射所有人的姿態；`frames()` 本身只按時間解碼，沒有姿態運算 |
+| `candidates.py` fallback、legacy、身份確認圖 | 不需反映射；影格與姿態都取自 proxy |
+| `annotate.py` 原片標註匯出 | 已處理；有版本記錄才反映射所有軌，沿用原片縮放；骨架／標籤／bbox／2D 膝角都取同一組姿態 |
+| `export_session.py` 每拍 clip 與姿態 JSON | 不需反映射；影片裁自 proxy，JSON 同時保留 proxy 姿態與 `size` |
+| `highlights.py`／reel | 不需反映射；讀上述 clip、`frames` 與 `size`，裁切／骨架／膝角均在相同 proxy 座標 |
+| `strip.py` | 不需反映射；讀每拍 proxy clip，以其實際寬高裁切 `frames` |
+| `assemble.py`／`metrics.py`／`refine.py`／`kind.py` | 不需反映射；全片由 proxy 取得尺寸、clip 由 JSON 的 `size` 量測；2D 點差消除補邊平移，像素尺度與畫面一致 |
+| `prep.py` 慣用手／`events.py`／`match.py`／`attrib.py` | 不需反映射；姿態與球都對應 proxy，使用 proxy 尺寸或其寬高比 |
+| `build_site.py`／網頁骨架、比較放大與曲線 | 不需反映射；匯出的 proxy clip 配對相同 `frames`／`size`，畫布也依影片尺寸定位 |
+| `eval_attrib.py`／`eval_lr_swap.py` | 不需反映射；前者讀 proxy 尺寸，後者讀已儲存的 proxy `size`，沒有原片繪圖 |
+| `eval_knee2d_gate.py`、THETIS 評估系列、研究腳本 | 本次不影響；使用各自既有固定尺寸研究輸入，未改為讀本次 prep 的新輸出；研究裁切圖也以對應 proxy 取格。固定原片尺寸的歷史研究工具不能直接混入新補邊姿態 |
 
 ## 可重現檢查
 
 ```sh
 .venv/bin/python tests/test_proxy.py
+.venv/bin/python tests/test_annotate.py
 .venv/bin/python tests/test_pose_full.py
 .venv/bin/python tests/test_prep_ball.py
 .venv/bin/python tests/test_prep_e2e.py
@@ -66,6 +86,8 @@ METHOD 維持原值。16:9 延用既有濾鏡與快取，不因本次改版重�
 
 單元測試先因缺少補邊模組而紅燈，實作後通過；把原片路徑測試指向 main 的 pose_full，仍會因拉伸濾鏡而失敗。合成 E2E 使用真實 ffmpeg、姿態、追球模型，包含黑邊像素、舊非 16:9 快取重算與第二次執行不重算。
 
-首輪三 OS CI 抓到黑邊邊界斷言過嚴：本機以相同 libx264 參數重現，H.264 去塊濾波讓黑邊邊界亮度達 5，內容仍精確位於 x=120..839。E2E 改驗黑邊內部近黑，並另外斷言內容邊界與中央 720 px 寬度；正式程式未更動。最小重現與完整 E2E 修正後均通過。
+首輪三 OS CI 抓到黑邊斷言過嚴：本機 libx264 重現邊界亮度達 5；避開邊界後 Linux／Windows 通過，但 macOS 硬體編碼仍未通過原本 <4 的斷言。考慮編碼／解碼的 limited range 黑位與微小雜訊，依協調者裁定改驗黑邊內部的解碼亮度 Y 平均 ≤20、最大 ≤32，另以亮度 >128 的內容欄斷言 x=120..839 與中央 720 px 寬度；正式濾鏡不變。完整 E2E 本機通過。
+
+Codex 指出原片標註匯出尚未反映射；新增測試先重現失敗，再修正。合成 4:3／3:4 原片的雙軌標註影片均解碼核對鼻子圓點位置，並核對傳入即時膝角的姿態與原片座標誤差 <1e-6；無版本記錄與橫直 16:9 的座標逐位元不變，固定 libx264 的橫直 16:9 標註影片整檔也相同。
 
 24 支實片重算依共用 heavy 鎖一次一支，開跑前與每 30 秒檢查 free+inactive ≥8 GB。影片、影格、骨架與逐片結果均不提交或上傳。本機 CI 使用的 Python 測試通過，依賴其他私有場次的 `test_hand.py` 未執行；三 OS CI、最新 head 的 Codex 審查與最終隱私掃描狀態見 [PR #94](https://github.com/Kooooojun/tennis-analyzer/pull/94)。
