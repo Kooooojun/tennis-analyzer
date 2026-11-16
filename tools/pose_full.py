@@ -190,7 +190,7 @@ def main():
         if not r: print(f"warning: no frame rate for {source}; pose runs on the 60 fps proxy (repeated frames for a low-fps source)", file=sys.stderr)
         elif r < 50: fps = r
         probe = mk(N, "IMAGE"); step = max(1, n60 // 60)
-        found = [len(probe.detect(img_of(f)).pose_landmarks) for f in frames(["-i", src, "-vf", f"select=not(mod(n\\,{step}))", "-vsync", "0"], W, H)]
+        found = [len(probe.detect(img_of(f)).pose_landmarks) for f in frames(["-i", src, "-vf", f"select=not(mod(n\\,{step}))", "-fps_mode", "passthrough"], W, H)]  # -vsync is gone in ffmpeg 9
         probe.close()
         if not found: sys.exit(f"no frames decoded from {src}")
         crop = use_crop(found)
