@@ -34,8 +34,9 @@ function contrast(fg, bg) {
     await page.goto(URL, { waitUntil: "networkidle" });
     await page.waitForSelector("body.ready");
 
-    // Choose a session (prefer one with multiple strokes)
-    await page.evaluate(() => go(DAY_KEYS[0], "video"));
+    // Choose the session with the most strokes
+    const richDay = await page.evaluate(() => [...DAY_KEYS].sort((a, b) => DAYS[b].data.length - DAYS[a].data.length)[0]);
+    await page.evaluate(k => go(k, "video"), richDay);
     await page.waitForFunction(() => S && v.readyState >= 2);
 
     // Portrait .controls: all visible buttons fit within viewport without horizontal scroll, and speed cycle button works (4 clicks = back to start)
@@ -102,7 +103,7 @@ function contrast(fg, bg) {
     }
 
     // Scroll down on stroke tab, check sticky .player <= 60% (for 16:9 clips) and visible, then click 2nd stroke and verify scrollY != 0
-    await page.evaluate(() => go(DAY_KEYS[0], "stroke"));
+    await page.evaluate(k => go(k, "stroke"), richDay);
     await page.waitForTimeout(200);
     await page.evaluate(() => window.scrollTo(0, 120));
     await page.waitForTimeout(200);
@@ -133,11 +134,13 @@ function contrast(fg, bg) {
         `portrait .player height at stroke list (${strokePort.h.toFixed(1)}px = ${(strokePort.ratio * 100).toFixed(1)}%) must be <= 60% of ${strokePort.vh}px`);
     }
 
-    // Click 2nd stroke in list -> scrollY must NOT reset to 0
-    await page.locator(".strokes button").nth(1).click();
-    await page.waitForTimeout(350);
-    const afterListClickScrollY = await page.evaluate(() => window.scrollY);
-    assert(afterListClickScrollY > 0, `clicking 2nd stroke in list must not reset scrollY to 0 (got ${afterListClickScrollY})`);
+    // Click 2nd stroke in list (if >= 2 strokes) -> scrollY must NOT reset to 0
+    if (await page.locator(".strokes button").count() >= 2) {
+      await page.locator(".strokes button").nth(1).click();
+      await page.waitForTimeout(350);
+      const afterListClickScrollY = await page.evaluate(() => window.scrollY);
+      assert(afterListClickScrollY > 0, `clicking 2nd stroke in list must not reset scrollY to 0 (got ${afterListClickScrollY})`);
+    }
 
     // Scroll to #chart on stroke tab (positioned below sticky .player), click to jump -> main video currentTime changes and .player stays visible
     await page.evaluate(() => {
