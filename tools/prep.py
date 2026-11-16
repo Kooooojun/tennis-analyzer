@@ -127,7 +127,8 @@ def main(argv):
         if fps and fps < 50: print(f"警告：{n} 來源 {fps} fps，proxy 會補成 60 fps（重複影格；姿態用原始 fps 跑再內插），速度類數字（手速、準備時間）沒驗證過", file=sys.stderr)
         # shortcut: other ratios stay stretched until pose/source crop coordinates also support padding
         pw, ph = (960, 540) if w > h else (540, 960)
-        if abs((w / h) / (pw / ph) - 1) > 0.01:
+        # Integer arithmetic keeps exactly +/-1% inside the tolerance.
+        if 100 * abs(w * ph - h * pw) > h * pw:
             g = math.gcd(w, h)
             print(f"來源比例 {w // g}:{h // g}，會被拉成 16:9，角度與擊球高度會變形", file=sys.stderr)
         if stale(D / "proxy.mp4", V):

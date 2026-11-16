@@ -17,6 +17,7 @@ with tempfile.TemporaryDirectory() as d:
     root = Path(d); (root / "videos" / "ratios").mkdir(parents=True)
     (root / "videos" / "ratios" / "clip.mp4").touch()
     for wh, warned in (((1920, 1080), False), ((1080, 1920), False), ((1904, 1080), False),
+                       ((1760, 1000), False), ((1616, 900), False), ((891, 1600), False), ((909, 1600), False),
                        ((1888, 1080), True), ((640, 480), True), ((480, 640), True)):
         calls = []; err = io.StringIO()
         with patch.object(prep_module, "R", root), patch.object(prep_module, "need_ffmpeg"), \
