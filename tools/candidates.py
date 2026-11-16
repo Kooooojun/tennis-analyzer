@@ -15,6 +15,7 @@ from attrib import matched, wrist_hands, who_hit, unnamed
 from match import edge_skipped, HEAD, TAIL
 from assemble import cands_fp
 from platform_util import imwrite, read_text, unlink, write_text
+from proxy import map_pose
 
 OFF = [-45, -25, -8, 0, 12]  # --legacy sheets: 24 candidates per sheet, 5 small square crops each
 PER_SHEET = 24
@@ -64,14 +65,16 @@ def text(t, s, y=22, c=(0, 255, 255)):
     cv2.putText(t, s, (5, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3); cv2.putText(t, s, (5, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, c, 1)
 
 
-def sheet(c, idx, Ps, mark, src, low):
+def sheet(c, idx, Ps, mark, src, low, padded=False):
     """One candidate, 1500x1000: 12 wide crops of the hitter around the hit sound (every 3 frames, every frame within 3), brightened,
     cut from the original video when there is one (low: proxy only, the ball is about half as big); under them 3 whole frames
-    (-45 -20 0: a feed toss, and who else is there). Crop box from the pose (normalised), so it maps onto any frame size."""
-    f = int(round(c["t"] * FPS)); P = Ps[mark]
+    (-45 -20 0: a feed toss, and who else is there). padded=True 時先反映射所有人的 proxy 姿態到原片。"""
+    f = int(round(c["t"] * FPS))
     T = {o: c["t"] + o / FPS for o in OFF_NEW + WHOLE}; F = frames(src, sorted(set(T.values())))
     if all(im is None for im in F.values()): print(f"WARNING: candidate {idx}: no frame decoded from {src.name} at {c['t']:.2f} s, its sheet is black")
     H, W = next((im.shape[:2] for im in F.values() if im is not None), (1080, 1920)); wh = np.array((W, H), float)
+    if padded and not low: Ps = [map_pose(P.astype(float), W, H, inverse=True) for P in Ps]
+    P = Ps[mark]
     rows, row = [], []
     for o in OFF_NEW:
         q = P[max(0, f + o - 5):f + o + 6].astype(float); sh = np.nanmean(q[:, [11, 12], :2], axis=(0, 1)) * wh; hp = np.nanmean(q[:, [23, 24], :2], axis=(0, 1)) * wh
@@ -185,7 +188,7 @@ else:
         srcs[v] = src or Wd / v / "proxy.mp4"
     for i, c in enumerate(C):  # each candidate decodes only ~0.9 s of its video
         v = c["v"]; ks = [k2 for k2 in T[v] if names[(c["vn"], k2)] != "x"]; src = srcs[v]
-        im = sheet(c, i, [poses[(v, k2)] for k2 in ks], ks.index(c["track"]), src, v in low)
+        im = sheet(c, i, [poses[(v, k2)] for k2 in ks], ks.index(c["track"]), src, v in low, padded=(Wd / v / "proxy_filter.txt").is_file())
         if not imwrite(Wd / f"sheet{i}.jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 85]): failed.append(f"sheet{i}.jpg")
     if low: print("no original video for", sorted(low), "- sheets from proxy.mp4 only (about half the resolution, the ball is small)")
 

@@ -4,19 +4,21 @@
 # Checks: outputs complete, second run does no work (mtimes unchanged), people count changes, exit codes pass through.
 import os, shutil, site, subprocess, sys, tempfile, venv
 from pathlib import Path
-import contextlib, io, json
+import contextlib, hashlib, io, json
 from unittest.mock import patch
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools"))
 import prep as prep_module
+from proxy import video_filter
 
 # Inspect real prep command construction without running models; rotation is already applied by probe().
 with tempfile.TemporaryDirectory() as d:
     root = Path(d); (root / "videos" / "ratios").mkdir(parents=True)
     (root / "videos" / "ratios" / "clip.mp4").touch()
-    for wh, warned in (((1920, 1080), False), ((1080, 1920), False), ((1088, 1920), False), ((720, 1280), False),
+    for wh, warned in (((1920, 1080), False), ((1080, 1920), False), ((1088, 1920), False), ((1920, 1088), False),
+                       ((854, 480), False), ((1920, 1078), False), ((720, 1280), False),
                        ((1904, 1080), False), ((1760, 1000), False), ((1616, 900), False), ((891, 1600), False), ((909, 1600), False),
                        ((1888, 1080), True), ((640, 480), True), ((480, 640), True)):
         calls = []; err = io.StringIO()
@@ -27,7 +29,16 @@ with tempfile.TemporaryDirectory() as d:
             prep_module.main(["ratios", "1"])
         assert ("來源比例" in err.getvalue()) == warned, (wh, err.getvalue())
         pw, ph = (960, 540) if wh[0] > wh[1] else (540, 960)
-        assert calls[0][2:] == ("-an", "-vf", f"scale={pw}:{ph},fps=60", "-g", "30", "-f", "mp4"), calls
+        filt = video_filter(*wh) if warned else f"scale={pw}:{ph}"
+        assert calls[0][2:] == ("-an", "-vf", f"{filt},fps=60", "-g", "30", "-f", "mp4"), calls
+        assert (root / "work" / "ratios" / "clip" / "proxy_filter.txt").exists() == warned
+        if not warned:
+            calls.clear()
+            with patch.object(prep_module, "R", root), patch.object(prep_module, "need_ffmpeg"), \
+                 patch.object(prep_module, "probe", return_value=(*wh, 60)), patch.object(prep_module, "stale", return_value=False), \
+                 patch.object(prep_module, "ffmpeg", side_effect=lambda *a: calls.append(a)), patch.object(prep_module, "py") as py:
+                prep_module.main(["ratios", "1"])
+            assert not calls and not py.called, "近16:9的既有快取不得重建proxy或重跑下游"
 
 def audio_commands(streams):
     with tempfile.TemporaryDirectory() as d:
@@ -112,6 +123,20 @@ c = cv2.VideoCapture(str(W / "A x" / "proxy.mp4")); assert (c.get(3), c.get(4)) 
 c = cv2.VideoCapture(str(W / "b" / "proxy.mp4")); assert (c.get(3), c.get(4)) == (960, 540)
 del c
 
+# 硬體編碼的私有 SEI 可能隨時間改變；正式 proxy 全格解碼相同，libx264 合成片整檔相同。
+for name, src, pw, ph in (("b", V / "b.mp4", 960, 540), ("A x", V / "A x.MOV", 540, 960)):
+    baseline = tmp / "baseline.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-an", "-vf", f"scale={pw}:{ph},fps=60",
+                    *prep_module.h264_args("2500k", 23), "-g", "30", "-f", "mp4", str(baseline)], check=True)
+    md5 = lambda p: subprocess.check_output(["ffmpeg", "-v", "error", "-i", str(p), "-f", "framemd5", "-"])
+    before, after = md5(baseline), md5(W / name / "proxy.mp4")
+    assert before == after, "16:9 proxy 全部影格必須與 main 逐位元相同"
+    print("16:9 framemd5 sha256", hashlib.sha256(before).hexdigest(), hashlib.sha256(after).hexdigest())
+    for mode, filt in (("main", f"scale={pw}:{ph}"), ("branch", video_filter(pw, ph))):
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-an", "-vf", filt + ",fps=60",
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-g", "30", "-f", "mp4", str(tmp / f"{mode}.mp4")], check=True)
+    assert (tmp / "main.mp4").read_bytes() == (tmp / "branch.mp4").read_bytes(), "libx264 16:9 合成片整檔相同"
+
 ALWAYS = {"people.txt", "src_fps.txt", "pose_method.txt"}  # rewritten every run by design
 mt = lambda: {p: p.stat().st_mtime_ns for p in W.rglob("*") if p.is_file() and p.name not in ALWAYS and p.name != "videos.json"}
 before = mt()
@@ -181,6 +206,16 @@ r = prep("silent", "1")
 assert r.returncode == 0 and r.stderr.count("這支影片沒有聲音：擊球偵測要靠聲音，這支可能抓不到任何擊球") == 1, r.stderr
 assert "來源比例 4:3" in r.stderr
 D = R / "work" / "silent" / "clip"
+cap = cv2.VideoCapture(str(D / "proxy.mp4")); ok, frame = cap.read(); cap.release()
+assert ok and frame.shape[:2] == (540, 960)
+# 硬體編碼黑位與邊界濾波可有少量偏差；容忍近黑，另核對精確內容邊界。
+Y = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+for bar in (Y[:, :104], Y[:, 856:]):
+    assert bar.mean() <= 20 and bar.max() <= 32, ("4:3 的左右黑邊", bar.mean(), bar.max())
+content_x = np.flatnonzero(frame.max(axis=(0, 2)) > 128)
+assert (content_x[0], content_x[-1]) == (120, 839), "4:3 內容須位於中央 720 px"
+assert frame[:, 122:838].mean() > 50, "原片內容等比例縮到 720×540"
+assert (D / "proxy_filter.txt").read_text(encoding="utf-8").strip() == "scale=720:540,setsar=1,pad=960:540:120:0:black"
 for name in ("audio.f32", "audio_hp.f32"):
     audio = np.fromfile(D / name, dtype=np.float32)
     assert len(audio) == 6400 and not audio.any(), (name, audio.shape)
@@ -190,6 +225,13 @@ assert not list(D.glob("*.part"))
 before = {p: p.stat().st_mtime_ns for p in D.iterdir() if p.name not in ALWAYS}
 assert prep("silent", "1").returncode == 0
 assert before == {p: p.stat().st_mtime_ns for p in D.iterdir() if p.name not in ALWAYS}
+
+# 舊非 16:9 proxy 沒版本記錄時，重建後連帶重算姿態與事件；16:9 不需版本檔。
+assert not (W / "b" / "proxy_filter.txt").exists()
+before = {p: (D / p).stat().st_mtime_ns for p in ("proxy.mp4", "pose.npy", "ball.npy", "events.npy")}
+(D / "proxy_filter.txt").unlink()
+assert prep("silent", "1").returncode == 0
+assert all((D / p).stat().st_mtime_ns != t for p, t in before.items())
 
 # Candidate CLI reports once per video even with two tracks and both wrists, never for empty events.
 np.save(D / "pose_t1.npy", np.load(D / "pose.npy"))
