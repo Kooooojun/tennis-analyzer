@@ -155,7 +155,7 @@ def jumps(P, aspect, k=0.8):
 
 def correct_lr(P, W, aspect, fps=60):
     """Repair brief elbow/hand label reversals with reliable image poses on both sides, before fps interpolation.
-    World labels change only when that independently estimated sequence also fits better at both boundaries.
+    World labels change only when that independently estimated sequence has no internal switch and fits both boundaries.
     Long intervals and whole-body reversals have no trustworthy absolute reference and are left alone."""
     p, w = P.copy(), W.copy()
     limit = max(1, round(0.2 * fps))
@@ -188,6 +188,7 @@ def correct_lr(P, W, aspect, fps=60):
             p[a:b, left + right] = P[a:b, right + left]
             z = W[:, [left[0], right[0]]]
             if not np.isfinite(z[a - 1:b + 1]).all(): continue
+            if np.any(distance(z[a + 1:b, ::-1], z[a:b - 1]) < distance(z[a + 1:b], z[a:b - 1])): continue
             # Image and world estimates can disagree about which frames have reversed labels.
             if all(distance(z[i - 1], z[i, ::-1]) < 0.5 * distance(z[i - 1], z[i]) for i in (a, b)):
                 w[a:b, left + right] = W[a:b, right + left]

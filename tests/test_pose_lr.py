@@ -43,6 +43,15 @@ p, w = body(); expected = p.copy(); exchange(p, [15, 17, 19, 21], [16, 18, 20, 2
 a, b = correct_lr(p, w, 1)
 assert np.array_equal(a, expected) and np.array_equal(b, w)
 
+# World labels can return to the correct side inside a continuous image-label glitch.
+p, w = body(); expected = p.copy()
+exchange(p, [15, 17, 19, 21], [16, 18, 20, 22], 5, 8)
+exchange(w, [15, 17, 19, 21], [16, 18, 20, 22], 5, 6)
+exchange(w, [15, 17, 19, 21], [16, 18, 20, 22], 7, 8)
+originalw = w.copy()
+a, b = correct_lr(p, w, 1)
+assert np.array_equal(a, expected) and np.array_equal(b, originalw)
+
 # The visible hand can anchor a pair while the other is occluded.
 p, w = body(); p[:, 15, 2] = 0.1; expected = p.copy()
 exchange(p, [15, 17, 19, 21], [16, 18, 20, 22])
