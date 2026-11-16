@@ -94,10 +94,12 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:10px 0 2px}
 .legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
 .legend i.dot{width:8px;height:8px;border-radius:50%}
 .legend i.ring{width:8px;height:8px;border-radius:50%;background:transparent!important;border:2px solid var(--fh)}
-.legend i.band{width:14px;height:8px;border-radius:2px;background:rgba(74,222,128,.35);border:1px solid rgba(74,222,128,.9)}
+.legend i.band{width:14px;height:8px;border-radius:2px;background:rgba(156,163,175,.35);border:1px solid rgba(156,163,175,.9)}
 .strip{margin:4px 0 14px}
 .strip .lbl{display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;gap:8px}
 .strip .lbl span{color:var(--muted);font-size:12px}
+#stripHeight .lbl,#contactPlot .lbl{display:block}
+#stripHeight .lbl span,#contactPlot .lbl span{display:block;margin-top:2px}
 .strip svg{width:100%;height:64px;display:block;overflow:visible}
 .strip circle{cursor:pointer}
 .find{border-left:3px solid var(--warn);padding:2px 0 2px 12px;margin:0 0 12px}
@@ -338,12 +340,12 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
       <div class="legend">
         <span><i style="background:#fff;outline:1px solid var(--muted)"></i>肩線</span>
         <span><i style="background:#9ca3af"></i>髖線</span>
-        <span><i class="band"></i>理想擊球高度（腰到胸口）</span>
+        <span><i class="band"></i>擊球時手腕高度（2D）參考（暫定）</span>
         <span><i class="dot" style="background:#4ade80"></i>膝蓋 ≤130°</span>
         <span><i class="dot" style="background:#fbbf24"></i>130–150°</span>
         <span><i class="dot" style="background:#f87171"></i>&gt;150° 太直</span>
       </div>
-      <p class="caveat">兩邊以擊球瞬間對齊，同一時間點看的是揮拍的同一個階段。膝蓋請看擊球前 0.8–0.3 秒的蓄力階段；擊球時腿往上蹬，本來就會伸直。擊球瞬間手腕的圈圈綠色代表在理想高度內，紅色代表在外面。肩線和髖線看起來越短，代表越側身。</p>
+      <p class="caveat">兩邊以擊球瞬間對齊，同一時間點看的是揮拍的同一個階段。膝蓋請看擊球前 0.8–0.3 秒的蓄力階段；擊球時腿往上蹬，本來就會伸直。圈圈標示接觸格的手腕位置，不判好壞；手腕可見度不足（< 0.5）不畫圈。數值是接觸格附近五格中位數，與單格圈圈可能略有差異。灰帶僅為參考（暫定）。肩線和髖線看起來越短，代表越側身。</p>
     </div>
 
     <div class="card" data-tab="advice">
@@ -383,7 +385,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
       <div class="metrics" style="margin-top:10px">
         <div class="metric"><div class="k">準備時膝蓋</div><div class="v" id="mKnee">–</div><div class="cmp" id="cKnee"></div></div>
         <div class="metric"><div class="k">引拍轉肩</div><div class="v" id="mOpen">–</div><div class="cmp" id="cOpen"></div></div>
-        <div class="metric"><div class="k">擊球高度</div><div class="v" id="mHeight">–</div><div class="cmp" id="cHeight"></div></div>
+        <div class="metric"><div class="k">擊球時手腕高度（2D）</div><div class="v" id="mHeight">–</div><div class="cmp" id="cHeight"></div></div>
         <div class="metric"><div class="k">準備時間</div><div class="v" id="mPrep">–</div><div class="cmp" id="cPrep"></div></div>
         <div class="metric" id="bodyCard"><div class="k">身體出力</div><div class="v" id="mBody">–</div><div class="cmp" id="cBody"></div></div>
         <div class="metric"><div class="k" id="kForm1">收拍</div><div class="v" id="mForm1">–</div><div class="cmp" id="cForm1"></div></div>
@@ -398,7 +400,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
         <span><i style="background:var(--s3)"></i>肩膀轉開度</span>
         <span>點圖表可跳轉</span>
       </div>
-      <p class="caveat">膝蓋越小越蹲。轉肩 0% = 完全側身，100% = 胸口正對球網。擊球高度 0 = 髖部，100 = 肩膀。下方小字是同類擊球整場的中位數。膝蓋優先用 3D 骨架算，沒有 3D 才用 2D，數字旁標「3D」或「2D」。用多機位公開資料比對：3D 誤差約 ±8°（p90 約 23°），2D 側面拍約 ±2°、正前或正後方約 ±20–34°，所以側面拍最準，鏡頭在正前、正後方的拍會標「膝角看不準」；3D 也一樣受拍攝角度影響。兩種來源的數字不要直接互比。若 3D 與 2D 差太多會標「這拍角度不準」。手肘不管 2D、3D 都不可靠，所以不顯示數字。</p>
+      <p class="caveat">膝蓋越小越蹲。轉肩 0% = 完全側身，100% = 胸口正對球網。擊球時手腕高度（2D）是接觸格附近五格中位數，以肩髖長為尺：髖＝0、肩＝100（肩髖線傾斜時，肩的垂直投影略低）；只評一致性，不判高低好壞。下方小字是同類擊球整場的中位數。膝蓋優先用 3D 骨架算，沒有 3D 才用 2D，數字旁標「3D」或「2D」。用多機位公開資料比對：3D 誤差約 ±8°（p90 約 23°），2D 側面拍約 ±2°、正前或正後方約 ±20–34°，所以側面拍最準，鏡頭在正前、正後方的拍會標「膝角看不準」；3D 也一樣受拍攝角度影響。兩種來源的數字不要直接互比。若 3D 與 2D 差太多會標「這拍角度不準」。手肘不管 2D、3D 都不可靠，所以不顯示數字。</p>
     </div>
 
     <div class="card" data-tab="stroke">
@@ -437,14 +439,14 @@ if(!DAY_KEYS.length){ document.querySelector("main").innerHTML='<p style="paddin
 let DAY = DAY_KEYS.findLast(k=>isoDate(DAYS[k]))??DAY_KEYS.at(-1), ALL = DAYS[DAY].data;
 const who = s => s.player||"me";  // "player": null or missing = the single-player "me", same as score.py
 const PN = p => p==="me" ? "我" : p;
-const ITEM = {total:"總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球高度", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜", lean:"軀幹前傾", stance:"站姿寬度", wrist_speed:"手速", turn:"轉肩幅度", leg_load:"重心降低", power:"力量"};
+const ITEM = {total:"總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球時手腕高度（2D）", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜", lean:"軀幹前傾", stance:"站姿寬度", wrist_speed:"手速", turn:"轉肩幅度", leg_load:"重心降低", power:"力量"};
 const STAT = {median:"中位數", mean:"平均", min:"最小", max:"最大", n:"拍數", score:"分數", cons:"一致性分", spread:"散佈"};
 const esc = x => String(x).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // landmark id → index in the trimmed per-frame arrays
 const K = {0:0,11:1,12:2,13:3,14:4,15:5,16:6,23:7,24:8,25:9,26:10,27:11,28:12,29:13,30:14,31:15,32:16};
 const EDGES = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],[27,31],[28,32],[27,29],[28,30]];
 const SWMAX = 0.5527;  // 97th-percentile shoulder width over the session, so 100% ≈ chest square to the camera
-const ZONE = [0.3, 0.8]; // target contact band, in torso lengths above the hip (waist → chest)
+const ZONE = [0.3, 0.8]; // provisional reference only, in torso lengths above the hip
 
 const $ = id => document.getElementById(id);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -599,15 +601,15 @@ function paint(cv, vid, s, f, opt){
   const HW=s.hand==="L"?15:16, HE=s.hand==="L"?13:14;  // racket wrist / elbow landmark: the stroke's hand (player profile), right when unknown
   const ser=series(s), P=(i,id)=>{ const fr=s.frames[i]; return fr?fr[K[id]]:null; };
   if(opt.guides){
-    // target contact band, measured from the body at contact so it stays put through the swing
+    // provisional wrist-height reference, fixed to the body at contact
     const c=s.frames[s.contact]||s.frames[s.contact-1];
     if(c && Math.abs(f-s.contact)<=40){
       const hy=(Y(c[K[23]])+Y(c[K[24]]))/2, hx=(X(c[K[23]])+X(c[K[24]]))/2, sy=(Y(c[K[11]])+Y(c[K[12]]))/2, sx=(X(c[K[11]])+X(c[K[12]]))/2;
       const L=Math.hypot(hx-sx,hy-sy), y0=hy-ZONE[1]*L, y1=hy-ZONE[0]*L, half=L*1.5;
-      g.fillStyle="rgba(74,222,128,.18)"; g.fillRect(hx-half,y0,half*2,y1-y0);
-      g.strokeStyle="rgba(74,222,128,.85)"; g.lineWidth=1; g.setLineDash([4,3]); g.strokeRect(hx-half,y0,half*2,y1-y0); g.setLineDash([]);
-      if(!small){ g.font="600 11px -apple-system,'PingFang TC',sans-serif"; g.fillStyle="rgba(74,222,128,1)"; g.fillText("理想擊球高度",hx-half+4,y0-4); }
-      if(f===s.contact){ const w=P(f,HW); if(w){ const inZ=Y(w)>=y0&&Y(w)<=y1; g.strokeStyle=inZ?"#4ade80":"#f87171"; g.lineWidth=3; g.beginPath(); g.arc(X(w),Y(w),11,0,7); g.stroke(); } }
+      g.fillStyle="rgba(156,163,175,.18)"; g.fillRect(hx-half,y0,half*2,y1-y0);
+      g.strokeStyle="rgba(156,163,175,.85)"; g.lineWidth=1; g.setLineDash([4,3]); g.strokeRect(hx-half,y0,half*2,y1-y0); g.setLineDash([]);
+      if(!small){ g.font="600 11px -apple-system,'PingFang TC',sans-serif"; g.fillStyle="rgba(156,163,175,1)"; g.fillText("參考（暫定）",hx-half+4,y0-4); }
+      if(f===s.contact&&s.vis>=0.5){ const w=P(f,HW); if(w){ g.strokeStyle="#9ca3af"; g.lineWidth=3; g.beginPath(); g.arc(X(w),Y(w),11,0,7); g.stroke(); } }
     }
   }
   if(opt.trail){ g.lineWidth=2.5;
@@ -664,7 +666,7 @@ function drawSummary(){
 function drawCharts(){
   const ks={FH:kneeSrc(byKind("FH")),BH:kneeSrc(byKind("BH"))};  // dots use the same 2D/3D source as the median line
   strip("stripKnee",`準備時膝蓋角度（正拍 ${MED.FH.kSrc}、反拍 ${MED.BH.kSrc}）`,"越低越蹲",s=>kneeOf(s,ks[s.kind]),90,180,"°",[90,110,130,150,170]);
-  strip("stripHeight","擊球高度","髖部 = 0、肩膀 = 100，綠帶是腰到胸口；灰色空心＝骨架可見度不夠（< 0.5），不算中位數",hPct,-40,100,"",[-40,-20,0,20,40,60,80,100]);
+  strip("stripHeight","擊球時手腕高度（2D）","接觸格附近五格中位數；髖＝0、肩＝100；只評一致性。灰色空心＝可見度不足（< 0.5），不算中位數",hPct,-40,100,"",[-40,-20,0,20,40,60,80,100]);
   $("stripPrep").hidden=!mine().some(s=>s.prep!=null); $("contactPlot").hidden=$("stripPrep").hidden;  // sessions before prep-contact have neither field
   if(!$("stripPrep").hidden){ strip("stripPrep","準備時間","引拍完成到擊球，越高越早拉好",s=>s.prep,0,1.5,"s",[0,0.5,1,1.5],v=>v.toFixed(1)); drawContact(); }
   $("stripOpen").hidden=!DAYS[DAY].showOpen;
@@ -720,8 +722,8 @@ function drawTrend(){
     ["自拋正拍・準備時膝蓋",k=>dk(st[k].feed)],
     ["對打正拍・準備時膝蓋",k=>dk(st[k].rally)],
     ["<b>膝蓋差距（自拋 − 對打）</b>",k=>{ const a=st[k].feed, b=st[k].rally; return `<b>${a.knee==null||b.knee==null?"–":(a.kSrc===b.kSrc?a.kSrc:a.kSrc+"／"+b.kSrc)+" "+dg(a.knee-b.knee)}</b>`; }],
-    ["自拋正拍・擊球高度",k=>r(st[k].feed.h)],
-    ["對打正拍・擊球高度",k=>r(st[k].rally.h)],
+    ["自拋正拍・擊球時手腕高度（2D）",k=>r(st[k].feed.h)],
+    ["對打正拍・擊球時手腕高度（2D）",k=>r(st[k].rally.h)],
     ["拍數（自拋 / 對打）",k=>`${DAYS[k].data.filter(s=>s.kind==="FH"&&s.drill==="feed").length} / ${DAYS[k].data.filter(s=>s.kind==="FH"&&s.drill==="rally").length}`],
   ];
   $("trend").innerHTML=`<thead><tr><th></th>${keys.map(k=>`<th>${esc(DAYS[k].label)}</th>`).join("")}</tr></thead><tbody>`+
@@ -759,11 +761,11 @@ function drawContact(){
   const el=$("contactPlot"), NS="http://www.w3.org/2000/svg", W=Math.max(280,el.clientWidth||600), H=220, pad=26, X=[-0.5,1.5], Y=[-40,120];
   const sd=a=>{ a=a.filter(v=>v!=null).sort((p,q)=>p-q); if(a.length<5) return null; const q=f=>{ const i=f*(a.length-1), k=Math.floor(i); return a[k]+(a[Math.min(k+1,a.length-1)]-a[k])*(i-k); }; return (q(.75)-q(.25))/1.349; };
   const note=["FH","BH"].map(k=>{ const g=byKind(k), ok=g.filter(s=>s.vis>=0.5), h=sd(ok.map(s=>s.contact_h)), f=sd(ok.map(s=>s.contact_fwd)); return h==null||f==null?"":`${NAMES[k]} ${ok.length} 拍：高度散 ${Math.round(h*100)}、前後散 ${f.toFixed(2)}`; }).filter(Boolean).join("；");
-  el.innerHTML=`<div class="lbl">擊球點（相對身體）<span>${note||"拍數不到 5，不算散佈"}</span></div>`;
+  el.innerHTML=`<div class="lbl">手腕位置（2D，相對身體）<span>灰帶 30–80：參考（暫定）；${note||"拍數不到 5，不算散佈"}</span></div>`;
   const svg=document.createElementNS(NS,"svg"); svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.style.height="220px";
   const x=v=>pad+(Math.max(X[0],Math.min(X[1],v))-X[0])/(X[1]-X[0])*(W-2*pad), y=v=>H-pad-(Math.max(Y[0],Math.min(Y[1],v))-Y[0])/(Y[1]-Y[0])*(H-2*pad);
   const mk=(tag,a)=>{ const e=document.createElementNS(NS,tag); for(const k in a) e.setAttribute(k,a[k]); svg.append(e); return e; };
-  mk("rect",{x:x(X[0]),y:y(80),width:x(X[1])-x(X[0]),height:y(30)-y(80),fill:"rgba(74,222,128,.15)"});
+  mk("rect",{x:x(X[0]),y:y(80),width:x(X[1])-x(X[0]),height:y(30)-y(80),fill:"rgba(156,163,175,.15)"});
   for(const v of [0,100]){ mk("line",{x1:x(X[0]),x2:x(X[1]),y1:y(v),y2:y(v),stroke:"var(--line)"}); mk("text",{x:2,y:y(v)+4,"font-size":10,fill:"var(--muted)"}).textContent=v?"肩":"髖"; }
   mk("line",{x1:x(0),x2:x(0),y1:y(Y[0]),y2:y(Y[1]),stroke:"var(--line)"});
   mk("text",{x:x(0)+4,y:H-6,"font-size":10,fill:"var(--muted)"}).textContent="身體 →（往前）";
@@ -789,7 +791,7 @@ function drawChecks(){
   const fh=[
     ["準備","看到球就轉肩側身、拍子往後拉。", DAYS[DAY].showOpen?you(`你：正拍轉肩中位數 ${n(F.open,"%")}`,[F.open],F.open<=35):na("這個鏡頭角度看不準轉肩，這場不給數字。")],
     ["蓄力",`膝蓋彎下去，重心壓在後腳。${ry.knee==null?"":`目標就是你對打時的角度，約 ${ry.kSrc} ${r(ry.knee)}°。`}`, fd.knee==null?you(`你：對打 ${kTxt(ry,"—")}`,[ry.knee],ry.knee<=140):you(`你：自己拋球時 ${fd.kSrc} ${r(fd.knee)}°${fd.knee>150?"，太直":""}`,[fd.knee],fd.knee<=140)],
-    ["擊球","在身體前方、腰到胸口的高度擊球（畫面上的綠色區）。低球用膝蓋降下去，不要用手撈。", you(`你：${[fd.h!=null&&`自己拋球時擊球高度 ${r(fd.h)}`,ry.h!=null&&`對打 ${r(ry.h)}`].filter(Boolean).join("，")}`,[fd.h??ry.h],(fd.h??ry.h)>=30)],
+    ["擊球","擊球位置依來球調整。LTA 正拍教練教材以球彈地後約膝到腰高為一般練習參考，並非實驗結論，也不是手腕高度目標。", (fd.h??ry.h)==null?"":na(`你：擊球時手腕高度（2D）${[fd.h!=null&&`自拋 ${r(fd.h)}`,ry.h!=null&&`對打 ${r(ry.h)}`].filter(Boolean).join("，")}；只評一致性`)],
     ["收拍","從下往上揮，拍子收到非持拍手那側的肩膀上方。",""],
   ];
   const B=MED.BH, bs=byKind("BH"), hd=one(bs,"hand"), off=hd==="L"?"右":hd==="R"?"左":"非持拍", side=hd?off:"非持拍手那側", front=hd==="L"?"前腳（左腳）":hd==="R"?"前腳（右腳）":"前腳",  /* unknown hand: no left/right */ type=one(bs,"backhand");
@@ -1184,7 +1186,7 @@ let A=null, B=null, cmpCur=0, cmpRate=0.25, cmpRequest=null;
 const PRESETS=Object.values(DAYS).flatMap(d=>(d.presets||[]).map(p=>{ const a=Array.isArray(p.a)?p.a:[d.id,p.a], b=Array.isArray(p.b)?p.b:[d.id,p.b]; return {day:a[0]===b[0]&&a[0]===d.id?d.id:"*",a,b,label:p.label}; })).filter(p=>p.a[0] in DAYS&&p.b[0] in DAYS);
 const sKey=s=>s.day+":"+s.id, fromKey=k=>{ const [d,i]=k.split(":"); return DAYS[d].data[+i]; };
 function fillSelect(sel){ sel.innerHTML=DAY_KEYS.map(k=>[k,DAYS[k]]).map(([k,d])=>`<optgroup label="${esc(d.label)}">`+d.data.map(s=>`<option value="${esc(sKey(s))}">${esc(d.label)} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</option>`).join("")+"</optgroup>").join(""); }
-function capFor(s){ const r=Math.round; return `<b>${esc(DAYS[s.day].label)} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${s.knee==null?"–":kSrcOf(s)+" "+r(s.knee)+"°"}${s.knee_warn?"⚠不準":""} · 轉肩 ${s.open_min==null?"–":r(s.open_min)+"%"} · 擊球高度 ${s.contact_h==null?"–":r(hPct(s))}</span>`; }
+function capFor(s){ const r=Math.round; return `<b>${esc(DAYS[s.day].label)} ${esc(strokeLabel(s))}${drillName(s)?" · "+drillName(s):""}</b><span class="nums">膝 ${s.knee==null?"–":kSrcOf(s)+" "+r(s.knee)+"°"}${s.knee_warn?"⚠不準":""} · 轉肩 ${s.open_min==null?"–":r(s.open_min)+"%"} · 擊球時手腕高度（2D） ${s.contact_h==null?"–":r(hPct(s))}</span>`; }
 function drawPresets(){
   $("presets").innerHTML="";
   for(const p of PRESETS.filter(p=>p.day===DAY||p.day==="*")){ const b=document.createElement("button"); b.textContent=p.label; b._p=p; b.onclick=()=>cmpLoad(dayNo(...p.a),dayNo(...p.b)); $("presets").append(b); }

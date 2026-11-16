@@ -6,6 +6,13 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from annotate import JOINTS, MINVIS, panel_pos, parse_args, pose_bbox
 
+# #101：影片面板說明量測對象、五格中位數與 0–100 尺度，文字不超出面板。
+from annotate import stroke_info, F, PANEL_W, INK
+_, lines = stroke_info(dict(no=1, kind="FH", knee=None, contact_h=0.53))
+assert [s for s, _ in lines] == ["擊球時手腕高度（2D）", "53（髖＝0、肩＝100）", "接觸格附近五格中位數"]
+assert all(col == INK and F(24).getlength(s) <= PANEL_W - 20 for s, col in lines)
+assert stroke_info(dict(no=1, kind="FH", knee=None, contact_h=None))[1] == []
+
 W, H = 1280, 720
 PW, PH = 320, 142
 

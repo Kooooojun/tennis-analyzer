@@ -32,6 +32,17 @@ def grp(groups, kind="FH", player="me"):
     return next(g for g in groups if g["kind"] == kind and g["player"] == player)
 
 
+# #101：高度平移不影響技術分，但高度離散度仍影響一致性。
+for kind in ("FH", "BH"):
+    low = grp(score_session([st(kind=kind, h=0.4 + i * 0.01, prep=0.5) for i in range(10)], False), kind=kind)
+    high = grp(score_session([st(kind=kind, h=1.4 + i * 0.01, prep=0.5) for i in range(10)], False), kind=kind)
+    varied = grp(score_session([st(kind=kind, h=0.4 + i * 0.1, prep=0.5) for i in range(10)], False), kind=kind)
+    m = high["metrics"]["contact_h"]
+    assert m["score"] is None and "只評一致性" in m["formula"] and m["inputs"]["anchors"] is None
+    assert low["form"] == high["form"] == varied["form"]
+    assert low["metrics"]["contact_h"]["cons"] == m["cons"] > varied["metrics"]["contact_h"]["cons"]
+    assert low["total"] == high["total"] > varied["total"]
+
 # 5: too few strokes
 g = grp(score_session([st(), st()], False))
 assert g["total"] is None and g["metrics"]["knee"]["score"] is None
@@ -108,7 +119,7 @@ assert compare([h("a", knee=9), dict(h("b", knee=3), knee_src="knee3d")]) == []
 # coverage gate (docs/scoring.md §1): 3 usable of 10 strokes is not enough, 6 of 10 is; version and formula are output
 g = grp(score_session([st(vis=0.2)] * 7 + [st()] * 3, False))
 m = g["metrics"]["contact_h"]; assert m["score"] is None and m["status"] == "資料不足" and m["n"] == 3 and close(m["coverage"], 0.3)
-g = grp(score_session([st(vis=0.2)] * 4 + [st()] * 6, False)); assert g["metrics"]["contact_h"]["score"] is not None
+g = grp(score_session([st(vis=0.2)] * 4 + [st()] * 6, False)); assert g["metrics"]["contact_h"]["status"] == "ok" and g["metrics"]["contact_h"]["cons"] is not None
 m = grp(score_session([st()] * 6, False))["metrics"]["knee"]
 assert m["status"] == "ok" and "125" in m["formula"] and m["inputs"]["anchors"] == [125, 160] and g["score_version"] == SCORE_VERSION
 assert grp(score_session([st(knee_warn=True)] * 6, False))["metrics"]["knee"]["status"] == "資料不足"
@@ -210,7 +221,7 @@ print("score-groups-consistency tests ok")
 
 # --- prep-window-direction: a truncated prep is only a lower bound -> left out of the prep median / spread; SCORE_VERSION 8
 from score import _value
-assert SCORE_VERSION == 9  # 9 = serve-form-view-gates (8 = prep-window-direction)
+assert SCORE_VERSION == 10  # 10 = contact-height consistency only
 assert _value(dict(prep=1.5, prep_trunc=True), "prep") is None and _value(dict(prep=0.4, prep_trunc=False), "prep") == 0.4 and _value(dict(prep=0.4), "prep") == 0.4
 G = score_session([dict(kind="FH", prep=0.4)] * 5 + [dict(kind="FH", prep=1.5, prep_trunc=True)], False)[0]["metrics"]["prep"]
 assert G["n"] == 5 and G["median"] == 0.4, G
@@ -237,3 +248,11 @@ print("verified tests ok")
 r = check_session([dict(kind="SV", serve_arm_straight=True, serve_arm_conf=0.9)] + [dict(kind="SV", serve_arm_straight=None, serve_arm_conf=0.0)] * 5)[0]
 assert r["status"] == "資料不足" and r["verified"] is False, r  # 1 pass + 5 unclear: not enough to call anything verified
 print("verified status tests ok")
+
+# #101：新版與舊版同機位仍不可比較，前端連線的 series_key 也不同。
+old = _entry(run("a"), dict(A, score_version=9))
+new = _entry(run("b"), A)
+old["items"] = {**old["items"], "total": 1}
+assert new["score_version"] == 10 and old["series_key"] != new["series_key"]
+assert compare([old, new]) == []
+print("contact-height consistency and version tests ok")
