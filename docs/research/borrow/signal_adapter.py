@@ -59,6 +59,7 @@ def main():
         result.append(dict(fold=len(result) + 1, tp=n, fn=miss, fp=extra,
                            recall=n / (n + miss), precision=n / (n + extra) if n + extra else None,
                            predictions=pred))
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps([{k: v for k, v in row.items() if k != 'predictions'} for row in result]))
 
