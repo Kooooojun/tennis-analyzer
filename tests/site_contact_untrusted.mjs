@@ -24,7 +24,7 @@ try{
     if(!text.includes(message)||text.includes('差太多')||text.includes('不準'))failures.push(`${engine.name()} ${surface}: ${text}`);
    }
    const old=await page.evaluate(()=>({normal:kneeWarn({}),view:kneeWarn({knee_warn:true,knee_warn_why:'view'}),gap:kneeWarn({knee_warn:true,knee_warn_why:'gap',knee3d:120,knee2d:150})}));
-   assert.equal(old.normal,'');assert(old.view.includes('鏡頭在正前或正後方'));assert(old.gap.includes('3D 120° 與 2D 150° 差太多'));
+   assert.equal(old.normal,'');assert(old.view.includes('鏡頭在正前或正後方'));assert(old.gap.includes('3D估 120° 與 2D 150° 差太多'));
    assert.deepEqual(errors,[]);
    console.log(engine.name()+': 接觸格原因三處DOM已檢查');
   }finally{await browser.close();}
