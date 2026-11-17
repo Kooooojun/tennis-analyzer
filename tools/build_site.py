@@ -27,7 +27,7 @@ for d in sorted(p for p in S.iterdir() if p.is_dir()):  # pass 1: build and chec
     vids = sorted({x["video"] for x in strokes})
     sc = load(d / "scores.json") if (d / "scores.json").exists() else None
     for g in (sc or {}).get("groups", []):
-        if "form_metrics" in g: g["score_set"] = _score_set(g)
+        g["score_set"] = _score_set(g)
     errs = check(notes, strokes, sc, runs=runs) if sc is not None else []  # {} still checks: cites that need scores fail
     bad += [f"{s}: {e}" for e in errs]
     sess = dict(id=s, label=notes.get("label", s[5:].replace("-", "/") if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s) else s),

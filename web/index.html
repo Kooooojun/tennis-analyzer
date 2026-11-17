@@ -505,6 +505,11 @@ function angle3(w, a, b, c){  // world landmarks, metres: no aspect fix needed
 const armCheck = s => {  // [headline, detail] or null when no check applies to this stroke
   // unvalidated (docs/scoring.md §9): no bent arm was ever caught in test data, so no ✓/✗, only a grey reference
   const T=(v,y,n)=>v===true?y:v===false?n:"看不出來", WHY="這項沒有足夠驗證（彎手臂在測試資料裡一拍都沒抓到），看不出來的拍可能有問題，不要當成沒問題";
+  if(s.kind==="SV"&&(s.contact_untrusted===true||s.serve_arm_conf==null||s.serve_arm_straight==null)){
+    const count=Math.min(s.n??s.frames?.length??Infinity,s.contact+3)-Math.max(0,s.contact-2);
+    const why=s.contact_untrusted===true?"擊球格不可信，這拍不量":count<3?"接觸格附近資料不足":s.world===null?"缺 3D 骨架":"沒有資料";
+    return ["參考：看不出來", "發球："+why+"。"+WHY];
+  }
   if(s.serve_arm_conf!=null) return ["參考："+T(s.serve_arm_straight,"手臂看起來接近伸直","手臂看起來偏彎"), "發球擊球瞬間。"+WHY];
   if(s.bh_elbow_conf!=null) return ["參考："+T(s.bh_elbow_ok,"手臂看起來接近伸直","手臂看起來偏彎"), "單手反拍。參考："+T(s.bh_front_ok,"擊球點在身前","擊球點不在身前")+"。"+WHY];
   return null;
@@ -1204,8 +1209,6 @@ function load(id, scroll, defer=false){
   $("boxTilt").hidden=!sv; $("mTilt").innerHTML=num(S.tilt,"°"); $("cTilt").textContent="擊球前持拍側肩比另一側低幾度（負＝較高）";
   $("mLean").innerHTML=num(S.lean,"°"); $("cLean").textContent="往揮拍前進方向傾為正；單機位只看得到側面那一半，換視角不能比";
   $("mStance").innerHTML=num(S.stance,"×",2); $("cStance").textContent=S.stance==null?"看不出來（髖寬被視角壓縮或腳被擋）":"兩踝距離 ÷ 兩髖距離";
-  const arm=armCheck(S);  // pass/fail checks, not degrees (docs/scoring.md §9)
-  $("mElbow").textContent=arm?arm[0]:"–"; $("mElbow").style.color=arm?"var(--muted)":""; $("cElbow").textContent=arm?arm[1]:S.kind==="SV"?"發球：缺 3D 骨架或視角不夠，這拍沒有結論":"正手與雙手反拍不評手肘；手肘角度太不準，不顯示數字";
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage
   $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]); $("stage").parentElement.classList.toggle("wide", !!S.size && S.size[0]>S.size[1]); document.querySelector("main").classList.toggle("wideplayer", !!S.size && S.size[0]>S.size[1]);
   const s=S, start=()=>{ if(S!==s) return; const want=canResume(v), frame=v._pendingFrame??S.contact-48; goto(frame); if(want){ v._want=v._resume=true; playSafe(v,$("badge")); $("play").textContent="⏸ 暫停"; } };
@@ -1238,6 +1241,8 @@ function drawChart(f){
   g.strokeStyle=css("--ink"); g.lineWidth=1.5; g.beginPath(); g.moveTo(x(f),pad.t); g.lineTo(x(f),H-pad.b); g.stroke();
 }
 function render(f){
+  const arm=armCheck(S);  // Pose arrival can reveal the missing-data reason (docs/scoring.md §9).
+  $("mElbow").textContent=arm?arm[0]:"–"; $("mElbow").style.color=arm?"var(--muted)":""; $("cElbow").textContent=arm?arm[1]:"正手與雙手反拍不評手肘；手肘角度太不準，不顯示數字";
   cur=f; paint(cv,v,S,f,OPT); drawChart(f); seek.value=f; $("badge").textContent=v._blocked&&!v.readyState?TAP:relLabel(f);
   let ph=null; for(const p of S.phases) if(f>=p.f) ph=p;
   const pb=$("phaseBadge"); pb.style.display=ph?"block":"none"; if(ph) pb.textContent=ph.name;
