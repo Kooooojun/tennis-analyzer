@@ -3,7 +3,7 @@
 # pose: frames x 33 x (x, y, visibility) normalized; world: frames x 33 x (x, y, z) metres, hip-centred. NaN where the track is unseen.
 # Identity is a closed set of N slots: each frame, detections go to slots by hip position + torso colour, so someone who walks
 # away and comes back gets their old slot. Which slot is which friend is decided later by eye (candidates.py -> players.txt).
-import itertools, sys, warnings
+import contextlib, itertools, sys, warnings
 from pathlib import Path
 import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # run with -I: the script's folder is not on sys.path
@@ -260,6 +260,37 @@ def frames(cmd, W, H):
             err.seek(0); sys.exit(f"ffmpeg failed ({p.returncode}) on {' '.join(cmd)}: {err.read().decode(errors='replace').strip()[-500:]}")
 
 
+DEPTH = 4  # items in flight in in_order(): enough to keep every model busy; each 960x540 frame holds ~4.5 MB (frame + images)
+
+
+def result(f, poll=0.2):
+    """A future's result, waiting in short slices: a bare wait is not interrupted by Ctrl-C on Windows."""
+    import concurrent.futures
+    while not f.done(): concurrent.futures.wait([f], timeout=poll)
+    return f.result()  # re-raises the model's exception here, in the caller's thread
+
+
+def in_order(items, models, depth=DEPTH):
+    """items -> (item, [model(item) for each model]), in input order. Each model gets its own thread and sees every item once,
+    in order (a VIDEO-mode landmarker needs increasing timestamps), so the models work on one item at the same time while
+    this thread decodes the next and merges the last. At most `depth` items are in flight. An exception in a model is raised
+    here; leaving early (exception, Ctrl-C, close()) drops what is queued and waits only for the calls already running."""
+    from collections import deque
+    from concurrent.futures import ThreadPoolExecutor
+    pools = [ThreadPoolExecutor(1, thread_name_prefix=f"pose-model{i}") for i in range(len(models))]  # one worker each: FIFO = item order
+    pending = deque()
+    try:
+        for x in items:
+            pending.append((x, [p.submit(m, x) for p, m in zip(pools, models)]))
+            if len(pending) >= depth:
+                x, fs = pending.popleft(); yield x, [result(f) for f in fs]
+        while pending:
+            x, fs = pending.popleft(); yield x, [result(f) for f in fs]
+    finally:
+        for p in pools: p.shutdown(wait=True, cancel_futures=True)
+        if hasattr(items, "close"): items.close()  # a generator source (decoder) stops now, not when garbage collected
+
+
 def sample(inp, step):
     """ffmpeg arguments for every step-th frame of input `inp`: framestep is in every ffmpeg (select needs -fps_mode, 5.1+)."""
     return [*inp, "-vf", f"framestep={step}"]
@@ -298,17 +329,26 @@ def main():
         # its skeleton replaces the slot standing in the same place. Costs a second model pass (about 2x time).
         one = mk(1) if N > 1 else None
         it = frames(["-i", src], W, H) if fps >= 50 else frames(["-i", source, "-vf", f"fps={fps!r},{video_filter(SW, SH)}"], W, H)
-        for img in it:
-            mi = img_of(img); ts = int(n * 1000 / fps); r = lm.detect_for_video(mi, ts)
-            fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy(); fc = np.full((N, 3), np.nan)
-            ds = [describe(a, img) for a in r.pose_landmarks]; sl = [None] * N
-            for k, d, a, w in zip(T.step(ds), ds, r.pose_landmarks, r.pose_world_landmarks):
-                if k >= 0: fr[k] = [[q.x, q.y, q.visibility] for q in a]; fw[k] = [[q.x, q.y, q.z] for q in w]; fc[k] = d["color"]; sl[k] = d
-            r1 = one.detect_for_video(mi, ts) if one else None
-            if r1 and r1.pose_landmarks and (k := same_person(describe(r1.pose_landmarks[0], img), sl)) is not None:
-                fr[k] = [[q.x, q.y, q.visibility] for q in r1.pose_landmarks[0]]; fw[k] = [[q.x, q.y, q.z] for q in r1.pose_world_landmarks[0]]
-            rows.append(fr); wrows.append(fw); crows.append(fc); n += 1
-            if n % 6000 == 0: print(n, flush=True)
+        # The two landmarkers share no state: each runs on its own thread over the same frames, timestamps and images as when
+        # they ran one after the other, so the output is the same bytes; the merge below stays on this thread, in frame order.
+        models = [lambda x: lm.detect_for_video(x[2][0], x[1])] + ([lambda x: one.detect_for_video(x[2][1], x[1])] if one else [])
+        def items():
+            try:
+                for i, img in enumerate(it):  # one Image per model: no object is used by two threads
+                    yield img, int(i * 1000 / fps), [img_of(img) for _ in models]
+            finally:
+                if hasattr(it, "close"): it.close()  # frames(): stop ffmpeg now (Ctrl-C, error), not when garbage collected
+        with contextlib.closing(in_order(items(), models)) as runs:
+            for (img, ts, _), (r, *r1) in runs:
+                r1 = r1[0] if r1 else None
+                fr = np.full((N, 33, 3), np.nan, np.float32); fw = fr.copy(); fc = np.full((N, 3), np.nan)
+                ds = [describe(a, img) for a in r.pose_landmarks]; sl = [None] * N
+                for k, d, a, w in zip(T.step(ds), ds, r.pose_landmarks, r.pose_world_landmarks):
+                    if k >= 0: fr[k] = [[q.x, q.y, q.visibility] for q in a]; fw[k] = [[q.x, q.y, q.z] for q in w]; fc[k] = d["color"]; sl[k] = d
+                if r1 and r1.pose_landmarks and (k := same_person(describe(r1.pose_landmarks[0], img), sl)) is not None:
+                    fr[k] = [[q.x, q.y, q.visibility] for q in r1.pose_landmarks[0]]; fw[k] = [[q.x, q.y, q.z] for q in r1.pose_world_landmarks[0]]
+                rows.append(fr); wrows.append(fw); crows.append(fc); n += 1
+                if n % 6000 == 0: print(n, flush=True)
     else:
         # Far camera (people ~100 px on the proxy): full-resolution source. Each slot is re-found in a square crop around its last
         # skeleton, scaled to 640 px, by a single-person landmarker (this replaces the second model pass above); empty slots are
