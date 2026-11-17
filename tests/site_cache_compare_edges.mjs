@@ -6,6 +6,11 @@ import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 const {chromium,webkit,devices}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE));
+const runs=Number(process.env.SITE_COMPARE_RUNS||1),traceDir=process.env.SITE_COMPARE_TRACE;
+assert(Number.isInteger(runs)&&runs>=1&&runs<=100,'SITE_COMPARE_RUNS 須為 1–100 的整數');
+const mutation=process.env.SITE_COMPARE_MUTATION||'';
+assert(['','unpaired'].includes(mutation),'SITE_COMPARE_MUTATION 僅支援 unpaired');
+if(traceDir)fs.mkdirSync(traceDir,{recursive:true});
 const scratch=fs.mkdtempSync(path.join(os.tmpdir(),'site-compare-')),clips=[];
 try{
  for(const duration of [3,1.5]){
@@ -17,8 +22,9 @@ try{
 const results=[];
 for(const [engine,type] of Object.entries({chromium,webkit})){
  const browser=await type.launch();
- for(const offset of [30,-60]){
+ for(let run=1;run<=runs;run++)for(const offset of [30,-60]){
   const context=await browser.newContext(engine==='webkit'?devices['iPhone 13']:{}),page=await context.newPage(),errors=[];
+  let state={};
   page.on('pageerror',e=>errors.push(e.message));
   try{
    await page.route('**/edge-synthetic-*.mp4',route=>{
@@ -33,7 +39,15 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
     cmpLoad(a,b);cmpRate=1;
    },offset);
    await page.waitForFunction(()=>[vA,vB].every(x=>x.readyState>=3&&!x.seeking));
-   await page.evaluate(()=>{
+   await page.evaluate(({trace,mutation})=>{
+    if(trace){
+     window.edgeTrace=[];
+     window.edgeSnapshot=(event,side,metadata)=>edgeTrace.push({at:performance.now(),event,side,times:[vA.currentTime,vB.currentTime],paused:[vA.paused,vB.paused],seeking:[vA.seeking,vB.seeking],ready:[vA.readyState,vB.readyState],metadata});
+     for(const [i,x] of [vA,vB].entries()){
+      for(const event of ['play','playing','pause','timeupdate','seeking','seeked','waiting','canplay','ended'])x.addEventListener(event,()=>edgeSnapshot(event,i));
+      if(x.requestVideoFrameCallback){const frame=(now,metadata)=>{edgeSnapshot('rVFC',i,{now,...metadata});x.requestVideoFrameCallback(frame);};x.requestVideoFrameCallback(frame);}
+     }
+    }
     window.edgeStats={loops:0,advance:0,unpairedMs:0,endpointSamples:0,pauseCalls:0};
     let previous=[vA.currentTime,vB.currentTime],jumped=[false,false];
     for(const [i,x] of [vA,vB].entries())for(const event of ['seeking','seeked'])x.addEventListener(event,()=>{jumped[i]=true;});
@@ -45,22 +59,25 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
      if(raw>1.5/FPS&&raw<vB.duration-1.5/FPS){
       for(const [i,x] of [vA,vB].entries()){
        const other=[vA,vB][1-i];
-       if(delta[i]>.00005&&delta[i]<.1&&!jumped[i]&&!x.paused&&!x.seeking&&(other.paused||other.readyState<3||other.error))edgeStats.unpairedMs+=delta[i]*1000;
+       if(delta[i]>.00005&&delta[i]<.1&&!jumped[i]&&!x.paused&&!x.seeking&&(other.paused||other.readyState<3||other.error)){edgeStats.unpairedMs+=delta[i]*1000;window.edgeSnapshot?.('unpaired',i,{previous,times,delta,jumped});}
       }
      }else if((raw<0||raw>=vB.duration)&&vB.paused&&Math.abs(times[1]-Math.max(0,Math.min(vB.duration,raw)))<1/FPS)edgeStats.endpointSamples++;
      previous=times;jumped=[false,false];
     },10);
+    // Mutation removes pairing while leaving A's render loop and real media playback running.
+    if(mutation==='unpaired')cmpTick=()=>{cmpRender(Math.floor(vA.currentTime*FPS));if(!vA.paused)cmpRequest=vA.requestVideoFrameCallback?vA.requestVideoFrameCallback(cmpTick):requestAnimationFrame(cmpTick);};
     cmpStart();
-   });
+   },{trace:!!traceDir,mutation});
    await page.waitForTimeout(7200);
-   const state=await page.evaluate(()=>({...edgeStats,want:vA._want,paused:vA.paused}));
+   state=await page.evaluate(()=>({...edgeStats,want:vA._want,paused:vA.paused}));
+   if(traceDir)fs.writeFileSync(path.join(traceDir,`${engine}-offset${offset}-run${run}.json`),JSON.stringify(await page.evaluate(()=>edgeTrace),null,2));
    assert(state.loops>=1&&state.advance>3.5,'偏移比較必須持續前進超過一個完整循環');
    assert(state.pauseCalls<=20,'端點不得反覆暫停與 seek');
    assert.equal(state.unpairedMs,0,'共同可播區間不得單側前進');
    assert(state.endpointSamples>5,'缺少另一側畫面時必須停在端點等待');
    assert(state.want&&!state.paused,'比較區不得卡在待播狀態');assert.deepEqual(errors,[]);
-   results.push({engine,offset,pass:true,...state});
-  }catch(e){results.push({engine,offset,pass:false,error:e.message});}
+   results.push({engine,offset,run,pass:true,...state});
+  }catch(e){results.push({engine,offset,run,pass:false,...state,error:e.message});}
   console.log(JSON.stringify(results.at(-1)));await context.close();
  }
  await browser.close();
