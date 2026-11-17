@@ -32,7 +32,7 @@ const cases={
   return {elapsedMs:Math.round(performance.now()-started)};
  },
  async blocked(page){
-  await page.clock.install();await page.evaluate(()=>{v.play=()=>Promise.reject(new DOMException('blocked','NotAllowedError'));});
+  await page.evaluate(()=>{v.play=()=>Promise.reject(new DOMException('blocked','NotAllowedError'));});
   await select(page,'hang=always');await page.waitForTimeout(100);await page.clock.runFor(35000);
   assert.equal(await page.locator('#badge').textContent(),'點畫面載入影片');
   assert.equal(await page.locator('#stage .vid-msg[data-fail]').count(),0);
@@ -152,7 +152,7 @@ try{
     await page.addInitScript(()=>{window.unhandled=0;addEventListener('unhandledrejection',()=>window.unhandled++);});
     let before=0;const started=performance.now();let row={engine,case:name,repeat,pass:false};
     try{
-     if(['canplayRecoversFailure','seekedRecoversFailure','renewedBufferWait'].includes(name))await page.clock.install();
+     if(['blocked','canplayRecoversFailure','seekedRecoversFailure','renewedBufferWait'].includes(name))await page.clock.install();
      await page.goto(f.url);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await ready(page);await page.waitForTimeout(650);before=f.events.length;consoleErrors=0;
      Object.assign(row,await test(page));const requests=f.events.slice(before).filter(e=>e.method==='GET');
      const retries=requests.filter(e=>e.query.includes('_retry'));

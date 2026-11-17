@@ -121,7 +121,7 @@ try{
       fetches++;return route.fulfill({status:200,contentType:'text/html',body:'<html>unavailable</html>'});
      });
      const before=f.events.length,start=performance.now();
-     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?nativeHang=1&drip=4&perRequest=1&case='+Date.now();load(4,false);},f.url);
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?nativeHang=1&drip=4&case='+Date.now();load(4,false);},f.url);
      await page.waitForFunction(()=>v.src.includes('_retry'),null,{timeout:13000});
      const fetchesBeforeRetry=fetches;
      await page.waitForFunction(()=>v.readyState>=3&&!v.seeking,null,{timeout:6000});

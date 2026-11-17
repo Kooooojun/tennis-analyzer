@@ -71,7 +71,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
    const states=await page.evaluate(async()=>{stopDead(vA);const key=A.src,url=await clipFetch(key,true);vA.src=url;vB.src=url;vA.dispatchEvent(new Event('error'));vA.removeAttribute('src');vA.load();releaseClips();const first=liveClips.has(url);vB.removeAttribute('src');vB.load();releaseClips();return [first,liveClips.has(url),revokedActive];});assert.deepEqual(states,[true,false,0]);
   },
   async readyHidesMessage(page){
-   await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
+   await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=3&&!v.seeking&&!v._align&&!v._fetching);
    const hidden=await page.evaluate(()=>{const m=v.parentElement.querySelector('.vid-msg');m.hidden=false;m.textContent='影片下載中… 11%';v.dispatchEvent(new Event('canplay'));return m.hidden;});assert.equal(hidden,true);
   },
   async mime(page){
