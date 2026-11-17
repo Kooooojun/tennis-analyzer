@@ -75,8 +75,7 @@ if __name__ == "__main__":
         print(f"== {t['player']} {t['kind']}")
         for h in t["history"]:
             print(f"  {h['session']:<14} {h['camera'][:16]:<16} 總分 {h['items']['total']}  一致性 {h['items']['consistency']}  ({h['n']} 拍)")
-            missing = [NAMES.get(k, k) for k, v in h["items"].items() if v is not None and
-                       (not (h["uncertainty"].get(k) or {}).get("ci") or (h["uncertainty"].get(k) or {}).get("sem") is None)]
+            missing = [NAMES.get(k, k) for k, v in h["items"].items() if v is not None and (h["uncertainty"].get(k) or {}).get("sem") is None]
             if missing: print(f"  注意：{h['session']}／{t['player']}／{t['kind']}：{'、'.join(missing)} 缺 uncertainty，區間不足，不做比較；請重跑 tools/score.py")
         for f in t["flags"]: print(f"  ** {f['flag']}：{NAMES.get(f['item'], f['item'])} {f['base']} -> {f['now']}")
     print("->", S / "trend.json")

@@ -18,13 +18,16 @@ base = dict(player="me", kind="FH", n=20, total=7, consistency=7, knee_src="knee
             metrics={"knee": dict(score=7, cons=7, uncertainty=dict(score=u, cons=u)),
                      "prep": dict(score=None, cons=None)})
 runs = []
-for i, state in enumerate(("complete", "missing", "null", "partial", "unscored"), 1):
+for i, state in enumerate(("complete", "missing", "null", "partial", "sem_only", "unscored"), 1):
     g = copy.deepcopy(base)
     if state == "missing":
         del g["uncertainty"]; del g["metrics"]["knee"]["uncertainty"]
     elif state == "null":
         g["uncertainty"] = None; g["metrics"]["knee"]["uncertainty"] = None
     elif state == "partial": del g["metrics"]["knee"]["uncertainty"]
+    elif state == "sem_only":
+        del g["uncertainty"]["total"]["ci"]
+        g["metrics"]["knee"]["uncertainty"] = dict(score=dict(sem=.3), cons=dict(sem=.3))
     elif state == "unscored":
         g.update(total=None, consistency=None, uncertainty=None)
         g["metrics"]["knee"].update(score=None, cons=None, uncertainty=None)
