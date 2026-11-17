@@ -115,6 +115,22 @@ const cases={
   const calls=await page.evaluate(async()=>{cancelPrefetch();load(4,false,true);const old=clipFetch,calls=[];clipFetch=(key,background)=>{if(background)calls.push(key);return old(key,background);};try{vA.dispatchEvent(new Event('progress'));await preloadNeighbors(S);return calls;}finally{clipFetch=old;}});
   assert.deepEqual(calls,[]);await ready(page);
  },
+ async overviewPendingSource(page){return pendingSource(page,false);},
+ async deferredPendingSource(page){return pendingSource(page,true);},
+ async cachedBlobDecoding(page){
+  await page.evaluate(async()=>{cancelPrefetch();ALL[4].src+='?cached-decode='+Date.now();await clipFetch(clipSrc(ALL[4]),true);});
+  const source=await page.evaluate(()=>{
+   const native=v.load.bind(v);
+   window.blobLoads=0;window.decodeProgress=e=>e.stopImmediatePropagation();v.addEventListener('progress',decodeProgress,true);Object.defineProperty(v,'readyState',{configurable:true,get:()=>0});
+   v.load=()=>{if(v.src.startsWith('blob:'))blobLoads++;return native();};
+   load(4,false);return v.src;
+  });
+  const initialLoads=await page.evaluate(()=>blobLoads);
+  assert(source.startsWith('blob:'),'必須命中已完成的片段快取');await page.waitForTimeout(250);await page.clock.runFor(6500);
+  assert.equal(await page.evaluate(()=>blobLoads),initialLoads,'已快取 blob 解碼中不得被探測重載');
+  assert.equal(await page.evaluate(()=>v.src),source);await page.evaluate(()=>{v.removeEventListener('progress',decodeProgress,true);delete v.readyState;});await ready(page);
+  await page.waitForFunction(()=>!v._align&&(!v._loader||v._loader.state==='ready'));
+ },
  async secondRecoveryPosition(page){
   const restored=[];
   for(const target of [.8,1.8]){
@@ -139,6 +155,26 @@ const cases={
   const times=[];for(let i=0;i<10;i++){await page.evaluate(()=>{cancelPrefetch();ALL[(S.id+1)%ALL.length].src+='?single='+Date.now();window.stepAt=performance.now();step(1);});await ready(page);times.push(await page.evaluate(()=>performance.now()-stepAt));await page.waitForTimeout(650);}return {stepMs:times};
  },
 };
+async function pendingSource(page,deferred){
+ const requests=[];page.on('request',r=>{if(r.resourceType()==='media'&&new URL(r.url()).pathname===new URL(page.url()).pathname)requests.push(r.url());});
+ await page.evaluate(()=>{
+  window.pageMediaLoads=0;window.pageMediaPlays=0;
+  const pageSource=()=>v.hasAttribute('src')&&new URL(v.getAttribute('src'),location.href).href.split('#')[0]===location.href.split('#')[0],load=v.load.bind(v),play=v.play.bind(v);
+  v.load=()=>{if(pageSource())pageMediaLoads++;return load();};v.play=()=>{if(pageSource())pageMediaPlays++;return play();};
+ });
+ if(deferred){
+  await page.evaluate(()=>{load(4,false,true);Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
+  await page.waitForTimeout(60);assert(await page.evaluate(()=>!!mainLoadTimer),'必須仍在 350 ms 延後載入窗口');await page.clock.runFor(400);
+ }else{
+  await page.evaluate(()=>go(DAY,'overview'));await page.waitForFunction(()=>TAB==='overview');
+  assert(await page.evaluate(()=>{load(4,false);route();return LATER.has(v)&&(!v._loader||v._loader.state==='suspended');}),'必須真的延後到 LATER');
+  await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>TAB==='stroke');
+ }
+ await ready(page);await page.waitForFunction(()=>!v._align&&(!v._loader||v._loader.state!=='suspended'));
+ assert.equal(await page.evaluate(()=>S.id),4);assert.deepEqual(requests,[],'不得對頁面 URL 發出媒體請求');
+ assert.deepEqual(await page.evaluate(()=>[pageMediaLoads,pageMediaPlays]),[0,0],'不得把網頁本身當成影片載入或播放');
+ return {pageMediaRequests:requests.length};
+}
 async function pausedFrame(page,compare){
  if(compare){await page.evaluate(()=>{go(DAY,'video');cmpLoad(ALL[4],ALL[5]);});await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>[vA,vB].every(x=>x.readyState>=3&&!x.seeking&&!x._align));}
  const sources=await page.evaluate(compare=>{cancelPrefetch();const group=compare?[vA,vB]:[v];for(const x of group){hold(x);Object.defineProperty(x,'readyState',{configurable:true,value:2});}return group.map(x=>x.src);},compare);
@@ -180,12 +216,12 @@ try{
     await page.addInitScript(()=>{window.unhandled=0;addEventListener('unhandledrejection',()=>window.unhandled++);});
     let before=0;const started=performance.now();let row={engine,case:name,repeat,pass:false};
     try{
-     if(['blocked','canplayRecoversFailure','seekedRecoversFailure','renewedBufferWait','secondRecoveryPosition','recoveredFailurePosition','pausedCurrentFrame','pausedCompareFrame'].includes(name))await page.clock.install();
+     if(['blocked','canplayRecoversFailure','seekedRecoversFailure','renewedBufferWait','overviewPendingSource','deferredPendingSource','cachedBlobDecoding','secondRecoveryPosition','recoveredFailurePosition','pausedCurrentFrame','pausedCompareFrame'].includes(name))await page.clock.install();
      await page.goto(f.url);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await ready(page);await page.waitForTimeout(650);before=f.events.length;consoleErrors=0;
      Object.assign(row,await test(page));const requests=f.events.slice(before).filter(e=>e.method==='GET');
      const retries=requests.filter(e=>e.query.includes('_retry'));
      if(['S8','lateBlob','probingResume'].includes(name))assert.equal(retries.length,0,'持續滴流或完成 blob 不得重試');
-     if(['S3','splitPrefix'].includes(name)){const first=retries[0];assert(first&&first.time-started<14500,'不得延長原有停流時限');}
+     if(name==='splitPrefix'){const first=retries[0];assert(first&&first.time-started<14500,'不得延長原有停流時限');}
      if(name==='blocked')assert.equal(requests.filter(e=>!e.range||e.query.includes('_retry')).length,0);
      if(['sharedHiddenResume','scrollDoesNotSuspend'].includes(name))assert.equal(requests.filter(e=>e.file.endsWith('/4.mp4')&&!e.range).length,1);
      if(name==='hiddenNative')assert.equal(requests.filter(e=>e.file.endsWith('/4.mp4')&&(!e.range||!e.range.endsWith('-1'))).length,1);

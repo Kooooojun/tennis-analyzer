@@ -1062,7 +1062,7 @@ function mediaLoader(vid){
     if(offAt&&retryAt) retryAt+=now-offAt; offAt=0; clocks(); loader.state=beforeSuspend;
     if(loader.state==="probing"&&!probe){ loader.state="loading"; probeTried=false; loader.entry=null; }
     if(m.dataset.fail){ if(foregroundEvent) retry(false,true); return; }
-    if(!vid.src&&vid._clip){
+    if(!vid.src&&vid._clip&&attemptUrl){
       const e=CLIPS.get(clipKey(attemptUrl)); loader.entry=e||null; probeTried=false;
       source(e?.url||attemptUrl,keep?.[0]!=null);
     }else { if(vid.readyState&&vid._align) vid._align(); loader.prime(); }
@@ -1149,7 +1149,7 @@ function mediaLoader(vid){
     const b=vid.buffered, media=vid.currentTime+"|"+(b.length?b.end(b.length-1):0)+"|"+vid.readyState;
     if(!wait){ wait=now; if(!since) since=now; if(!mediaSince) mediaSince=now; mediaSig=media; }
     if(media!==mediaSig){ mediaSig=media; mediaSince=now; since=now; }
-    if(!probe&&!probeTried&&!noProbe&&vid._clip&&!vid.readyState&&now-since>=3000&&/^https?:/.test(attemptUrl)) probeBytes();
+    if(!probe&&!probeTried&&!noProbe&&vid._clip&&!vid.src.startsWith("blob:")&&!vid.readyState&&now-since>=3000&&/^https?:/.test(attemptUrl)) probeBytes();
     if(now-mediaSince>=30000){ fail(); return; }
     if(now-since>=10000){ tries<1?reload():fail(); return; }
     if(now-wait>=1000) setMsg("影片下載中…");
