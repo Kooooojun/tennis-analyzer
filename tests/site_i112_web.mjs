@@ -67,6 +67,18 @@ try{
     }
     await page.evaluate(()=>{Object.assign(ALL[0],{kind:'FH',serve_arm_conf:null,contact_untrusted:false});load(0,false);});
     if(!(await page.locator('#cElbow').textContent()).includes('正手與雙手反拍不評手肘'))failures.push(`${tag}：正手說明退步`);
+    const delayed=await context.newPage();delayed.on('pageerror',e=>errors.push(e.message));
+    let release;const ready=new Promise(resolve=>release=resolve);
+    await delayed.route('**/pose/0.js*',async route=>{
+     const response=await route.fetch(),body=(await response.text()).replace(/}\);$/,',"world":null});');
+     await ready;await route.fulfill({response,body});
+    });
+    await delayed.goto(f.url);await delayed.waitForSelector('body.ready');
+    await delayed.evaluate(()=>{Object.assign(ALL[0],{kind:'SV',serve_arm_conf:0,serve_arm_straight:null});go(DAY_KEYS[0],'stroke');load(0,false);});
+    if(!(await delayed.locator('#cElbow').textContent()).includes('沒有資料'))failures.push(`${tag}：載入前不能猜缺3D`);
+    release();await delayed.waitForFunction(()=>S?.frames);
+    if(!(await delayed.locator('#cElbow').textContent()).includes('缺 3D 骨架'))failures.push(`${tag}：骨架載入後須立即更新缺3D原因`);
+    await delayed.close();
    }
    if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))failures.push(`${tag}：水平溢出`);
    if(errors.length)failures.push(`${tag}：前端例外 ${errors}`);
