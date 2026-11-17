@@ -70,6 +70,7 @@ def main():
     if busy.returncode != 1:
         raise RuntimeError('重運算尚未清空：' + busy.stdout + busy.stderr)
     lock = repo / 'testset/results/heavy.lock'
+    lock.parent.mkdir(parents=True, exist_ok=True)
     with ExitStack() as cleanup:
         lock.mkdir()
         cleanup.callback(release_lock, lock)

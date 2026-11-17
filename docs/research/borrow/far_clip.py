@@ -86,7 +86,7 @@ def main():
     busy = subprocess.run(['pgrep', '-fl', 'pose_full|prep.py|ball.py'], capture_output=True, text=True)
     if busy.returncode != 1:
         raise RuntimeError('其他heavy程序尚未清空：' + busy.stdout + busy.stderr)
-    lock = repo / 'testset/results/heavy.lock'; lock.mkdir()
+    lock = repo / 'testset/results/heavy.lock'; lock.parent.mkdir(parents=True,exist_ok=True); lock.mkdir()
     try:
         (lock / 'owner.txt').write_text('borrow-pose / 開發片段 / ' + args.key + ' / ' + datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).isoformat(), encoding='utf-8')
         low = memory()

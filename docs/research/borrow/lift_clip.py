@@ -118,7 +118,7 @@ def main():
     if out.exists(): raise FileExistsError('拒絕覆寫')
     busy=subprocess.run(['pgrep','-fl','pose_full|prep.py|ball.py'],capture_output=True,text=True)
     if busy.returncode!=1: raise RuntimeError('其他heavy程序執行中')
-    lock=repo/'testset/results/heavy.lock'; lock.mkdir()
+    lock=repo/'testset/results/heavy.lock'; lock.parent.mkdir(parents=True,exist_ok=True); lock.mkdir()
     try:
         (lock/'owner.txt').write_text('borrow-pose / CalTennis開發 / lifting機位'+a.camera+' / '+datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).isoformat(),encoding='utf-8')
         low=memory()

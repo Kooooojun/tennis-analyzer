@@ -201,3 +201,11 @@ work/venvs/rtmlib/bin/python -I docs/research/borrow/rtmo_coco.py \
 ```
 
 COCO 原圖、逐人預測與逐格骨架不提交，只提交彙總數字。CalTennis 與既有開發影片的保留部分均不納入本輪。RTMO 完成公開重現後才作開發比較；VideoPose3D 依上述追加規則作探索比較，上游未重現的限制另列，不宣稱精度重現。
+
+## 審查後修正
+
+Codex 指出全新 checkout 尚無忽略的 `testset/results/` 時，公開入口會在取得 heavy 鎖前失敗。三個研究入口現在先建立父目錄，再以原本排他的 `lock.mkdir()` 取鎖；沒有改推論、參數或既有研究結果。[暫存 checkout 自檢](borrow/test_locks.py)先重現缺父目錄的失敗，再確認三個入口可建鎖、重複取鎖會失敗，既有 owner 文字不變；自檢不取得共用鎖。
+
+```sh
+.venv/bin/python -I docs/research/borrow/test_locks.py
+```
