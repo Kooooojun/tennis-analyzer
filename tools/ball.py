@@ -106,23 +106,27 @@ def main(src, out, device=None, windows=None):
     print(f"device {dev}, {len(crops)} crop(s), {N} frames, {int(mask[:N].sum())} selected", flush=True)
 
     res = np.full((N + SEQ, 3), np.nan, np.float32); score = np.full(N + SEQ, -1.0, np.float32)
-    bufs = [[] for _ in crops]; done = 0; t0 = time.time()
+    bufs = [[] for _ in crops]; history = [[] for _ in crops]; indices = []; done = 0; t0 = time.time()
+    needed = mask.copy()
+    for k in range(1, SEQ): needed[:-k] |= mask[k:]
 
-    def flush(n):  # n windows per crop; bufs hold SEQ-1 history frames then the new ones
+    def flush(n):
         nonlocal done
-        if not mask[done:done + n].any():
-            for buf in bufs: del buf[:n]
-            done += n
-            return
         for ci, c in enumerate(crops):
-            fr = torch.from_numpy(np.stack(bufs[ci][:n + SEQ - 1])).to(dev).permute(0, 3, 1, 2).float() / 255
-            x = torch.cat([med[ci].expand(n, 3, H_IN, W_IN), torch.stack([fr[k:k + SEQ] for k in range(n)]).reshape(n, 3 * SEQ, H_IN, W_IN)], 1)
+            if windows is None:
+                fr = torch.from_numpy(np.stack(bufs[ci][:n + SEQ - 1])).to(dev).permute(0, 3, 1, 2).float() / 255
+                frames = torch.stack([fr[k:k + SEQ] for k in range(n)]).reshape(n, 3 * SEQ, H_IN, W_IN)
+            else:
+                fr = torch.from_numpy(np.stack(bufs[ci][:n])).to(dev).permute(0, 1, 4, 2, 3).float() / 255
+                frames = fr.reshape(n, 3 * SEQ, H_IN, W_IN)
+            x = torch.cat([med[ci].expand(n, 3, H_IN, W_IN), frames], 1)
             with torch.no_grad(): hm = net(x)[:, 0].cpu().numpy()
             for k in range(n):
-                r = locate(hm[k]); i = done + k
+                r = locate(hm[k]); i = done + k if windows is None else indices[k]
                 if r and r[2] > score[i]:
                     score[i] = r[2]; res[i] = ((c[0] + r[0] * c[2] / W_IN) / W, (c[1] + r[1] * c[3] / H_IN) / H, r[2])
             del bufs[ci][:n]
+        del indices[:n]
         done += n
 
     p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", src, "-an", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"], stdout=subprocess.PIPE)
@@ -131,13 +135,26 @@ def main(src, out, device=None, windows=None):
         b = p.stdout.read(W * H * 3)
         if len(b) < W * H * 3: break
         im = np.frombuffer(b, np.uint8).reshape(H, W, 3); got += 1
+        if windows is not None:
+            i = got - 1
+            if not needed[i]: continue
+            for ci, c in enumerate(crops):
+                f = rs(im, c)
+                if i == 0: history[ci] += [f] * (SEQ - 1)
+                history[ci].append(f); history[ci] = history[ci][-SEQ:]
+                if mask[i]: bufs[ci].append(history[ci].copy())
+            if mask[i]: indices.append(i)
+            if len(indices) >= BATCH: flush(BATCH)
+            continue
         for ci, c in enumerate(crops):
             f = rs(im, c)
             if first: bufs[ci] += [f] * (SEQ - 1)  # pad the start with frame 0, like the original (max(0, j))
             bufs[ci].append(f)
         first = False
         if len(bufs[0]) >= BATCH + SEQ - 1: flush(BATCH)
-    if len(bufs[0]) > SEQ - 1: flush(len(bufs[0]) - (SEQ - 1))
+    if windows is None:
+        if len(bufs[0]) > SEQ - 1: flush(len(bufs[0]) - (SEQ - 1))
+    elif indices: flush(len(indices))
     p.stdout.close()
     if p.wait(): sys.exit(f"ffmpeg failed decoding {src} after {got} frames")  # a truncated ball.npy would be cached by prep.sh forever
     res = res[:got]; res[~mask[:got]] = np.nan
