@@ -115,10 +115,38 @@ const cases={
   const calls=await page.evaluate(async()=>{cancelPrefetch();load(4,false,true);const old=clipFetch,calls=[];clipFetch=(key,background)=>{if(background)calls.push(key);return old(key,background);};try{vA.dispatchEvent(new Event('progress'));await preloadNeighbors(S);return calls;}finally{clipFetch=old;}});
   assert.deepEqual(calls,[]);await ready(page);
  },
+ async secondRecoveryPosition(page){
+  const restored=[];
+  for(const target of [.8,1.8]){
+   await page.evaluate(target=>{hold(v);v.currentTime=target;},target);await ready(page);
+   await page.evaluate(()=>{cancelPrefetch();Object.defineProperty(v,'readyState',{configurable:true,value:1});});
+   await page.clock.runFor(11000);await page.evaluate(()=>{delete v.readyState;});await ready(page);
+   const position=await page.evaluate(()=>v.currentTime);restored.push(position);
+   assert(Math.abs(position-target)<1/60,'每次重載必須保存最新位置：'+target+' → '+position);
+  }
+  return {restored};
+ },
+ async recoveredFailurePosition(page){
+  await recoverFailure(page,'canplay');
+  await page.evaluate(()=>{hold(v);v.currentTime=1.8;});await ready(page);
+  await page.evaluate(()=>{Object.defineProperty(v,'readyState',{configurable:true,value:1});});
+  await page.clock.runFor(11000);await page.evaluate(()=>{delete v.readyState;});await ready(page);
+  assert(Math.abs(await page.evaluate(()=>v.currentTime)-1.8)<1/60,'原生自行恢復後亦須消耗舊失敗快照');
+ },
+ async pausedCurrentFrame(page){return pausedFrame(page,false);},
+ async pausedCompareFrame(page){return pausedFrame(page,true);},
  async S7(page){
   const times=[];for(let i=0;i<10;i++){await page.evaluate(()=>{cancelPrefetch();ALL[(S.id+1)%ALL.length].src+='?single='+Date.now();window.stepAt=performance.now();step(1);});await ready(page);times.push(await page.evaluate(()=>performance.now()-stepAt));await page.waitForTimeout(650);}return {stepMs:times};
  },
 };
+async function pausedFrame(page,compare){
+ if(compare){await page.evaluate(()=>{go(DAY,'video');cmpLoad(ALL[4],ALL[5]);});await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>[vA,vB].every(x=>x.readyState>=3&&!x.seeking&&!x._align));}
+ const sources=await page.evaluate(compare=>{cancelPrefetch();const group=compare?[vA,vB]:[v];for(const x of group){hold(x);Object.defineProperty(x,'readyState',{configurable:true,value:2});}return group.map(x=>x.src);},compare);
+ await page.clock.runFor(35000);
+ assert.deepEqual(await page.evaluate(compare=>(compare?[vA,vB]:[v]).map(x=>x.src),compare),sources,'已有影格的暫停影片不得重載');
+ assert.equal(await page.locator(compare?'.duo .vid-msg[data-fail]':'#stage .vid-msg[data-fail]').count(),0);
+ assert(await page.evaluate(compare=>(compare?[vA,vB]:[v]).every(x=>x.paused&&!x._want&&!x.seeking),compare));
+}
 async function recoverFailure(page,event){
  await page.evaluate(()=>{cancelPrefetch();Object.defineProperty(v,'readyState',{configurable:true,value:1});Object.defineProperty(v,'seeking',{configurable:true,value:true});});
  await page.clock.runFor(24000);
@@ -152,7 +180,7 @@ try{
     await page.addInitScript(()=>{window.unhandled=0;addEventListener('unhandledrejection',()=>window.unhandled++);});
     let before=0;const started=performance.now();let row={engine,case:name,repeat,pass:false};
     try{
-     if(['blocked','canplayRecoversFailure','seekedRecoversFailure','renewedBufferWait'].includes(name))await page.clock.install();
+     if(['blocked','canplayRecoversFailure','seekedRecoversFailure','renewedBufferWait','secondRecoveryPosition','recoveredFailurePosition','pausedCurrentFrame','pausedCompareFrame'].includes(name))await page.clock.install();
      await page.goto(f.url);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await ready(page);await page.waitForTimeout(650);before=f.events.length;consoleErrors=0;
      Object.assign(row,await test(page));const requests=f.events.slice(before).filter(e=>e.method==='GET');
      const retries=requests.filter(e=>e.query.includes('_retry'));
