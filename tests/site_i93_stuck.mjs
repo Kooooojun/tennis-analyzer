@@ -32,19 +32,127 @@ try{
      assert.equal(count,4);assert.equal(await page.locator('#stage .pose-msg').isVisible(),false);assert.equal(await live.textContent(),'');
      return {firstRetryStatusMs:8500,recoveredByMs:41000,requests:count};
     },
+    async probeSuspendNoRestart(page){
+     await replacing(page,20);
+     const state=await page.evaluate(async()=>{
+      window.suspendedLoads=0;const native=v.load.bind(v);v.load=()=>{suspendedLoads++;native();};
+      Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise(r=>setTimeout(r,600));return {loads:suspendedLoads,source:v.src,fetching:!!v._fetching};
+     });
+     console.log(JSON.stringify({measurement:{engine,case:'probeSuspendNoRestart',...state}}));
+     assert.equal(state.loads,0,'隱藏時不得重新 load 原生影片');
+    },
+    async probeFailureFreshAttempt(page){
+     const started=performance.now(),before=f.events.length;
+     await replacing(page,45);
+     await page.waitForTimeout(Math.max(0,26000-(performance.now()-started)));
+     await page.evaluate(()=>CLIPS.get(v._clipKey).controller.abort());
+     await page.waitForTimeout(7000);
+     const state=await page.evaluate(()=>({source:v.src,failed:!!v.parentElement.querySelector('.vid-msg[data-fail]')}));
+     const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4'));
+     console.log(JSON.stringify({measurement:{engine,case:'probeFailureFreshAttempt',...state,requests}}));
+     assert(requests.some(e=>e.query.includes('_retry')),'下載失敗後的新來源必須繞過壞快取');
+     assert.equal(state.failed,false,'新來源不能繼承舊的三十秒期限');
+    },
+    async probeBlobNativePause(page){
+     await replacing(page,4);await page.locator('#play').click();
+     await page.waitForFunction(()=>v.src.startsWith('blob:')&&v.readyState>=3&&!v.seeking&&!v.paused,null,{timeout:6500});
+     await page.evaluate(()=>v.pause());await page.waitForTimeout(150);
+     const state=await page.evaluate(()=>({want:!!v._want,resume:!!v._resume,reloading:!!v._reloading,button:$('play').textContent}));
+     console.log(JSON.stringify({measurement:{engine,case:'probeBlobNativePause',...state}}));
+     assert.equal(state.reloading,false,'blob 可播後必須離開重載狀態');
+     assert.equal(state.want,false,'原生 pause 必須清除播放意圖');assert(state.button.includes('▶'));
+    },
+    async probeBlocksPrefetch(page){
+     await replacing(page,20);
+     const calls=await page.evaluate(async()=>{
+      cancelPrefetch();prefetchFor=null;const calls=[],native=clipFetch;
+      clipFetch=(key,background)=>{if(background)calls.push(key);return native(key,background);};
+      try{await preloadNeighbors(S);return calls;}finally{clipFetch=native;}
+     });
+     console.log(JSON.stringify({measurement:{engine,case:'probeBlocksPrefetch',calls}}));
+     assert.deepEqual(calls,[],'前景替代下載中不得啟動鄰拍預載');
+    },
+    async probeKeepsRetryUrl(page){
+     const probes=[];
+     page.on('request',r=>{if(r.resourceType()==='fetch'&&r.url().includes('nativeHang=always'))probes.push(r.url());});
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?nativeHang=always&hang=once&drip=4&case='+Date.now();load(4,false);},f.url);
+     await page.waitForFunction(()=>v.src.includes('_retry'),null,{timeout:13500});
+     const deadline=Date.now()+6000;while(probes.length<2&&Date.now()<deadline)await page.waitForTimeout(100);
+     console.log(JSON.stringify({measurement:{engine,case:'probeKeepsRetryUrl',probes}}));
+     assert(probes.length>=2,'必須走過重試後的替代下載');
+     assert(new URL(probes[1]).searchParams.has('_retry'),'第二次替代 GET 必須保留原生重試的 URL');
+    },
+    async nativeConnectionStuck(page){
+     const before=f.events.length,start=performance.now();
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?nativeHang=1&drip=4&perRequest=1&case='+Date.now();load(4,false);},f.url);
+     await page.waitForFunction(()=>v._fetching,null,{timeout:6500});
+     await page.locator('#play').click();
+     await page.waitForFunction(()=>v.readyState>=3&&!v.seeking&&!v.paused,null,{timeout:6500});
+     const frame=await page.evaluate(()=>v.currentTime);
+     await page.waitForFunction(t=>v.currentTime>t+.05,frame,{timeout:2500});
+     const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4'));
+     assert(requests.some(e=>e.range&&e.hang),'必須真的卡住原生 Range 連線');
+     assert(requests.some(e=>!e.range&&!e.hang&&e.chunks>0),'獨立 GET 必須正常傳送資料');
+     assert(performance.now()-start<11000,'十一秒內必須恢復實際播放');
+     assert.equal(await page.locator('#stage .vid-msg[data-fail]').count(),0);
+     return {elapsedMs:Math.round(performance.now()-start),source:await page.evaluate(()=>v.src.startsWith('blob:')?'blob':'native'),requests};
+    },
+    async byteFallbackShared(page){
+     const before=f.events.length;
+     await page.evaluate(url=>{
+      ALL[4].src=url+'sessions/synthetic/clips/4.mp4?nativeHang=1&drip=8&case='+Date.now();
+      go(DAY_KEYS[0],'video');cmpLoad(ALL[4],ALL[4]);
+     },f.url);
+     await page.locator('#vA').scrollIntoViewIfNeeded();
+     await page.waitForFunction(()=>vA._fetching&&vB._fetching&&CLIPS.get(vB._clipKey)?.bytes>0,null,{timeout:6500});
+     await page.evaluate(()=>{resetClip(vA,clipSrc(ALL[8]));setClip(vA,ALL[8],()=>vA.pause());});
+     await page.waitForFunction(()=>vB.readyState>=3&&!vB.seeking&&vB.src.startsWith('blob:'),null,{timeout:10000});
+     const state=await page.evaluate(()=>{const e=CLIPS.get(vB._clipKey);return {cached:e?.url===vB.src,bytes:e?.size,limit:CLIP_LIMIT};});
+     assert(state.cached&&state.bytes>0&&state.bytes<=state.limit,'離開一側不能取消另一側共用的有界快取下載');
+     const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4'));
+     assert.equal(requests.filter(e=>!e.range).length,1,'兩側應共用一條替代 GET');
+     return state;
+    },
+    async byteFallbackRejected(page){
+     let fetches=0;
+     await page.route('**/*nativeHang*',route=>{
+      if(route.request().resourceType()!=='fetch')return route.continue();
+      fetches++;return route.fulfill({status:200,contentType:'text/html',body:'<html>unavailable</html>'});
+     });
+     const before=f.events.length,start=performance.now();
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?nativeHang=1&drip=4&perRequest=1&case='+Date.now();load(4,false);},f.url);
+     await page.waitForFunction(()=>v.src.includes('_retry'),null,{timeout:13000});
+     const fetchesBeforeRetry=fetches;
+     await page.waitForFunction(()=>v.readyState>=3&&!v.seeking,null,{timeout:6000});
+     const retry=f.events.slice(before).find(e=>e.file.endsWith('/4.mp4')&&e.query.includes('_retry'));
+     assert.equal(fetchesBeforeRetry,1,'同一次載入遇到無效回應不能重複探測');
+     assert(retry&&retry.time-start<13000,'替代下載失敗仍須約十秒原生重試');
+     assert.equal(await page.evaluate(()=>v._fetching),false);
+     return {fetches,fetchesBeforeRetry,retryMs:Math.round(retry.time-start)};
+    },
     async slowByteProgress(page){
      const before=f.events.length;
      await page.evaluate(url=>{
-      window.slowProgress=0;window.slowMetadataMs=0;const started=performance.now();
-      v.addEventListener('progress',e=>{if(e.isTrusted)slowProgress++;});v.addEventListener('loadedmetadata',()=>slowMetadataMs=performance.now()-started,{once:true});
+      window.slowProgress=0;window.slowMetadataMs=0;window.slowStates=[];const started=performance.now();
+      const sample=type=>slowStates.push({ms:Math.round(performance.now()-started),type,readyState:v.readyState,buffered:v.buffered.length?v.buffered.end(v.buffered.length-1):0});
+      const timer=setInterval(()=>sample('sample'),500);
+      v.addEventListener('progress',e=>{sample(e.isTrusted?'trusted':'untrusted');if(e.isTrusted)slowProgress++;});
+      v.addEventListener('loadedmetadata',()=>{slowMetadataMs=performance.now()-started;clearInterval(timer);},{once:true});
       ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=20&case='+Date.now();load(4,false);
      },f.url);
      await page.waitForFunction(()=>v.readyState>=3&&!v.seeking,null,{timeout:27500});
-     const state=await page.evaluate(()=>({metadataMs:Math.round(slowMetadataMs),progress:slowProgress}));
+     const state=await page.evaluate(()=>({metadataMs:Math.round(slowMetadataMs),progress:slowProgress,states:slowStates,blob:v.src.startsWith('blob:'),cached:CLIPS.get(v._clipKey)?.url===v.src}));
      const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4')),retries=requests.filter(e=>e.query.includes('_retry')).length;
-     assert(state.metadataMs>=18000,`metadata 過早：${state.metadataMs}`);assert(state.progress>0);assert(requests.reduce((n,e)=>n+e.chunks,0)>=40);
+     assert(state.metadataMs>=18000,`metadata 過早：${state.metadataMs}`);assert(requests.reduce((n,e)=>n+e.chunks,0)>=40);
+     if(engine!=='webkit')assert(state.progress>0,'Chromium 必須有可信任下載進度');
+     const byteRatio=requests.reduce((n,e)=>n+e.bytes,0)/f.media.length;
+     assert(byteRatio<1.35,`不得維持雙倍下載：${byteRatio.toFixed(2)} 倍`);
+     if(engine==='webkit')assert(state.blob&&state.cached,'替代下載必須實際成為有容量上限的快取影片');
+     else assert.equal(state.blob,false,'原生有進度時保留串流');
+     assert.equal(await page.locator('#stage .vid-msg[data-fail]').count(),0,'滴流完成不得留下失敗提示');
      console.log(JSON.stringify({measurement:{...state,retries,requests:requests.length,chunks:requests.map(e=>e.chunks)}}));
-     assert.equal(retries,0,'持續有原生下載進展時不得重載');return {...state,retries,requests:requests.length,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
+     assert.equal(retries,0,'持續下載時不得重載');return {...state,retries,byteRatio,requests:requests.length,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
     },
     async slowByteCeiling(page){
      const before=f.events.length,start=performance.now();
@@ -59,9 +167,43 @@ try{
      await page.waitForFunction(()=>!!v.parentElement.querySelector('.vid-msg[data-fail]:not([disabled])'),null,{timeout:12000});
      const elapsedMs=Math.round(performance.now()-start),progress=await page.evaluate(()=>ceilingProgress);
      const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4')),retries=requests.filter(e=>e.query.includes('_retry')).length;
-     assert(elapsedMs>=29500&&elapsedMs<=34000,`媒體上限應約 30 秒，實際 ${elapsedMs} ms`);assert(progress>=20,'必須持續有可信任下載進度');
+     assert(elapsedMs>=29500&&elapsedMs<=34000,`媒體上限應約 30 秒，實際 ${elapsedMs} ms`);
+     if(engine!=='webkit')assert(progress>=20,'Chromium 必須持續有可信任下載進度');
      assert(requests.some(e=>e.chunks>=100),'伺服器必須持續傳送真實資料');assert.equal(retries,0);
-     return {elapsedMs,progress,retries,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
+     await failed().click();
+     assert.equal(await page.evaluate(()=>v.src.includes('_retry')),true,'上限後手動重試仍須使用 cache-buster');
+     return {elapsedMs,progress,retries,manualRetry:true,chunks:requests.reduce((n,e)=>n+e.chunks,0)};
+    },
+    async slowByteStops(page){
+     const before=f.events.length;
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=45&dripStop=4000&case='+Date.now();load(4,false);},f.url);
+     await page.waitForFunction(()=>v.readyState>=3&&!v.seeking&&v.src.includes('_retry'),null,{timeout:22000});
+     const requests=f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4'));
+     const lastByte=Math.max(...requests.filter(e=>!e.query.includes('_retry')).map(e=>e.lastByte||0));
+     const retry=requests.find(e=>e.query.includes('_retry')),inactivityMs=Math.round(retry.time-lastByte);
+     console.log(JSON.stringify({measurement:{engine,case:'slowByteStops',inactivityMs,requests}}));
+     assert(requests.reduce((n,e)=>n+e.chunks,0)>=6,'必須先傳真實資料再停流');
+     assert(inactivityMs>=9000&&inactivityMs<=13000,`停止下載後應約 10 秒重試，實際 ${inactivityMs} ms`);
+     return {inactivityMs,retries:requests.filter(e=>e.query.includes('_retry')).length};
+    },
+    async byteProbeCancelled(page){
+     const requests=[],finished=new Set();
+     page.on('request',r=>{if(r.resourceType()==='fetch'&&r.url().includes('drip=45'))requests.push(r);});
+     for(const event of ['requestfinished','requestfailed'])page.on(event,r=>finished.add(r));
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=45&case='+Date.now();load(4,false);},f.url);
+     await page.waitForTimeout(5500);
+     assert.equal(requests.length,engine==='webkit'?1:0,'只有進度不可見時才探測');
+     await page.evaluate(()=>load(8,false));await page.waitForFunction(()=>S.id===8&&v.readyState>=3&&!v.seeking);
+     await page.waitForFunction(()=>S.id===8&&!!S.frames);
+     assert(requests.every(r=>finished.has(r)),'換拍必須取消探測請求');
+     await page.evaluate(url=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?drip=45&case='+Date.now();load(4,false);},f.url);
+     await page.waitForTimeout(5500);
+     const cancelled=Promise.all(requests.filter(r=>!finished.has(r)).map(request=>page.waitForEvent('requestfailed',{predicate:r=>r===request,timeout:1500})));
+     await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+     await cancelled;
+     assert.equal(requests.length,engine==='webkit'?2:0);
+     assert(requests.every(r=>finished.has(r)),'隱藏分頁必須取消探測請求');
+     return {probes:requests.length,cancelled:requests.filter(r=>!!r.failure()).length};
     },
     async poseFailure(page){
      let count=0;await page.route('**/pose/4.js*',()=>{count++;});
@@ -185,7 +327,7 @@ try{
      await page.evaluate(()=>load(8,false));await failed;
     },
    })){
-    if(['rapidH2','slowByteProgress','slowByteCeiling'].includes(name)&&engine==='webkit')continue;
+    if(name==='rapidH2'&&engine==='webkit')continue;
     if(process.env.SITE_CASES&&!process.env.SITE_CASES.split(',').includes(name))continue;
     const context=await browser.newContext({ignoreHTTPSErrors:true,...(engine==='webkit'?devices['iPhone 13']:{})}),page=await context.newPage(),errors=[];
     page.on('pageerror',e=>errors.push(e.message));
@@ -202,6 +344,12 @@ try{
 }finally{await f.close();}
 if(process.env.SITE_RESULTS)fs.writeFileSync(process.env.SITE_RESULTS,JSON.stringify(results,null,2));
 process.exitCode=results.some(x=>!x.pass)?1:0;
+
+async function replacing(page,seconds){
+ // Keep a measurable buffering window for pause/suspend injection, even when the probe starts late.
+ await page.evaluate(({url,seconds})=>{ALL[4].src=url+'sessions/synthetic/clips/4.mp4?nativeHang=1&drip='+seconds+'&perRequest=1&case='+Date.now();load(4,false);},{url:f.url,seconds});
+ await page.waitForFunction(()=>v._fetching,null,{timeout:6500});
+}
 
 async function leavePose(page,tab){
  let allow=false,count=0;await page.route('**/pose/4.js*',route=>{count++;if(allow)return route.continue();});

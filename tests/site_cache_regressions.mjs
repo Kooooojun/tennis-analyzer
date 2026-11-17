@@ -38,7 +38,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   },
   async recoveredBudget(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
-   await page.evaluate(()=>{resetClip(v,'recovered.mp4');window.bad=true;Object.defineProperty(v,'currentSrc',{configurable:true,value:'http://example.test/recovered.mp4'});Object.defineProperty(v,'readyState',{configurable:true,get:()=>bad?0:4});Object.defineProperty(v,'error',{configurable:true,get:()=>bad?{code:2}:null});window.reloads=0;Object.defineProperty(v,'src',{configurable:true,get:()=> 'http://example.test/recovered.mp4',set:()=>reloads++});});
+   await page.evaluate(()=>{resetClip(v,'recovered.mp4');window.bad=true;window.fakeSource='http://example.test/recovered.mp4';Object.defineProperty(v,'currentSrc',{configurable:true,get:()=>fakeSource});Object.defineProperty(v,'readyState',{configurable:true,get:()=>bad?0:4});Object.defineProperty(v,'error',{configurable:true,get:()=>bad?{code:2}:null});window.reloads=0;Object.defineProperty(v,'src',{configurable:true,get:()=>fakeSource,set:url=>{fakeSource=url;reloads++;}});});
    await page.clock.runFor(125000);assert.equal(await page.evaluate(()=>reloads),4);
    await page.evaluate(()=>{bad=false;v.dispatchEvent(new Event('loadedmetadata'));});await page.clock.runFor(1000);
    await page.evaluate(()=>{bad=true;});await page.clock.runFor(20000);assert.equal(await page.evaluate(()=>reloads),6,'a recovered clip gets a fresh backoff budget');
@@ -177,9 +177,10 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   },
   async partnerRetry(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'video'));await page.locator('#vA').scrollIntoViewIfNeeded();await page.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
-   await page.evaluate(()=>{window.goodPartner=vB.src;cmpStart();vB.src='data:video/mp4,broken';});
+   let release=false;await page.route('**/*partner-retry*',route=>release?route.continue():route.fulfill({status:404,body:''}));
+   await page.evaluate(()=>{cmpLoad(A,{...B,src:B.src+'?partner-retry'});cmpStart();});
    await page.waitForFunction(()=>vB.parentElement.querySelector('[data-fail]'));
-   await page.evaluate(()=>{Object.defineProperty(vB,'currentSrc',{configurable:true,get:()=>goodPartner});vB.parentElement.querySelector('.vid-msg').click();});
+   release=true;await page.evaluate(()=>vB.parentElement.querySelector('.vid-msg').click());
    await page.waitForFunction(()=>vB.readyState>=2&&!vB._reloading);
    assert.deepEqual(await page.evaluate(()=>[vA.paused,vB.paused,$('cmpPlay').textContent.includes('▶')]),[true,true,true]);
    await page.evaluate(()=>cmpStart());await page.waitForFunction(()=>!vA.paused&&!vB.paused);
