@@ -361,6 +361,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
 
     <div class="card" data-tab="advice">
       <h2>怎麼練正確姿勢</h2>
+      <p class="caveat">「3D估」為 3D 估計（單鏡頭，僅供參考），是模型從單一鏡頭估出的人體相對座標，不是多機校正的實測角度。</p>
       <p style="margin:0 0 8px">最好的參考是你自己的好球：同樣的身高、球拍和鏡頭角度，最容易對照。下面每一點都附上你這場的實際數字。</p>
       <h3>正拍</h3>
       <ul class="check" id="checkFH"></ul>
@@ -411,7 +412,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
         <span><i style="background:var(--s3)"></i>肩膀轉開度</span>
         <span>點圖表可跳轉</span>
       </div>
-      <p class="caveat">膝蓋越小越蹲。轉肩 0% = 完全側身，100% = 胸口正對球網。擊球時手腕高度（2D）是接觸格附近五格中位數，以肩髖長為尺：髖＝0、肩＝100（肩髖線傾斜時，肩的垂直投影略低）；只評一致性，不判高低好壞。下方小字是同類擊球整場的中位數。膝蓋優先用 3D 骨架算，沒有 3D 才用 2D，短標「3D估」表示「3D 估計（單鏡頭，僅供參考）」。這是模型從單一鏡頭估出的人體相對座標，不是多機校正的實測角度。既有多機位公開資料比對的 3D 絕對誤差中位約 8°、p90 約 23°；正式模式研究仍未通過精度門檻，保留場次尚未完成驗證；這些誤差不是每拍的保證。顯示到 1° 不代表準到 1°；小於誤差範圍的差別屬於「在誤差內」，無法判定進退步。2D 側面拍誤差約 ±2°、正前或正後方約 ±20–34°，所以側面拍最準，鏡頭在正前、正後方的拍會標「膝角看不準」；3D 也一樣受拍攝角度影響。兩種來源的數字不要直接互比。若 3D 與 2D 差太多會標「這拍角度不準」。手肘不管 2D、3D 都不可靠，所以不顯示數字。</p>
+      <p class="caveat">膝蓋越小越蹲。轉肩 0% = 完全側身，100% = 胸口正對球網。擊球時手腕高度（2D）是接觸格附近五格中位數，以肩髖長為尺：髖＝0、肩＝100（肩髖線傾斜時，肩的垂直投影略低）；只評一致性，不判高低好壞。下方小字是同類擊球整場的中位數。膝蓋優先用 3D 骨架算，沒有 3D 才用 2D，短標「3D估」表示「3D 估計（單鏡頭，僅供參考）」。這是模型從單一鏡頭估出的人體相對座標，不是多機校正的實測角度。既有多機位公開資料比對的膝角 3D 絕對誤差中位約 8°、p90 約 23°；正式模式研究仍未通過精度門檻，保留場次尚未完成驗證；這些誤差不是每拍的保證。顯示到 1° 不代表準到 1°；小於誤差範圍的差別屬於「在誤差內」，無法判定進退步。2D 側面拍誤差約 ±2°、正前或正後方約 ±20–34°，所以側面拍最準，鏡頭在正前、正後方的拍會標「膝角看不準」；3D 也一樣受拍攝角度影響。兩種來源的數字不要直接互比。若 3D 與 2D 差太多會標「這拍角度不準」。手肘不管 2D、3D 都不可靠，所以不顯示數字。</p>
     </div>
 
     <div class="card" data-tab="stroke">
@@ -450,7 +451,7 @@ if(!DAY_KEYS.length){ document.querySelector("main").innerHTML='<p style="paddin
 let DAY = DAY_KEYS.findLast(k=>isoDate(DAYS[k]))??DAY_KEYS.at(-1), ALL = DAYS[DAY].data;
 const who = s => s.player||"me";  // "player": null or missing = the single-player "me", same as score.py
 const PN = p => p==="me" ? "我" : p;
-const ITEM = {total:"總分", uncapped:"未壓前總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球時手腕高度（2D）", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜", lean:"軀幹前傾", stance:"站姿寬度", wrist_speed:"手速", turn:"轉肩幅度", leg_load:"重心降低", power:"力量"};
+const ITEM = {total:"總分", uncapped:"未壓前總分", form:"技術", consistency:"一致性", knee:"膝蓋", knee3d:"膝蓋", contact_h:"擊球時手腕高度（2D）", contact_fwd:"擊球前後", prep:"準備時間", open_min:"轉肩", elbow:"手肘", finish:"收拍", reach:"擊球伸展", tilt:"肩膀傾斜（3D估）", lean:"軀幹前傾", stance:"站姿寬度", wrist_speed:"手速", turn:"轉肩幅度", leg_load:"重心降低", power:"力量"};
 const STAT = {median:"中位數", mean:"平均", min:"最小", max:"最大", n:"拍數", score:"分數", cons:"一致性分", spread:"散佈"};
 const formNote = g => g?.form_n===1&&g.form_metrics?.length===1?`只根據 1 項：${ITEM[g.form_metrics[0]]||g.form_metrics[0]}`:"";
 const differentItems = (a,b) => a?.score_set!=null&&b?.score_set!=null&&JSON.stringify(a.score_set)!==JSON.stringify(b.score_set);
@@ -712,6 +713,7 @@ function drawOverview(){
   const d=DAYS[DAY], sc=d.scores, r1=x=>x==null?"–":x.toFixed(1), multi=d.players.length>1;
   const counts=["FH","BH","SV","OH"].map(k=>[k,ALL.filter(s=>s.kind===k).length]).filter(([,n])=>n).map(([k,n])=>`${esc(NAMES[k]||k)} ${n}`).join("、");
   let h=`<h2>${esc(d.label)} 總覽</h2><p class="hint" style="margin:0 0 10px">${esc(d.camera||"沒寫鏡頭位置")} · 共 ${ALL.length} 拍（${counts}）${multi?` · ${d.players.length} 位玩家`:""}</p>`;
+  h+=`<p class="caveat">「3D估」為 3D 估計（單鏡頭，僅供參考），是模型從單一鏡頭估出的人體相對座標，不是多機校正的實測角度。</p>`;
   if(fpsLow(d)) h+=`<p class="caveat" style="margin:0 0 10px">來源 ${d.srcFps} fps：proxy 補成 60 fps（重複影格），速度類數字（手速、準備時間）沒驗證過。下次用 60 fps 拍。</p>`;
   const hn=handNote(ALL); if(hn) h+=`<p class="caveat" style="margin:0 0 10px">${esc(hn)}</p>`;
   if(!sc) h+=`<p class="caveat" style="margin:0 0 10px">這場還沒評分。在電腦上跑 <code>tools/score.py ${esc(d.id)}</code>，再跑 <code>tools/build_site.py</code>。</p>`;
@@ -720,7 +722,7 @@ function drawOverview(){
       const rows=Object.entries(g.metrics).map(([m,x])=>{
         const ok=x.status==="ok"||x.status==null, s=ok?x.score:null;
         const val=!ok?`<span class="na">資料不足</span>`:s==null?`<span class="na">只評一致性 ${scoreText(x.cons,x.uncertainty?.cons)}</span>`:scoreText(s,x.uncertainty?.score)+(x.cons==null?"":`<span class="score-cons">一致性 ${scoreText(x.cons,x.uncertainty?.cons)}</span>`);
-        return `<span>${ITEM[m]||m}</span><span class="bar"><i style="width:${(s??0)*10}%"></i></span><span class="num" title="中位數 ${x.median??"–"}，${x.n} 拍${m.startsWith("knee")?`，膝角來源 ${g.knee_src==="knee3d"?"3D 估計（單鏡頭，僅供參考）":"2D"}`:""}">${val}</span>`;
+        return `<span>${ITEM[m]||m}</span><span class="bar"><i style="width:${(s??0)*10}%"></i></span><span class="num" title="中位數 ${x.median??"–"}，${x.n} 拍${m.startsWith("knee")?`，膝角來源 ${g.knee_src==="knee3d"?"3D 估計（單鏡頭，僅供參考）":"2D"}`:m==="tilt"?"，肩膀傾斜來源 3D 估計（單鏡頭，僅供參考）":""}">${val}</span>`;
       }).join("");
       const flags=(window.TREND||[]).filter(t=>t.player===g.player&&t.kind===g.kind&&t.history.at(-1)?.session===d.id).flatMap(t=>t.flags);
       const note=formNote(g), cls=note?" single-metric":"";
@@ -1207,7 +1209,7 @@ function load(id, scroll, defer=false){
   const sv=S.kind==="SV", f1=sv?S.reach:S.finish, num=(x,u,d=1)=>x==null?"–":`${x.toFixed(d)}<small>${u}</small>`;  // form_checks fields (docs/scoring.md §10); null = gate failed
   const med=(f,g=S.kind)=>median(ALL.filter(x=>x.kind===g).map(x=>x[f]));
   $("kForm1").parentElement.hidden=S.kind==="OH"; $("kForm1").textContent=sv?"擊球伸展":"收拍"; $("mForm1").innerHTML=num(f1,"軀幹長",2); $("cForm1").textContent=sv?"擊球瞬間較高的手高於肩膀多少；中位數 "+(med("reach")?.toFixed(2)??"–"):"擊球後 0.5 秒手最高點高於肩膀多少；中位數 "+(med("finish")?.toFixed(2)??"–");
-  $("boxTilt").hidden=!sv; $("mTilt").innerHTML=num(S.tilt,"°"); $("cTilt").textContent="擊球前持拍側肩比另一側低幾度（負＝較高）";
+  $("boxTilt").hidden=!sv; $("mTilt").innerHTML=num(S.tilt,"°")+(S.tilt==null?"":"<small> 3D估</small>"); $("mTilt").title="3D 估計（單鏡頭，僅供參考）"; $("cTilt").textContent="擊球前持拍側肩比另一側低幾度（負＝較高）";
   $("mLean").innerHTML=num(S.lean,"°"); $("cLean").textContent="往揮拍前進方向傾為正；單機位只看得到側面那一半，換視角不能比";
   $("mStance").innerHTML=num(S.stance,"×",2); $("cStance").textContent=S.stance==null?"看不出來（髖寬被視角壓縮或腳被擋）":"兩踝距離 ÷ 兩髖距離";
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage

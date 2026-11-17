@@ -33,7 +33,7 @@ try{
       ALL.forEach(s=>{s.knee2d=s.knee;s.knee3d=128;s.knee=128;s.knee_warn=false;});
       const world=Array.from({length:17},(_,i)=>[i%2*.2,i*.025,0]);
       for(const [i,p] of [[23,[0,0,0]],[25,[0,.5,0]],[27,[.4,.8,0]],[24,[.2,0,0]],[26,[.2,.5,0]],[28,[.2,1,0]]])world[K[i]]=p;
-      ALL.forEach(s=>{s.world=Array.from({length:s.n},()=>world);});SER.clear();MED=dayStats(mine());load(S.id,false);drawList();
+      ALL.forEach(s=>{s.world=Array.from({length:s.n},()=>world);});SER.clear();MED=dayStats(mine());load(S.id,false);drawList();drawChecks();
      });
      const ids=await page.evaluate(()=>({three:ALL.find(s=>s.knee3d!=null)?.id,two:ALL.find(s=>s.knee3d==null&&s.knee!=null)?.id}));
      for(const [source,id] of Object.entries(ids)){
@@ -67,8 +67,26 @@ try{
      }
      await page.evaluate(()=>go(DAY,'overview'));
      if(!process.env.SITE_E2E_URL)await page.evaluate(()=>{
-      DAYS[DAY].scores={groups:[{player:'me',kind:'FH',n:20,total:7,form:7,consistency:7,knee_src:'knee3d',metrics:{knee3d:{status:'ok',median:128,n:20,score:7,cons:7}}}]};drawOverview();
+      DAYS[DAY].scores={groups:[{player:'me',kind:'FH',n:20,total:7,form:7,consistency:7,knee_src:'knee3d',metrics:{knee3d:{status:'ok',median:128,n:20,score:7,cons:7}}},{player:'me',kind:'SV',n:20,total:7,form:7,consistency:7,metrics:{tilt:{status:'ok',median:32.1,n:20,score:7,cons:7}}}]};drawOverview();
      });
+     check(await page.locator('#overview .caveat:visible').evaluateAll(es=>es.some(e=>/3D 估計.*單鏡頭.*僅供參考/.test(e.textContent)&&e.textContent.includes('不是多機校正'))),`${tag}：總覽須有手機可見的來源說明`);
+     if(process.env.SITE_RESULTS)await page.screenshot({path:path.join(process.env.SITE_RESULTS,`${engine.name()}-${mobile?'mobile':'desktop'}-${di}-overview.png`),fullPage:true});
+     if(!process.env.SITE_E2E_URL){
+      check(/肩膀傾斜.*3D.*估/.test(await page.locator('#overview .bars').last().textContent()),`${tag}：tilt 分數列須標 3D 估計`);
+      check(/單鏡頭/.test(await page.locator('#overview .bars .num').last().getAttribute('title')),`${tag}：tilt 評分提示須說明單鏡頭`);
+      await page.evaluate(()=>{S.kind='SV';S.tilt=32.1;S.lean=5.4;S.reach=.9;S.turn=45;load(S.id,false);go(DAY,'stroke');});
+      check(/32\.1.*3D.*估/.test(await page.locator('#mTilt').textContent()),`${tag}：tilt 數值不變並標估計`);
+      check(/單鏡頭/.test(await page.locator('#mTilt').getAttribute('title')||''),`${tag}：tilt 提示須說明單鏡頭`);
+      for(const selector of ['#mLean','#mForm1','#mOpen','#cBody'])check(!/3D|估計|單鏡頭/.test(await page.locator(selector).textContent()),`${tag}：2D 指標不可標為 3D ${selector}`);
+      check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tag}：tilt 短標無水平溢出`);
+      if(process.env.SITE_RESULTS)await page.screenshot({path:path.join(process.env.SITE_RESULTS,`${engine.name()}-${mobile?'mobile':'desktop'}-tilt.png`),fullPage:true});
+      await page.evaluate(()=>{S.kind='FH';load(S.id,false);});
+     }
+     await page.evaluate(()=>go(DAY,'advice'));
+     check(await page.locator('[data-tab="advice"] .caveat:visible').evaluateAll(es=>es.some(e=>/3D 估計.*單鏡頭.*僅供參考/.test(e.textContent)&&e.textContent.includes('不是多機校正'))),`${tag}：建議須有手機可見的來源說明`);
+     check(/3D估/.test(await page.locator('#checkFH').textContent()),`${tag}：建議須檢查實際膝角來源`);
+     check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tag}：建議無水平溢出`);
+     if(process.env.SITE_RESULTS)await page.screenshot({path:path.join(process.env.SITE_RESULTS,`${engine.name()}-${mobile?'mobile':'desktop'}-${di}-advice.png`),fullPage:true});
      await page.evaluate(()=>go(DAY,'charts'));
      const chartLabel=await page.locator('#stripKnee .lbl').textContent(),dots=await page.locator('#stripKnee circle title').allTextContents();
      check(!/3D(?!估)/.test(chartLabel+dots.join('')),`${tag}：圖表與圓點來源須標估計`);
@@ -91,7 +109,7 @@ try{
      check(twoOverlay.length>0&&twoOverlay.every(t=>/°2D/.test(t)&&!/估/.test(t)),`${tag}：2D 骨架不可標估計`);
      check(!/估|單鏡頭/.test(await page.locator('#cKnee').textContent()),`${tag}：2D 群組不可標估計`);
      await page.evaluate(()=>{go(DAY,'overview');DAYS[DAY].scores.groups[0].knee_src='knee';drawOverview();});
-     check(!/估|單鏡頭/.test(await page.locator('#overview .bars .num').getAttribute('title')),`${tag}：2D 評分來源不可標估計`);
+     check(!/估|單鏡頭/.test(await page.locator('#overview .bars .num').first().getAttribute('title')),`${tag}：2D 評分來源不可標估計`);
      await page.evaluate(()=>go(DAY,'stroke'));
      for(const why of ['view','gap']){
       await page.evaluate(why=>{S.knee_warn=true;S.knee_warn_why=why;load(S.id,false);},why);
