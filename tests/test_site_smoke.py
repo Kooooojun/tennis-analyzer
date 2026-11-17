@@ -155,6 +155,11 @@ if os.environ.get("SITE_E2E_URL"):
                    env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-compare-edges"))} if os.environ.get("SITE_RESULTS") else {})})
 
 if os.environ.get("SITE_E2E_URL"):
+    for name in ["site_cache_compare_lifecycle", "site_cache_compare_visibility"]:
+        subprocess.run(["node", str(R / "tests" / (name + ".mjs"))], check=True,
+                       env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-" + name))} if os.environ.get("SITE_RESULTS") else {})})
+
+if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "test_site_i57_css.mjs")], check=True)
     subprocess.run(["node", str(R / "tests" / "test_site_i57_nav.mjs")], check=True)
 

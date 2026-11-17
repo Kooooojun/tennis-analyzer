@@ -878,6 +878,7 @@ const clipSrc=s=>s.src;
 // iOS Safari ignores preload and fetches nothing until play(), so a muted play() starts the fetch; start()/cmpGoto pause it once metadata is in.
 // Low Power Mode also blocks that until a tap, so the badge says to tap. Never throws: a play cut short by pause() rejects with AbortError.
 const TAP="點畫面載入影片";
+const bAtLoopEnd=vid=>vid.id==="vB"&&vid.ended&&$("vA")._want;
 const playSafe=(vid,badge)=>{ const token=vid._loadToken, source=vid.src; return vid.play()?.catch(e=>{ if(token!==vid._loadToken||source!==vid.src||e.name!=="NotAllowedError") return; vid._blocked=true; if(!vid.readyState) badge.textContent=TAP; if(vid._want) stopDead(vid); }); };
 // Initial loads prime iOS with play(); an explicit pause must also cancel play() before metadata arrives.
 const hold=vid=>{ vid._cancelResume?.(); vid._want=false; vid._resume=false; vid.pause(); if(vid===v) $("play").textContent="▶ 播放"; else if(vid.id==="vA"||vid.id==="vB") $("cmpPlay").textContent="▶ 同步播放"; };
@@ -886,7 +887,7 @@ const LATER=new Map();
 // the comparison clips also wait until scrolled near (_near), so opening the video tab fetches only the main clip
 const shown=vid=>!!vid.offsetParent&&vid._near!==false;
 function whenShown(vid,fn){ if(shown(vid)){ LATER.delete(vid); fn(); } else LATER.set(vid,fn); }
-const NEAR=new IntersectionObserver(es=>{ for(const e of es){ const vid=e.target; vid._near=e.isIntersecting; if(LATER.has(vid)&&shown(vid)){ const fn=LATER.get(vid); LATER.delete(vid); fn(); } } visiblePoses(); cmpRender(cmpCur); },{rootMargin:"100px"});
+const NEAR=new IntersectionObserver(es=>{ for(const e of es){ const vid=e.target; vid._near=e.isIntersecting; if(LATER.has(vid)&&shown(vid)){ const fn=LATER.get(vid); LATER.delete(vid); fn(); } } visiblePoses(); cmpRender(cmpCur); if(!document.hidden&&vA._want&&vB._want&&shown(vA)&&shown(vB)) cmpStart(); },{rootMargin:"100px"});
 for(const vid of [$("vA"),$("vB")]){ vid._near=false; NEAR.observe(vid); }
 // Cache complete neighbor preloads; a cache miss streams immediately through the native player.
 const CLIPS=new Map(), CLIP_LIMIT=Math.min(window.CLIP_CACHE_LIMIT||Infinity,(matchMedia("(max-width:820px)").matches||navigator.deviceMemory<=4?30:80)*1024*1024);
@@ -1057,7 +1058,7 @@ function mediaLoader(vid){
     const now=Date.now();
     if(!active()){
       if(loader.state!=="suspended"){ beforeSuspend=loader.state; offAt=now; dropProbe(); loader.state="suspended"; }
-      if((vid._want||vid._resume)&&!(vid._edgeWait&&$("vA")._want)&&(!vid.readyState||vid._reloading||vid.paused)) stopDead(vid);
+      if((vid._want||vid._resume)&&!(vid._edgeWait&&$("vA")._want||bAtLoopEnd(vid))&&(!vid.readyState||vid._reloading||vid.paused)) stopDead(vid);
       else if(!vid._want) vid._cancelResume();
       return;
     }
@@ -1173,7 +1174,7 @@ for(const x of players){
   x.addEventListener("playing",()=>{ if(!x._want) x.pause(); });
   for(const event of ["progress","canplaythrough"]) x.addEventListener(event,()=>{ if(S) preloadNeighbors(S); });
   x.addEventListener("pause",()=>{
-    if(x._edgeWait||x.id==="vB"&&x.ended&&$("vA")._want&&!cmpInRange()){ x._edgeWait=true; return; }
+    if(x._edgeWait||bAtLoopEnd(x)){ x._edgeWait=true; return; }
     if(x.paused&&!x.error&&!x._reloading){ if(x!==v&&x._want) stopDead(x); else x._want=x._resume=false; }
   });
 }
@@ -1322,12 +1323,13 @@ const cmpInRange=()=>{ const t=vA.currentTime+cmpOff()/FPS; return t>=0&&t<vB.du
 function cmpHoldEdge(){ vB._edgeWait=true; vB.pause(); }
 function cmpGoto(f){ f=Math.max(0,Math.min(149,f)); hold(vA); hold(vB); vA.currentTime=(f+0.5)/FPS; vB.currentTime=cmpBt(); cmpRender(f); }
 function cmpTick(){
-  if(cmpRequest!==null){ vA.cancelVideoFrameCallback?vA.cancelVideoFrameCallback(cmpRequest):cancelAnimationFrame(cmpRequest); cmpRequest=null; }
+  if(cmpRequest!==null){ cancelAnimationFrame(cmpRequest); cmpRequest=null; }
+  if(document.hidden||vA.paused||!vA.readyState||!vB.readyState) return;
   if(!cmpInRange()) cmpHoldEdge();
   if(cmpInRange()&&vA._want&&vB._edgeWait&&!document.hidden) cmpStart();
   if(vB.readyState>=3&&!vB.seeking&&Math.abs(vB.currentTime-cmpBt())>1.5/FPS){ if(cmpInRange()&&vA._want&&!document.hidden) cmpWait(); vB.currentTime=cmpBt(); }  // seeking an unbuffered clip would look like download progress
   cmpRender(Math.max(0,Math.min(149,Math.floor(vA.currentTime*FPS+1e-3))));
-  if(!vA.paused) cmpRequest=vA.requestVideoFrameCallback?vA.requestVideoFrameCallback(cmpTick):requestAnimationFrame(cmpTick);
+  if(!vA.paused) cmpRequest=requestAnimationFrame(cmpTick);  // Media frame callbacks can stall while currentTime keeps advancing.
 }
 vA.loop=true; vB.loop=false;
 for(const x of [v,vA,vB]) x.addEventListener("loadedmetadata",()=>{ x._blocked=false; });  // a tap lifted Low Power Mode's block; later loads show times again
@@ -1351,6 +1353,7 @@ function cmpStart(){
   if(!vA.paused) $("cmpPlay").textContent="⏸ 暫停";
 }
 function cmpWait(){ for(const x of [vA,vB]){ x._reloading=x.src; x.pause(); } }
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&vA._want&&vB._want){ if(shown(vA)&&shown(vB)) cmpStart(); cmpTick(); } });
 for(const vid of [vA,vB]){
   for(const event of ["waiting","seeking"]) vid.addEventListener(event,()=>{ if(vid._want&&!document.hidden&&(vid===vA||cmpInRange())) cmpWait(); });
   for(const event of ["canplay","seeked"]) vid.addEventListener(event,()=>{ if(vA._want&&vB._want&&!document.hidden&&shown(vA)&&shown(vB)) cmpStart(); });
