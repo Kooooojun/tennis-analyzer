@@ -174,3 +174,4 @@ if os.environ.get("SITE_E2E_URL"):
 
 if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "site_contact_untrusted.mjs")], check=True)
+    subprocess.run(["node", str(R / "tests" / "site_i112_web.mjs")], check=True)
