@@ -14,7 +14,7 @@ export async function fixture(ref=process.env.SITE_REF){
  execFileSync('ffmpeg',['-v','error','-f','lavfi','-i',`testsrc2=s=640x360:r=60:d=${seconds}`,'-an','-c:v','libx264','-threads','1','-preset','ultrafast','-pix_fmt','yuv420p','-movflags','+faststart',clip]);
  const slowClip=path.join(scratch,'slow.mp4');
  execFileSync('ffmpeg',['-v','error','-i',clip,'-c','copy',slowClip]);
- const slowMedia=fs.readFileSync(slowClip),deadlines=new Map(),stops=new Map();
+ const slowMedia=fs.readFileSync(slowClip),deadlines=new Map(),stops=new Map(),probes=new Set();
  const media=fs.readFileSync(clip),html=()=>ref?execFileSync('git',['show',`${ref}:web/index.html`]):fs.readFileSync(new URL('../web/index.html',import.meta.url));
  const strokes=Array.from({length:25},(_,id)=>({id,video:'synthetic',src:`sessions/synthetic/clips/${id}.mp4`,n:seconds*60,kind:id%3===0?'BH':'FH',drill:'rally',player:'me',clock:`0:${String(id).padStart(2,'0')}`,contact:90,knee:110+id,prep:.5,size:[640,360],open_min:30,contact_h:50}));
  const session={id:'synthetic',label:'合成場次',date:'2026-01-01',players:['me'],sub:'合成資料',camera:'側面',showOpen:true,findings:[],presets:[],strokes};
@@ -32,7 +32,8 @@ export async function fixture(ref=process.env.SITE_REF){
    const drip=Number(url.searchParams.get('drip')),body=drip&&!url.searchParams.has('fast')?slowMedia:media;
    const key=file+url.searchParams.get('case');if(drip&&!deadlines.has(key))deadlines.set(key,performance.now()+drip*1000);
    const range=/bytes=(\d+)-(\d*)/.exec(req.headers.range||''),start=range?+range[1]:0,end=range&&range[2]?Math.min(+range[2],body.length-1):body.length-1;
-   const hanging=end-start+1>64&&(url.searchParams.get('hang')==='always'||url.searchParams.get('hang')==='once'&&!url.searchParams.has('_retry')||url.searchParams.has('nativeHang')&&range&&(url.searchParams.get('nativeHang')==='always'||!url.searchParams.has('_retry')));
+   const firstProbe=url.searchParams.has('probeOnce')&&!range&&req.method==='GET'&&!probes.has(key);if(firstProbe)probes.add(key);
+   const hanging=end-start+1>64&&(firstProbe||url.searchParams.get('hang')==='always'||url.searchParams.get('hang')==='once'&&!url.searchParams.has('_retry')||url.searchParams.has('nativeHang')&&range&&(url.searchParams.get('nativeHang')==='always'||!url.searchParams.has('_retry')));
    const event={file,query:url.search,range:req.headers.range||null,hang:!!hanging,time:performance.now(),method:req.method,bytes:0,chunks:0};events.push(event);
    res.writeHead(range?206:200,{'Content-Type':'video/mp4',...(!range&&url.searchParams.has('noLength')?{}:{'Content-Length':end-start+1}),'Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${start}-${end}/${body.length}`}:{})});
    if(req.method==='HEAD')res.end();

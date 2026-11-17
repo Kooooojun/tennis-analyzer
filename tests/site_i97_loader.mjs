@@ -37,6 +37,25 @@ const cases={
   assert.equal(await page.locator('#badge').textContent(),'點畫面載入影片');
   assert.equal(await page.locator('#stage .vid-msg[data-fail]').count(),0);
  },
+ async canplayRecoversFailure(page){return recoverFailure(page,'canplay');},
+ async seekedRecoversFailure(page){return recoverFailure(page,'seeked');},
+ async renewedBufferWait(page){
+  const source=await page.evaluate(()=>{cancelPrefetch();window.testReady=2;v._want=v._resume=true;Object.defineProperty(v,'readyState',{configurable:true,get:()=>testReady});return v.src;});
+  await page.clock.runFor(600);await page.evaluate(()=>{testReady=4;v.dispatchEvent(new Event('canplay'));});
+  await page.clock.runFor(12000);await page.evaluate(()=>{testReady=2;v.dispatchEvent(new Event('waiting'));});
+  await page.clock.runFor(1000);
+  assert.equal(await page.evaluate(()=>v.src),source,'再次緩衝必須有新的十秒等待時段');
+  await page.clock.runFor(9500);
+  assert.equal(await page.evaluate(()=>v.src.includes('_retry')),true,'新的等待時段仍必須有停流上限');
+ },
+ async probingResume(page){
+  await select(page,'nativeHang=always&probeOnce=1&drip=4&perRequest=1');
+  await page.waitForFunction(()=>v._loader.state==='probing',null,{timeout:6500});
+  await hidden(page,true);await page.waitForTimeout(400);await hidden(page,false);
+  assert.equal(await page.evaluate(()=>v._loader.state),'loading','已取消探測不能恢復成 probing');
+  await page.waitForFunction(()=>v.readyState>=3&&!v.seeking,null,{timeout:9000});
+  assert.equal(await page.evaluate(()=>v.src.startsWith('blob:')),true);
+ },
  async unknownLengthLimit(page){return capacity(page,true);},
  async knownLengthLimit(page){return capacity(page,false);},
  async metadataSeekStall(page){
@@ -100,6 +119,20 @@ const cases={
   const times=[];for(let i=0;i<10;i++){await page.evaluate(()=>{cancelPrefetch();ALL[(S.id+1)%ALL.length].src+='?single='+Date.now();window.stepAt=performance.now();step(1);});await ready(page);times.push(await page.evaluate(()=>performance.now()-stepAt));await page.waitForTimeout(650);}return {stepMs:times};
  },
 };
+async function recoverFailure(page,event){
+ await page.evaluate(()=>{cancelPrefetch();Object.defineProperty(v,'readyState',{configurable:true,value:1});Object.defineProperty(v,'seeking',{configurable:true,value:true});});
+ await page.clock.runFor(24000);
+ assert.equal(await page.locator('#stage .vid-msg[data-fail]:not([disabled])').count(),1,'必須真的進入可點失敗狀態');
+ await page.evaluate(()=>{window.recoveryMetadata=0;v.addEventListener('loadedmetadata',()=>recoveryMetadata++);});
+ const source=await page.evaluate(()=>v.src);
+ await page.evaluate(event=>{delete v.readyState;delete v.seeking;v.dispatchEvent(new Event(event));},event);
+ await page.waitForTimeout(100);
+ assert.equal(await page.locator('#stage .vid-msg[data-fail]').count(),0,'不重設來源的可播事件必須清除失敗提示');
+ assert.equal(await page.locator('#stage .vid-msg').evaluate(m=>m.hidden&&m.disabled&&!m.textContent),true);
+ await page.clock.runFor(16000);
+ assert.equal(await page.evaluate(()=>v.src),source,'已恢復影片不得在舊失敗期限自動重載');
+ assert.equal(await page.evaluate(()=>recoveryMetadata),0,'恢復過程不得依賴另一個 loadedmetadata');
+}
 async function capacity(page,unknown){
  await page.evaluate(()=>cancelPrefetch());
  // 以真實串流超過既有上限；放大每個收到的 chunk 只用於容量閘門，並不建立大 blob。
@@ -119,10 +152,11 @@ try{
     await page.addInitScript(()=>{window.unhandled=0;addEventListener('unhandledrejection',()=>window.unhandled++);});
     let before=0;const started=performance.now();let row={engine,case:name,repeat,pass:false};
     try{
+     if(['canplayRecoversFailure','seekedRecoversFailure','renewedBufferWait'].includes(name))await page.clock.install();
      await page.goto(f.url);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await ready(page);await page.waitForTimeout(650);before=f.events.length;consoleErrors=0;
      Object.assign(row,await test(page));const requests=f.events.slice(before).filter(e=>e.method==='GET');
      const retries=requests.filter(e=>e.query.includes('_retry'));
-     if(['S8','lateBlob'].includes(name))assert.equal(retries.length,0,'持續滴流或完成 blob 不得重試');
+     if(['S8','lateBlob','probingResume'].includes(name))assert.equal(retries.length,0,'持續滴流或完成 blob 不得重試');
      if(['S3','splitPrefix'].includes(name)){const first=retries[0];assert(first&&first.time-started<14500,'不得延長原有停流時限');}
      if(name==='blocked')assert.equal(requests.filter(e=>!e.range||e.query.includes('_retry')).length,0);
      if(['sharedHiddenResume','scrollDoesNotSuspend'].includes(name))assert.equal(requests.filter(e=>e.file.endsWith('/4.mp4')&&!e.range).length,1);

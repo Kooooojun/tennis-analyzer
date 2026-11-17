@@ -1055,6 +1055,7 @@ function mediaLoader(vid){
     }
     if(loader.state!=="suspended") return;
     if(offAt&&retryAt) retryAt+=now-offAt; offAt=0; clocks(); loader.state=beforeSuspend;
+    if(loader.state==="probing"&&!probe){ loader.state="loading"; probeTried=false; loader.entry=null; }
     if(m.dataset.fail){ if(foregroundEvent) retry(false,true); return; }
     if(!vid.src&&vid._clip){
       const e=CLIPS.get(clipKey(attemptUrl)); loader.entry=e||null; probeTried=false;
@@ -1118,8 +1119,13 @@ function mediaLoader(vid){
     const now=Date.now();
     if(!active()){ loader.visibility(); return; }
     loader.visibility();
-    if(m.dataset.fail){ if(retryAt&&now>=retryAt){ autoRetries++; retry(false,vid!==v); } return; }
     if(vid===v&&mainLoadTimer) return;
+    if(!vid.error&&vid.readyState&&vid._align) vid._align();
+    if(!vid.error&&vid.readyState>=3&&!vid.seeking&&!vid._align){
+      const changed=loader.state!=="ready"; loader.state="ready"; since=wait=mediaSince=0; mediaSig="";
+      tries=autoRetries=retryAt=0; delete m.dataset.fail; hideMsg(); if(changed&&S) preloadNeighbors(S); return;
+    }
+    if(m.dataset.fail){ if(retryAt&&now>=retryAt){ autoRetries++; retry(false,vid!==v); } return; }
     if(vid._blocked&&!vid.readyState){ dropProbe(); loader.state="blocked"; since=wait=mediaSince=0; hideMsg(); return; }
     if(loader.state==="buffering"){
       if(now-mediaSince>=30000){ fail(); return; }
@@ -1134,9 +1140,6 @@ function mediaLoader(vid){
       if(tries<1&&now-errorSince>=2000) reload(); else if(tries>=1) fail(); return;
     }
     errorSince=0;
-    if(vid.readyState&&vid._align) vid._align();
-    const ready=vid.readyState>=3&&!vid.seeking&&!vid._align;
-    if(ready){ const changed=loader.state!=="ready"; loader.state="ready"; wait=mediaSince=0; tries=autoRetries=retryAt=0; delete m.dataset.fail; hideMsg(); if(changed&&S) preloadNeighbors(S); return; }
     if(loader.state!=="probing") loader.state="loading";
     const b=vid.buffered, media=vid.currentTime+"|"+(b.length?b.end(b.length-1):0)+"|"+vid.readyState;
     if(!wait){ wait=now; if(!since) since=now; if(!mediaSince) mediaSince=now; mediaSig=media; }
