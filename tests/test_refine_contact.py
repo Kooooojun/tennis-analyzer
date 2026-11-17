@@ -9,6 +9,9 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from score import score_session
+from platform_util import utf8_stdout
+
+utf8_stdout()
 
 ROOT = Path(__file__).resolve().parent.parent
 # 持拍腕在第70格完成引拍，之後向前；沒有私人影格或骨架。
