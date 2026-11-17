@@ -45,6 +45,9 @@ cases = [
         '建議：總分比前場退步', '總分比前場進步請繼續維持')],
     ('下次練習改善膝蓋彎曲', noise, 'total', False),
     ('建議先改善膝蓋彎曲', noise, 'total', False),
+    *[(t, noise, 'total', True) for t in ('總分下降', '總分降低', '一致性降低')],
+    *[(t, down, 'total', False) for t in ('總分下降', '總分降低', '一致性降低')],
+    *[(t, noise, 'total', False) for t in ('總分沒有下降', '無法判定總分降低', '下次練習降低失誤')],
     *[(f'無法確定位置{word}總分進步', noise, 'total', True) for word in ('但', '而', '所以', '因此')],
 ]
 for text, runs, metric, expected in cases:
@@ -85,6 +88,32 @@ def expect_claim(label, text, runs, cites, expected, strokes=(), missing=False):
             failures.append((label, actual))
     except Exception as exc:
         failures.append((label, type(exc).__name__, str(exc)))
+
+
+raw = copy.deepcopy(noise)
+raw[-1]['groups'][0]['metrics']['knee'].update(median=125, spread=5)
+for text, metric, stat, value in (
+    ('膝蓋降低重心', 'knee', 'score', 6.5),
+    ('引拍時降低重心', 'total', 'score', 6.5),
+    ('膝蓋角度下降到 125°', 'knee', 'median', 125),
+    ('散佈下降', 'knee', 'spread', 5),
+):
+    finding = dict(title='觀察結果', text=text,
+                   cite=[dict(kind='FH', metric=metric, stat=stat, value=value)])
+    actual = check(dict(findings=[finding]), [], raw[-1], runs=raw)
+    if actual: failures.append((text, '動作與原始統計不得當成分數退步', actual))
+
+
+leg = copy.deepcopy(noise)
+for r, value in zip(leg, (8, 7.8)):
+    r['groups'][0]['metrics']['leg_load'] = dict(score=value, cons=None, uncertainty={'score': {'ci': [7, 9], 'sem': .3}})
+    r['groups'][0]['form_metrics'] = ['knee']
+leg_cite = dict(kind='FH', metric='leg_load', value=7.8)
+expect_claim('指標名稱不是退步宣稱', '重心降低 7.8', leg, [leg_cite], False)
+for word in ('下降', '降低'):
+    expect_claim('指標名稱後仍可宣稱退步', '重心降低分數' + word, leg, [leg_cite], True)
+expect_claim('下降明列方向超門檻放行', '總分下降', down,
+             [dict(kind='FH', metric='total', value=6, change='down')], False)
 
 
 scoped = copy.deepcopy(up)
