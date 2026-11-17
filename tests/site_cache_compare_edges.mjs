@@ -9,7 +9,7 @@ const {chromium,webkit,devices}=await import(pathToFileURL(process.env.PLAYWRIGH
 const runs=Number(process.env.SITE_COMPARE_RUNS||1),traceDir=process.env.SITE_COMPARE_TRACE;
 assert(Number.isInteger(runs)&&runs>=1&&runs<=100,'SITE_COMPARE_RUNS 須為 1–100 的整數');
 const mutation=process.env.SITE_COMPARE_MUTATION||'';
-assert(['','unpaired'].includes(mutation),'SITE_COMPARE_MUTATION 僅支援 unpaired');
+assert(['','unpaired','frame-stall'].includes(mutation),'SITE_COMPARE_MUTATION 僅支援 unpaired 或 frame-stall');
 if(traceDir)fs.mkdirSync(traceDir,{recursive:true});
 const scratch=fs.mkdtempSync(path.join(os.tmpdir(),'site-compare-')),clips=[];
 try{
@@ -66,6 +66,14 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
     },10);
     // Mutation removes pairing while leaving A's render loop and real media playback running.
     if(mutation==='unpaired')cmpTick=()=>{cmpRender(Math.floor(vA.currentTime*FPS));if(!vA.paused)cmpRequest=vA.requestVideoFrameCallback?vA.requestVideoFrameCallback(cmpTick):requestAnimationFrame(cmpTick);};
+    if(mutation==='frame-stall'&&vA.requestVideoFrameCallback){
+     const request=vA.requestVideoFrameCallback.bind(vA);let until=0;
+     vA.requestVideoFrameCallback=callback=>request((now,metadata)=>{
+      if(!until&&vA.currentTime>=.9&&vA.currentTime<1)until=performance.now()+180;
+      const delay=until-performance.now();
+      if(delay>0)setTimeout(()=>callback(now,metadata),delay);else callback(now,metadata);
+     });
+    }
     cmpStart();
    },{trace:!!traceDir,mutation});
    await page.waitForTimeout(7200);

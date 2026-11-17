@@ -1,105 +1,63 @@
-# 比較區同步時序調查（issue #104）
+# 比較區同步與端點測試（issue #104）
 
-目前 main 無法重現 WebKit 約 12 ms 的樣本，原因尚未判定；保留 `unpairedMs === 0`，沒有調整容許值或比較區配對。以下結果只適用於所列合成情境，不能據此宣稱原問題已修復。
+比較同步改用 `requestAnimationFrame`，避免把 B 的端點恢復綁在 A 的 `requestVideoFrameCallback` 上。保留嚴格 `unpairedMs === 0`；影片載入控制器與單片播放器沒有修改。
 
-## 環境與事前預測
+## 根因與可重現案例
 
-基準 `f33a6c1ad855f7f94f931826d37090a58e99ec26`；Playwright 1.64.1、Chromium 156.0.8078.4、WebKit 27.2（revision 2370，iPhone 13 模擬設定）。沿用 `site_i93_fixture.mjs` 的合成場次與測試原有的 60 fps、3 秒／1.5 秒合成片，全程沒有使用私人影片。
+在 main `0624a5748d4868d8e16332b882dd69cc12a2c465`，WebKit offset=-60 的 A 會先播放，B 停在片頭等待。原程式在播放期間依賴 A 的媒體格回呼處理共同區入口；若這個回呼延遲，A.currentTime 仍繼續前進，B 卻保持 paused。回呼恢復後的 seek 校正會增加 pauseCalls，這是事後恢復，不能避免先前的單側前進。
 
-事前預測是 10 ms 輪詢跨過 pause／seek 或端點轉換，把整段 currentTime 差歸到取樣終點狀態；其次是 rVFC 與 currentTime 來自不同時間來源；另一個必須排除的可能則是真正單側前進。區分方式是同時記下兩側 currentTime、paused、seeking、readyState，以及 timeupdate／seeked／rVFC 的時間和順序，再檢查實際呈現格是否持續分離。
+帶呼叫 stack 的 129 輪為 0，之後減少端點重複呼叫的追蹤開銷，再跑四實例 200 輪，捕捉到 640.466 ms 與 852.680 ms 的單側前進。640.466 ms 那輪的 A 媒體格回呼中斷 1346 ms，但 10 ms sampler 仍持續執行；兩側 readyState=4、都沒有 seeking，A 播放中而 B 停在片頭。該輪 pauseCalls=6；852.680 ms 那輪 pauseCalls=2，因此額外 pause 只是線索，不能當成發生不同步的必要條件。
 
-事前列出的失敗方式包括單側暫停、停用配對、固定偏移一格、seek 誤算為前進、端點等待誤判、停止循環、兩側卡住，以及追蹤本身改變時序。缺少異常當下的追蹤，無法選定其中一個原因。
+先前約 12 ms 的無 trace 樣本仍不能確證為同一原因；這次修正針對已捕捉且可穩定重現的回呼中斷路徑，沒有把它歸為 WebKit 正常誤差。
 
-## main 原始 sampler 十輪
+WebKit 的 `serviceRequestVideoFrameCallbacks` 在沒有 videoFrameMetadata 時會直接返回；媒體格通知與 currentTime 的時間估算是不同路徑，不能用前者是否到達判斷後者是否前進。[HTMLVideoElement 原始碼](https://github.com/WebKit/WebKit/blob/0807569c0b5f24d910008489967f88bc47532619/Source/WebCore/html/HTMLVideoElement.cpp)、[MediaPlayerPrivateRemote 原始碼](https://github.com/WebKit/WebKit/blob/0807569c0b5f24d910008489967f88bc47532619/Source/WebKit/WebProcess/GPU/media/MediaPlayerPrivateRemote.cpp)
 
-只加外層重跑與失敗前 state 保留，未加入瀏覽器事件追蹤；每格為該輪的 unpairedMs，單位 ms。
+## 額外 pause 的來源
 
-| 輪次 | Chromium +30 | Chromium −60 | WebKit +30 | WebKit −60 |
-|---:|---:|---:|---:|---:|
-| 1 | 0 | 0 | 0 | 0 |
-| 2 | 0 | 0 | 0 | 0 |
-| 3 | 0 | 0 | 0 | 0 |
-| 4 | 0 | 0 | 0 | 0 |
-| 5 | 0 | 8.1 | 0 | 0 |
-| 6 | 0 | 0 | 0 | 0 |
-| 7 | 0 | 0 | 0 | 0 |
-| 8 | 0 | 0 | 0 | 0 |
-| 9 | 0 | 0 | 0 | 0 |
-| 10 | 0 | 0 | 0 | 0 |
+在每輪 7.2 秒觀測窗，通常兩次 A.pause 來自兩次原生循環的 A.seeking。常見的額外兩次依序是：
 
-Chromium 第 5 輪的嚴格斷言確實失敗，訊息為 `共同可播區間不得單側前進`、`8.099999999999996 !== 0`；該輪沒有事件追蹤，不能把它認定為取樣誤差。另一組加入完整追蹤的十輪，各引擎、各 offset 均為 0。
-
-額外 WebKit −60 實驗：低干擾 rVFC 追蹤 30 輪、6 ms／17 ms 忙碌主執行緒 10 輪、18 ms／20 ms 忙碌主執行緒 3 輪、延後 5 ms 啟動以改變取樣相位 10 輪，全部為 0。另以 Chromium 六倍 CPU 節流跑 10 輪，也全部為 0。這些壓力結果不能取代異常樣本的根因證據。
-
-## 四個並行 WebKit 實例
-
-確認 free + inactive 超過 8 GiB 才啟動，不使用 heavy 鎖。四個獨立實例各 13 輪，均在同一 main 基準、offset=−60，每輪仍播放 7.2 秒。以下逐次 unpairedMs 單位為 ms。
-
-| 輪次 | 實例 1 | 實例 2 | 實例 3 | 實例 4 |
-|---:|---:|---:|---:|---:|
-| 1 | 0 | 0 | 0 | 0 |
-| 2 | 0 | 0 | 0 | 0 |
-| 3 | 0 | 0 | 0 | 0 |
-| 4 | 0 | 0 | 0 | 0 |
-| 5 | 0 | 0 | 0 | 0 |
-| 6 | 0 | 0 | 0 | 0 |
-| 7 | 0 | 0 | 0 | 0 |
-| 8 | 0 | 0 | 0 | 0 |
-| 9 | 0 | 0 | 0 | 0 |
-| 10 | 0 | 0 | 0 | 0 |
-| 11 | 0 | 0 | 0 | 0 |
-| 12 | 0 | 0 | 0 | 0 |
-| 13 | 0 | 0 | 0 | 0 |
-
-52 次全為 0，符合「至少 50 輪負載下仍未重現時，保留斷言並交付診斷與 mutation」的收斂條件；本次 PR 只引用 issue，不關閉它。
-
-## 時間來源的依據
-
-- [WebKit currentTime 修正](https://github.com/WebKit/WebKit/commit/0e4cfc6b8f5fa42166bb9e05a7e4ed227ec91f79)：跨程序播放器估算時間與非同步通知曾造成 currentTime 非單調，並移除 HTMLMediaElement 的重複估算；它沒有給出 12 ms 或一格的通用誤差上限。
-- [TimeProgressEstimator](https://github.com/WebKit/WebKit/blob/0807569c0b5f24d910008489967f88bc47532619/Source/WebKit/WebProcess/GPU/media/MediaPlayerPrivateRemote.cpp)：currentTime 依 cachedMediaTime、effectiveRate 與單調時鐘差估算；pause 先凍結估算，再透過 IPC 送出 pause。
-- [HTMLMediaElement](https://github.com/WebKit/WebKit/blob/0807569c0b5f24d910008489967f88bc47532619/Source/WebCore/html/HTMLMediaElement.cpp)：currentMediaTime 在 seeking 時回 lastSeekTime，paused 時可回 officialPlaybackPosition；timeupdate 透過事件佇列發送。
-- [HTMLVideoElement](https://github.com/WebKit/WebKit/blob/0807569c0b5f24d910008489967f88bc47532619/Source/WebCore/html/HTMLVideoElement.cpp)：rVFC 使用 player.videoFrameMetadata，另行轉換 presentationTime／expectedDisplayTime 的 performance 時間精度。因此 mediaTime 與 currentTime 不是相同讀值。
-
-正常追蹤範例（相對 performance.now，單位 ms；影片時間為秒）：
-
-| 時間 | 事件 | A currentTime | B currentTime | rVFC mediaTime | paused（A／B） |
-|---:|---|---:|---:|---:|---|
-| 452 | A rVFC | 1.000073 | 0 | 0.966667 | false／true |
-| 453 | B play | 1.001220 | 0 | — | false／false |
-| 469 | A rVFC | 1.017167 | 0.007764 | 1.000000 | false／false |
-
-這顯示 currentTime 與呈現格時間可以不同，卻不是非零 unpairedMs 當下的證據，也不能支持把嚴格斷言放寬至 16.7 ms。瀏覽器的 currentTime 估算、事件順序或真正不同步，仍須等抓到異常時序才能分辨。
-
-## 重跑、追蹤與 mutation
-
-先設定既有測試所需的 `PLAYWRIGHT_MODULE`、`SITE_E2E_URL`；本機合成 HTTP fixture 可用 `node tests/site_i93_fixture.mjs` 啟動，使用它輸出的 URL。
-
-```sh
-env SITE_COMPARE_RUNS=10 SITE_RESULTS=compare-results.json node tests/site_cache_compare_edges.mjs
-env SITE_COMPARE_TRACE=compare-traces node tests/site_cache_compare_edges.mjs
-env SITE_COMPARE_TRACE=mutant-traces SITE_COMPARE_MUTATION=unpaired node tests/site_cache_compare_edges.mjs
+```text
+cmpTick 偵測 B 落後超過 1.5 格
+  cmpWait → A.pause、B.pause
+  設定 B.currentTime
+B.seeking
+  cmpWait → 再呼叫 A.pause、B.pause（此時已暫停）
+B.seeked
+  cmpStart → A.play、B.play
 ```
 
-重跑次數限 1–100，預設仍為 1；追蹤與 mutation 預設關閉。開追蹤後，每個引擎／offset／輪次產生一份純時間與狀態 JSON，包含 currentTime、timeupdate、seeking、seeked、play、pause、rVFC metadata 與非零樣本的前後讀值；不記錄影片 URL、影像或場次資料。追蹤會增加工作量，可能改變重現機率，因此一般重跑與追蹤分開量測。
+另一個來源是 canplay／seeked 到達時另一側仍在 seeking，`cmpStart` 的準備條件檢查再次成對暫停。呼叫數不等於 pause 事件數；同一個同步迴圈的兩次 pause 呼叫，也不能保證兩個媒體程序完全同時處理。
 
-mutation 只在測試的瀏覽器 context 裡替換 cmpTick：保留 A 的真實影片播放與渲染回呼，停掉端點處理、B 恢復與同步校正；沒有修改產品檔案。offset=−60 時 B 起初停在片頭，A 進入共同區後繼續播放，必須讓原始的共同區斷言變紅。
+## 執行方式
 
-| 引擎 | offset | unpairedMs | 結果 |
-|---|---:|---:|---|
-| chromium | 30 | 0.0000 | 通過 |
-| chromium | -60 | 3779.4000 | 預期失敗 |
-| webkit | 30 | 0.0000 | 通過 |
-| webkit | -60 | 3760.6652 | 預期失敗 |
+使用現有合成 HTTP fixture，設定可用的 `PLAYWRIGHT_MODULE` 與 `SITE_E2E_URL`。測試自行產生 60 fps、3 秒／1.5 秒合成片，不讀私人影片。
 
-mutation 命令退出碼為 1，兩引擎的 −60 案例都報 `共同可播區間不得單側前進`，而且依然完成兩次循環、總前進超過 7 秒；不是因為播放器卡住才變紅。+30 未受到這個特定破壞充分影響，仍通過。
+```sh
+node tests/site_cache_compare_edges.mjs
+env SITE_COMPARE_RUNS=10 SITE_COMPARE_TRACE=compare-traces node tests/site_cache_compare_edges.mjs
+env SITE_COMPARE_MUTATION=frame-stall SITE_COMPARE_TRACE=frame-stall-traces node tests/site_cache_compare_edges.mjs
+env SITE_COMPARE_MUTATION=unpaired node tests/site_cache_compare_edges.mjs
+```
 
-## 最終驗證與限制
+- `SITE_COMPARE_RUNS`：1–100，預設 1；每輪跑 Chromium／WebKit × offset=+30／-60。
+- `SITE_COMPARE_TRACE`：選填輸出目錄，記錄 currentTime、paused、seeking、readyState、媒體事件、rVFC metadata 及非零樣本前後讀值；不包含媒體 URL 或影像。追蹤會改變工作量與排程。
+- `SITE_COMPARE_MUTATION=frame-stall`：讓 A 在共同區入口前的媒體格回呼延遲 180 ms，原生播放與 sampler 照常執行；修正前 -60 會紅，修正後應通過。它模擬媒體通知停頓，不延遲 requestAnimationFrame 或改產品函式。
+- `SITE_COMPARE_MUTATION=unpaired`：停掉 B 恢復與同步校正，保留 A 真實播放；-60 必須持續變紅。+30 可經 seek 路徑重新配對，是這個既有 mutation 的已知限制。
 
-- `env SITE_COMPARE_RUNS=10 node tests/site_cache_compare_edges.mjs`：Chromium／WebKit 各兩種 offset × 10 輪，40／40 通過，每輪 unpairedMs 都是 0；一般模式未開追蹤。
-- 開追蹤的四案 4／4 通過，輸出都包含 currentTime、timeupdate、seeked、rVFC；mutation 四案中兩個 −60 預期失敗。
-- `.venv/bin/python tests/test_site_smoke.py`（設定既有本機 fixture 與 Playwright 環境）：完整建站與網頁 E2E 通過，包含 cache regression、round4、edges、compare edges、retry、載入、鍵盤、手機、CSS、導覽、接觸高度與缺值提示。
-- 另跑 `site_cache_background.mjs` 的 Chromium／WebKit、`site_cache_drip.mjs`、`site_cache_playing_background.mjs` 六案，以及 `site_score_uncertainty.mjs`、`site_score_count.mjs`、`site_advice_uncertainty.mjs`，全部通過。
-- 額外測試先遇到設定問題：headed Chromium 未安裝，後改用既有 Google Chrome；三個評分測試須使用各自內建合成 fixture，不能套無評分的外部 fixture。背景播放先用 3 秒合成片時，continue-policy 因片段自然結束而失敗；改用 10 秒片（0.25 倍速下涵蓋 25 秒測試窗）後六案全過。上述失敗未透過放寬斷言處理。
-- `node --check tests/site_cache_compare_edges.mjs` 與 `git diff --check` 通過。
+兩種故障注入都只作用於測試 context，沒有修改媒體資產。正常案例另要求循環持續前進、端點停等、不反覆 pause／seek、不留在待播狀態，不能靠兩側都卡住通過。
 
-未使用實體 iPhone；原 WebKit 約 12 ms 與本次 Chromium 8.1 ms 的原因仍未判定，issue #104 保持開啟。沒有修改比較區產品程式、媒體資產、資料格式或加入依賴。
+## 驗證
+
+- main：帶 stack 追蹤 129 輪，加減少重複追蹤的四實例 200 輪；329 輪中捕捉到上述兩輪非零，另有一輪在播放窗結束時仍待播。
+- PR：WebKit offset=-60 單實例 25 輪、四實例各 7 輪，共 53／53 通過，非零 0 次。單實例 run 9、並行實例 0 run 7、實例 1 run 4 的 pauseCalls=4；三輪的四次暫停呼叫間隔皆為 0／0／0／0 ms，恢復間隔皆為 0 ms。這是 JS 呼叫的觀測差，不是 GPU 原子同步保證。
+- frame-stall 初次紅綠對照：main 的 Chromium／WebKit -60 分別為 69.500／60.443 ms；PR 四案全為 0。main 與 PR 都量到約 195–199 ms 的 A rVFC 間隔，不能靠沒有施加故障通過。
+
+- frame-stall 重複三輪：main 的兩引擎 -60 六案全紅（59.307–68.000 ms），PR 的兩引擎 × 兩 offset × 三輪共 12／12 通過、皆為 0。
+- 修後 unpaired mutation：Chromium／WebKit -60 分別累計 3778.100／3757.550 ms，仍以「共同可播區間不得單側前進」失敗；兩側都卡住不能通過。
+
+- `.venv/bin/python tests/test_site_smoke.py`：完整套件退出碼 0，包含快取回歸 70、round4 22、端點 28、比較端點 4、重試 4、載入停滯 75、載入控制器 58、鍵盤 2、最終 UI 52 案，以及 CSS／導覽／手機／接觸高度等檢查。
+- 額外評分／建議、兩引擎背景載入與 drip、六案背景播放策略皆通過。
+- 首次與其他瀏覽器測試並行時，WebKit backgroundReload 的續播意圖斷言失敗；該案例 main／PR 單獨跑均通過，完整套件不並行重跑亦通過。保留首輪失敗，未更動斷言。
+- `node --check tests/site_cache_compare_edges.mjs`、`git diff --check` 通過。
+
+沒有實體 iPhone 驗證，也沒有宣稱 12 ms 是瀏覽器可接受誤差。比較畫面改由顯示更新排程繪製，低速播放時可能比原本媒體格通知畫得更頻繁；同步仍使用原有偏移與 1.5 格校正門檻。

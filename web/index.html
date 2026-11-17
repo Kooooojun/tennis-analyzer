@@ -1319,12 +1319,12 @@ const cmpInRange=()=>{ const t=vA.currentTime+cmpOff()/FPS; return t>=0&&t<vB.du
 function cmpHoldEdge(){ vB._edgeWait=true; vB.pause(); }
 function cmpGoto(f){ f=Math.max(0,Math.min(149,f)); hold(vA); hold(vB); vA.currentTime=(f+0.5)/FPS; vB.currentTime=cmpBt(); cmpRender(f); }
 function cmpTick(){
-  if(cmpRequest!==null){ vA.cancelVideoFrameCallback?vA.cancelVideoFrameCallback(cmpRequest):cancelAnimationFrame(cmpRequest); cmpRequest=null; }
+  if(cmpRequest!==null){ cancelAnimationFrame(cmpRequest); cmpRequest=null; }
   if(!cmpInRange()) cmpHoldEdge();
   if(cmpInRange()&&vA._want&&vB._edgeWait&&!document.hidden) cmpStart();
   if(vB.readyState>=3&&!vB.seeking&&Math.abs(vB.currentTime-cmpBt())>1.5/FPS){ if(cmpInRange()&&vA._want&&!document.hidden) cmpWait(); vB.currentTime=cmpBt(); }  // seeking an unbuffered clip would look like download progress
   cmpRender(Math.max(0,Math.min(149,Math.floor(vA.currentTime*FPS+1e-3))));
-  if(!vA.paused) cmpRequest=vA.requestVideoFrameCallback?vA.requestVideoFrameCallback(cmpTick):requestAnimationFrame(cmpTick);
+  if(!vA.paused) cmpRequest=requestAnimationFrame(cmpTick);  // Media frame callbacks can stall while currentTime keeps advancing.
 }
 vA.loop=true; vB.loop=false;
 for(const x of [v,vA,vB]) x.addEventListener("loadedmetadata",()=>{ x._blocked=false; });  // a tap lifted Low Power Mode's block; later loads show times again
