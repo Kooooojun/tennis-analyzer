@@ -8,6 +8,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from signal_adapter import sample_signals, contacts
 
+UPSTREAM = Path(__file__).resolve().parents[3] / 'work/repos/swing-analysis'
+
 
 class AdapterTests(unittest.TestCase):
     def inputs(self):
@@ -32,16 +34,35 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(p[2, 16, 2], .1)
         np.testing.assert_array_equal(pose, original)
 
-    def test_upstream_defaults_and_missing_ball(self):
+    def test_float32_pixel_coordinates(self):
+        pose, ball = self.inputs(); pose = pose.astype(np.float32)
+        pose[8, 16, :2] = [.1234567, .2345678]
+        original = pose.copy()
+        _, _, p = sample_signals(pose, ball, (960, 540))
+        expected = pose[8, 16, :2].astype(float) * np.asarray((960, 540))
+        np.testing.assert_array_equal(p[2, 16, :2], expected)
+        np.testing.assert_array_equal(pose, original)
+
+    def test_nonfinite_ball_coordinates(self):
         pose, ball = self.inputs()
-        got = contacts([pose], ball, (960, 540), Path('work/repos/swing-analysis'))
+        ball[0] = [np.nan, .2, .9]
+        ball[4] = [.1, np.inf, .9]
+        ball[8] = [-np.inf, .2, .9]
+        _, b, _ = sample_signals(pose, ball, (960, 540))
+        self.assertTrue(np.isnan(b[:3]).all())
+
+    def test_upstream_defaults_and_missing_ball(self):
+        if not (UPSTREAM / 'backend/app/services/segmentation.py').is_file():
+            self.skipTest('缺少 work/repos/swing-analysis 外部 clone，未執行上游整合案例')
+        pose, ball = self.inputs()
+        got = contacts([pose], ball, (960, 540), UPSTREAM)
         self.assertTrue(got)
         self.assertTrue(all(abs(t * 15 - round(t * 15)) < 1e-6 for t in got))
-        self.assertEqual(got, contacts([pose, pose], ball, (960, 540), Path('work/repos/swing-analysis')))
+        self.assertEqual(got, contacts([pose, pose], ball, (960, 540), UPSTREAM))
 
     def test_misaligned_inputs_rejected(self):
         pose, ball = self.inputs()
         with self.assertRaises(ValueError): sample_signals(pose, ball[:-1], (960, 540))
 
 
-if __name__ == '__main__': unittest.main()
+if __name__ == '__main__': unittest.main(verbosity=2)

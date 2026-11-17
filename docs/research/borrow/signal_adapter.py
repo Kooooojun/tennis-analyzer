@@ -11,9 +11,9 @@ def sample_signals(pose, ball, size):
     if pose.shape != (len(ball), 33, 3) or ball.ndim != 2 or ball.shape[1] != 3:
         raise ValueError('姿態與球軌必須逐格對齊')
     idx = np.arange(0, len(ball), 4)
-    p = pose[idx].copy(); p[..., :2] *= np.asarray(size)
+    p = pose[idx].astype(float); p[..., :2] *= np.asarray(size)
     b = ball[idx, :2].copy() * np.asarray(size)
-    b[~np.isfinite(ball[idx, 2]) | (ball[idx, 2] <= 0)] = np.nan
+    b[~np.isfinite(b).all(axis=1) | ~np.isfinite(ball[idx, 2]) | (ball[idx, 2] <= 0)] = np.nan
     return idx / 60, b, p
 
 
