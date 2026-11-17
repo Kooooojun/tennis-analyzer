@@ -50,7 +50,7 @@ class Fake(torch.nn.Module):
 
 
 class BatchTests(unittest.TestCase):
-    def test_original_batches_and_history(self):
+    def test_selected_inputs_and_history(self):
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp); src = d / "clip.mp4"
             subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=128x72:r=60:d=1",
@@ -58,12 +58,15 @@ class BatchTests(unittest.TestCase):
             with patch.object(ball, "Net", Fake), patch.object(ball, "load_weights"):
                 Fake.batches = []; ball.main(str(src), d / "full.npy", "cpu")
                 full_batches = Fake.batches; full = np.load(d / "full.npy")
-                windows = [[0, 1], [32, 34], [33, 35], [59, 60]]
-                Fake.batches = []; ball.main(str(src), d / "window.npy", "cpu", windows)
-                self.assertEqual([len(x) for x in Fake.batches], [16, 16, 12])
-                for got, expected in zip(Fake.batches, [full_batches[k] for k in (0, 2, 3)]):
-                    self.assertTrue(torch.equal(got, expected))
-                masked = np.load(d / "window.npy"); mask = ball.window_mask(windows, 60)
+                windows = [[0, 1], [15, 34], [33, 35], [59, 60]]
+                Fake.batches = []
+                with patch.object(ball.cv2, "resize", wraps=ball.cv2.resize) as resize:
+                    ball.main(str(src), d / "window.npy", "cpu", windows)
+                mask = ball.window_mask(windows, 60)
+                self.assertEqual(resize.call_count, 25 + 28)  # 背景加影格 0、12..34、56..59。
+                self.assertEqual([len(x) for x in Fake.batches], [16, 6])
+                self.assertTrue(torch.equal(torch.cat(Fake.batches), torch.cat(full_batches)[mask]))
+                masked = np.load(d / "window.npy")
                 self.assertEqual(masked.shape, full.shape)
                 self.assertEqual(masked[mask].tobytes(), full[mask].tobytes())
                 self.assertTrue(np.isnan(masked[~mask]).all())
