@@ -14,7 +14,7 @@ export async function fixture(ref=process.env.SITE_REF){
  execFileSync('ffmpeg',['-v','error','-f','lavfi','-i',`testsrc2=s=640x360:r=60:d=${seconds}`,'-an','-c:v','libx264','-threads','1','-preset','ultrafast','-pix_fmt','yuv420p','-movflags','+faststart',clip]);
  const slowClip=path.join(scratch,'slow.mp4');
  execFileSync('ffmpeg',['-v','error','-i',clip,'-c','copy',slowClip]);
- const slowMedia=fs.readFileSync(slowClip),deadlines=new Map();
+ const slowMedia=fs.readFileSync(slowClip),deadlines=new Map(),stops=new Map(),probes=new Set();
  const media=fs.readFileSync(clip),html=()=>ref?execFileSync('git',['show',`${ref}:web/index.html`]):fs.readFileSync(new URL('../web/index.html',import.meta.url));
  const strokes=Array.from({length:25},(_,id)=>({id,video:'synthetic',src:`sessions/synthetic/clips/${id}.mp4`,n:seconds*60,kind:id%3===0?'BH':'FH',drill:'rally',player:'me',clock:`0:${String(id).padStart(2,'0')}`,contact:90,knee:110+id,prep:.5,size:[640,360],open_min:30,contact_h:50}));
  const session={id:'synthetic',label:'合成場次',date:'2026-01-01',players:['me'],sub:'合成資料',camera:'側面',showOpen:true,findings:[],presets:[],strokes};
@@ -29,22 +29,30 @@ export async function fixture(ref=process.env.SITE_REF){
   const url=new URL(req.url,'http://fixture'),file=url.pathname;
   res.setHeader('Cache-Control','no-store');
   if(file.endsWith('.mp4')){
-   const drip=Number(url.searchParams.get('drip')),body=drip?slowMedia:media;
+   const drip=Number(url.searchParams.get('drip')),body=drip&&!url.searchParams.has('fast')?slowMedia:media;
+   const key=file+url.searchParams.get('case');if(drip&&!deadlines.has(key))deadlines.set(key,performance.now()+drip*1000);
    const range=/bytes=(\d+)-(\d*)/.exec(req.headers.range||''),start=range?+range[1]:0,end=range&&range[2]?Math.min(+range[2],body.length-1):body.length-1;
-   const hanging=end-start+1>64&&(url.searchParams.get('hang')==='always'||url.searchParams.get('hang')==='once'&&!url.searchParams.has('_retry'));
-   const event={file,query:url.search,hang:hanging,time:performance.now(),method:req.method,bytes:0,chunks:0};events.push(event);
-   res.writeHead(range?206:200,{'Content-Type':'video/mp4','Content-Length':end-start+1,'Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${start}-${end}/${body.length}`}:{})});
+   const firstProbe=url.searchParams.has('probeOnce')&&!range&&req.method==='GET'&&!probes.has(key);if(firstProbe)probes.add(key);
+   const hanging=end-start+1>64&&(firstProbe||url.searchParams.get('hang')==='always'||url.searchParams.get('hang')==='once'&&!url.searchParams.has('_retry')||url.searchParams.has('nativeHang')&&range&&(url.searchParams.get('nativeHang')==='always'||!url.searchParams.has('_retry')));
+   const event={file,query:url.search,range:req.headers.range||null,hang:!!hanging,time:performance.now(),method:req.method,bytes:0,chunks:0};events.push(event);
+   res.writeHead(range?206:200,{'Content-Type':'video/mp4',...(!range&&url.searchParams.has('noLength')?{}:{'Content-Length':end-start+1}),'Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${start}-${end}/${body.length}`}:{})});
    if(req.method==='HEAD')res.end();
-   else if(hanging){res.write(body.subarray(start,start+64));res.flushHeaders();}
-   else if(drip&&end-start+1>64){
-    const key=file+url.searchParams.get('case');if(!deadlines.has(key))deadlines.set(key,performance.now()+drip*1000);
-    const remaining=Math.max(250,deadlines.get(key)-performance.now()),chunk=Math.max(1,Math.ceil((end-start+1)/remaining*250));let offset=start;
+   else if(hanging){
+    const prefix=Math.min(end-start+1,Number(url.searchParams.get('hangBytes'))||64);let offset=start;
+    const send=()=>{const next=Math.min(start+prefix,offset+(url.searchParams.has('split')?16:prefix));res.write(body.subarray(offset,next));event.bytes+=next-offset;event.chunks++;event.lastByte=performance.now();offset=next;};
+    send();res.flushHeaders();
+    if(url.searchParams.has('split')){const timer=setInterval(()=>{send();if(offset>=start+prefix)clearInterval(timer);},80);res.on('close',()=>clearInterval(timer));}
+   }
+   else if(drip&&end-start+1>64&&!(url.searchParams.has('dripStop')&&url.searchParams.has('_retry'))){
+    const stopMs=Number(url.searchParams.get('dripStop'));if(stopMs&&!stops.has(key))stops.set(key,performance.now()+stopMs);
+    const remaining=url.searchParams.has('perRequest')?drip*1000:Math.max(250,deadlines.get(key)-performance.now()),chunk=Math.max(1,Math.ceil((end-start+1)/remaining*250));let offset=start;
     res.flushHeaders();const timer=setInterval(()=>{
-     const next=Math.min(end+1,offset+chunk);res.write(body.subarray(offset,next));event.bytes+=next-offset;event.chunks++;offset=next;
+     if(stops.has(key)&&performance.now()>=stops.get(key)){clearInterval(timer);return;}
+     const next=Math.min(end+1,offset+chunk);res.write(body.subarray(offset,next));event.bytes+=next-offset;event.chunks++;event.lastByte=performance.now();offset=next;
      if(offset>end){clearInterval(timer);res.end();}
     },250);res.on('close',()=>clearInterval(timer));
    }
-   else res.end(body.subarray(start,end+1));
+   else {event.bytes=end-start+1;event.chunks=1;event.lastByte=performance.now();res.end(body.subarray(start,end+1));}
    return;
   }
   res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript; charset=utf-8':'text/html; charset=utf-8');
