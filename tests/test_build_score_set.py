@@ -10,6 +10,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 from score import score_group
+from platform_util import utf8_stdout
+utf8_stdout()
 
 groups = []
 for kind, fields in [("FH", dict(knee=125, prep=.7, contact_h=.5, vis=.9, wrist_speed=4, leg_load=.02)), ("BH", dict(prep=.7)), ("SV", {})]:

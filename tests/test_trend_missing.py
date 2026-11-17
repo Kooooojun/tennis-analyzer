@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 from score import SCORE_VERSION
 from trend import _entry, compare
+from platform_util import utf8_stdout
+utf8_stdout()
 
 u = dict(ci=[6, 8], sem=.3)
 base = dict(player="me", kind="FH", n=20, total=7, consistency=7, knee_src="knee", score_version=SCORE_VERSION,
