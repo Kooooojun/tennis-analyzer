@@ -9,10 +9,10 @@ from metrics import measure_clip, arm_checks, form_checks
 s = session(); D = web(s); C = load(work(s) / "refine.json", {})
 d = load(D / "strokes_raw.json")
 hand_of = lambda r: C.get("hand", r.get("hand", "R")) if r.get("hand_guess") or not r.get("hand") else r["hand"]  # per-stroke (work/<s>/profiles.json, else work/profiles.json, via assemble); refine.json "hand" is the fallback for old strokes
-err = max([abs(v - r[k]) for r in d for m in [measure_clip(r["frames"], r["contact"], r.get("size"), r.get("world"), hand_of(r))]
-           for k in ("knee", "knee3d", "contact_h", "contact_fwd", "elbow") if r.get(k) is not None and (v := m.get(k)) is not None], default=0)  # None now = gated (e.g. contact_fwd for a front / back camera), not 0; prep follows the previous hit, which this check does not pass
 off = lambda r: C.get("off", {}).get(str(r["id"] + 1), C.get("default_off", 0))
 untrusted = lambda r: C.get("set", {}).get(str(r["id"] + 1), {}).get("contact_untrusted", r.get("contact_untrusted")) is True
+err = max([abs(v - r[k]) for r in d if not untrusted(r) for m in [measure_clip(r["frames"], r["contact"], r.get("size"), r.get("world"), hand_of(r))]
+           for k in ("knee", "knee3d", "contact_h", "contact_fwd", "elbow") if r.get(k) is not None and (v := m.get(k)) is not None], default=0)  # None now = gated (e.g. contact_fwd for a front / back camera), not 0; prep follows the previous hit, which this check does not pass
 hits = [(r["video"], r.get("player"), r["t"] + off(r) / 60) for r in d if r["id"] + 1 not in C.get("drop", []) and not untrusted(r)]
 def prev_in_clip(r, c):
     """Clip frame of the same player's previous kept hit in this video (None if none or before the clip), bounds the prep search."""
@@ -25,12 +25,18 @@ for r in d:
     if no in C.get("drop", []): continue
     df = off(r); c = r["contact"] + df
     r.update(C.get("set", {}).get(str(no), {}))
-    old = r["contact_h"]; m = measure_clip(r["frames"], c, r.get("size"), r.get("world"), hand_of(r), prev_in_clip(r, c))
-    m.update(arm_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], hand_of(r), {"one": True, "two": False}.get(r.get("backhand"), C.get("one_hand_bh") is True)))  # profile first; refine.json "hand" / "one_hand_bh" only for strokes made before profiles
-    m.update(form_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], hand_of(r)))
+    old = r["contact_h"]
     if r.get("contact_untrusted") is True:
-        m = {k: None for k in m}
+        # Keep the measurement keys in return order so existing JSON stays byte-identical.
+        m = dict.fromkeys(("knee", "knee3d", "knee_warn", "knee_warn_why", "cam_az", "open_min", "open_contact",
+                           "contact_h", "contact_fwd", "prep", "prep_trunc", "elbow", "vis", "leg_load", "leg_drive",
+                           "wrist_speed", "trunk_share", "turn", "knee2d_ok", "serve_arm_straight", "serve_arm_conf",
+                           "bh_elbow_ok", "bh_elbow_conf", "bh_front_ok", "finish", "reach", "tilt", "lean", "stance"))
         m.update(knee_warn=True, knee_warn_why="contact")  # Exclude this stroke from the group's knee-source vote too.
+    else:
+        m = measure_clip(r["frames"], c, r.get("size"), r.get("world"), hand_of(r), prev_in_clip(r, c))
+        m.update(arm_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], hand_of(r), {"one": True, "two": False}.get(r.get("backhand"), C.get("one_hand_bh") is True)))  # profile first; refine.json "hand" / "one_hand_bh" only for strokes made before profiles
+        m.update(form_checks(r["frames"], c, r.get("size"), r.get("world"), r["kind"], hand_of(r)))
     r.update(m); r["contact"] = c
     r["t"] = round(r["t"] + df / 60, 3)
     m, sec = divmod(r["t"], 60); r["clock"] = f"{r['video']}·{int(m)}:{sec:04.1f}"

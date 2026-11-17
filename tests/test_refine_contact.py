@@ -9,6 +9,9 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from score import score_session
+from platform_util import utf8_stdout
+
+utf8_stdout()
 
 ROOT = Path(__file__).resolve().parent.parent
 # 持拍腕在第70格完成引拍，之後向前；沒有私人影格或骨架。
@@ -22,7 +25,7 @@ raw = [dict(id=i, video=1, player="p1", kind="FH", drill="feed", t=2. + i * .4,
             contact=90, contact_h=.5, knee=150., elbow=135., frames=frames, size=[960, 540], hand="R") for i in range(3)]
 
 
-def run(config, rows=raw):
+def run(config, rows=raw, forbid_marker=False):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "tools").mkdir(); (root / "videos" / "synthetic").mkdir(parents=True)
@@ -33,7 +36,24 @@ def run(config, rows=raw):
         (w / "refine.json").write_text(json.dumps(config), encoding="utf-8")
         source = json.dumps(rows)
         (d / "strokes_raw.json").write_text(source, encoding="utf-8")
-        subprocess.run([sys.executable, str(root / "tools" / "refine.py"), "synthetic"], check=True, capture_output=True)
+        command = [sys.executable, str(root / "tools" / "refine.py"), "synthetic"]
+        if forbid_marker:
+            code = """import runpy, sys
+sys.path.insert(0, sys.argv[1])
+import metrics
+def guarded(fn):
+    def call(frames, *args, **kwargs):
+        assert frames[0][0][0] != .123, '不可信拍仍呼叫 ' + fn.__name__
+        return fn(frames, *args, **kwargs)
+    return call
+for name in ('measure_clip', 'arm_checks', 'form_checks'):
+    setattr(metrics, name, guarded(getattr(metrics, name)))
+path = sys.argv[2]; sys.argv = [path, 'synthetic']
+runpy.run_path(path, run_name='__main__')
+"""
+            command = [sys.executable, "-c", code, str(root / "tools"), str(root / "tools" / "refine.py")]
+        result = subprocess.run(command, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
         assert (d / "strokes_raw.json").read_text(encoding="utf-8") == source
         return json.loads((d / "strokes.json").read_text(encoding="utf-8"))
 
@@ -75,3 +95,14 @@ knees = [dict(normal[0], knee3d=v) for v in (120., 125., None)] + [gated[1]]
 assert score_session(knees, False)[0]["knee_src"] == "knee3d"
 assert gated[1]["knee_warn"] is True and gated[1]["knee_warn_why"] == "contact"
 print("refine untrusted knee source OK")
+
+# 不可信拍連原始格診斷也不得呼叫量測；raw／set 的最終狀態優先。
+marked = copy.deepcopy(raw)
+marked[1]["frames"] = copy.deepcopy(marked[1]["frames"])
+marked[1]["frames"][0][0][0] = .123
+run({"set": {"2": {"contact_untrusted": True}}}, marked, forbid_marker=True)
+marked[1]["contact_untrusted"] = True
+run({}, marked, forbid_marker=True)
+assert run({"set": {"2": {"contact_untrusted": False}}}, marked)[1]["contact_h"] is not None
+assert [k for k in gated[1] if k != "contact_untrusted"] == list(normal[1])
+print("refine 不可信拍提前跳過量測通過")
