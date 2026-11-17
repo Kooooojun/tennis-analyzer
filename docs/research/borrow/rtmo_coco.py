@@ -53,7 +53,6 @@ def main():
     paths = image_paths(json.loads(args.annotations.read_text(encoding='utf-8'))['images'], args.images)
     if not args.model.is_file():
         raise FileNotFoundError(args.model)
-    args.out.mkdir(parents=True, exist_ok=False)
     repo = Path(__file__).resolve().parents[3]
     sys.path.insert(0, str(repo / 'docs/research/caltennis'))
     from ct_lr_run import memory
@@ -80,6 +79,7 @@ def main():
         lowest = memory()
         if lowest < 8:
             raise RuntimeError('記憶體不足 8 GiB')
+        args.out.mkdir(parents=True, exist_ok=False)
         start = time.monotonic()
         model = RTMO(str(args.model.resolve()), backend='onnxruntime', device='cpu', score_thr=.1, nms_thr=.65)
         results = []

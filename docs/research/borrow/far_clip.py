@@ -92,6 +92,7 @@ def main():
         low = memory()
         if low < 8:
             raise RuntimeError('記憶體不足8GiB')
+        target.parent.mkdir(parents=True, exist_ok=True)
         with target.with_suffix('.log').open('x', encoding='utf-8') as log:
             proc = subprocess.Popen([sys.executable, '-I', __file__, str(args.manifest), args.key, args.mode, '--child'], stdout=log, stderr=subprocess.STDOUT)
             try:

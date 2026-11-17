@@ -94,7 +94,7 @@ def summarize(cfg,out):
         eligible=[r for r in rows if r['kind']==kind and r['reference'] is not None]
         samples=[(r,window_angle(worlds[r['camera']-1],r['frame'],kind,r['hand'])) for r in eligible]
         usable=[(r,v) for r,v in samples if v is not None]
-        s=stats([abs(v-r['reference']) for r,v in usable]); s['reference_eligible']=len(eligible); s['coverage']=len(usable)/len(eligible)
+        s=stats([abs(v-r['reference']) for r,v in usable]); s['reference_eligible']=len(eligible); s['coverage']=len(usable)/len(eligible) if eligible else 0
         s['main_crop']=stats([abs(r['crop']-r['reference']) for r in eligible if r['crop'] is not None])
         s['cameras']={str(j):stats([abs(v-r['reference']) for r,v in usable if r['camera']==j]) for j in (1,2)}
         s['passed']=bool(s['n']>=30 and s['coverage']>=.5 and s['median']<=5 and s['p90']<=10)
