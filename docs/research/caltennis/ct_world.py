@@ -16,6 +16,13 @@ LEG = [23, 24, 25, 26, 27, 28]
 ARM = {'R': (12, 14, 16), 'L': (11, 13, 15)}
 
 
+def validate_timestamps(t):
+    assert t.ndim == 1 and len(t) >= 2 and np.isfinite(t).all(), '時間須為有限一維陣列且至少兩格'
+    dt = np.diff(t)
+    assert (dt > 0).all(), '時間須嚴格遞增'
+    assert .01 <= np.median(dt) <= .025, 'CalTennis時間須預先轉為共用時鐘秒數（約60fps），不可傳原始毫秒'
+
+
 def angle_series(P, joints):
     a, b, c = joints
     u, v = P[:, a] - P[:, b], P[:, c] - P[:, b]
@@ -50,12 +57,17 @@ def fundamental(Pa, Pb):
 
 
 def sync_shift(ta, ua, tb, ub, Fm):
+    validate_timestamps(ta); validate_timestamps(tb)
     ids = np.arange(0, len(ta), 4); js = [0,11,12,15,16,23,24,27,28]
     a = ua[ids][:,js,:2].reshape(-1,2); lines = np.c_[a,np.ones(len(a))] @ Fm.T
+    lines = lines.reshape(len(ids),len(js),3)
     def score(d):
-        b = interp(ta[ids] + d/60, tb, ub)[:,js,:2].reshape(-1,2)
+        query = ta[ids] + d/60
+        overlap = (query >= tb[0]) & (query <= tb[-1])
+        b = interp(query[overlap], tb, ub)[:,js,:2].reshape(-1,2)
+        selected = lines[overlap].reshape(-1,3)
         with np.errstate(invalid='ignore',divide='ignore'):
-            distances = abs(np.sum(lines * np.c_[b,np.ones(len(b))],1)) / np.hypot(lines[:,0],lines[:,1])
+            distances = abs(np.sum(selected * np.c_[b,np.ones(len(b))],1)) / np.hypot(selected[:,0],selected[:,1])
         return float(np.nanmedian(distances)) if np.isfinite(distances).sum() >= max(100, .8 * len(distances)) else float('inf')
     coarse = min(range(-1200,1201,20), key=score)
     best = min(range(coarse-25,coarse+26), key=score)
@@ -99,6 +111,7 @@ def evaluate(manifest_path, output):
     manifest=json.loads(Path(manifest_path).read_text(encoding='utf-8'))
     root=Path(manifest_path).parent
     cams=manifest['cameras']; refs=[dict(np.load(root/c['reference'])) for c in cams]
+    for ref in refs: validate_timestamps(ref['t'])
     Ps=[np.array(json.loads((root/c['calibration']).read_text())['K']) @ np.array(json.loads((root/c['calibration']).read_text())['Rt_w2c']) for c in cams]
     shift=manifest.get('shift_frames')
     sync_error=None

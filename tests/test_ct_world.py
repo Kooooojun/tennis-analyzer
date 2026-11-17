@@ -49,3 +49,20 @@ assert np.nanmax(e)<1e-8
 assert abs(window_angle(R,50,'knee','R')-90)<1e-7
 assert window_angle(P[:,SW],50,'knee','R')==90
 print('ct_world：已知雙機3D還原與膝角交換不變量通過')
+
+from ct_world import validate_timestamps
+validate_timestamps(t + 10000)
+for bad in (t*1000, t[::-1], np.array([0.,0.,1/60]), np.array([0.,np.nan]), np.array([0.])):
+    try: validate_timestamps(bad)
+    except AssertionError: pass
+    else: raise AssertionError('必須拒絕非秒數、非單調或無效時間')
+# 正確15秒位移被全片分母與缺值共同排除；重疊區應仍可還原。
+t2=np.arange(7200)/60; q=np.zeros((len(t2),33,3)); q[...,2]=1
+q[...,0]=np.arange(33); q[...,1]=t2[:,None]**2 + 10*t2[:,None]
+r=q.copy(); r[...,1]=(t2[:,None]-15)**2 + 10*(t2[:,None]-15); r[::10]=np.nan
+shift,err=sync_shift(t2,q,t2,r,Fm)
+assert shift==900 and err<1e-8,(shift,err)
+try: sync_shift(t2,q,t2+1000,r,Fm)
+except ValueError: pass
+else: raise AssertionError('沒有重疊時間必須拒絕')
+print('ct_world：時間單位、單調性、大位移重疊區與無重疊拒判通過')

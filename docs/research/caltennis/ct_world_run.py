@@ -10,21 +10,43 @@ import time
 import numpy as np
 sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[3] / 'tools')]
 from ct_lr_run import memory
+from ct_world import validate_timestamps
 from proxy import video_filter
+
+
+def release_lock(lock):
+    original = sys.exception()
+    error = None
+    owner = lock/'owner.txt'
+    try:
+        if owner.exists(): subprocess.run(['trash',str(owner)],check=True)
+    except (OSError,subprocess.SubprocessError) as e:
+        print(f'無法trash鎖owner，改用unlink：{e}',file=sys.stderr)
+        try: owner.unlink(missing_ok=True)
+        except OSError as e:
+            error = e
+            print(f'無法移除鎖owner：{e}',file=sys.stderr)
+    finally:
+        try: lock.rmdir()
+        except OSError as e:
+            error = e
+            print(f'無法移除鎖目錄，需檢查後清理：{e}',file=sys.stderr)
+    if error is not None and original is None: raise error
 
 
 def child(manifest, camera, mode):
     root=Path(manifest).parent; cfg=json.loads(Path(manifest).read_text(encoding='utf-8'))['cameras'][camera]
     if mode=='reference':
         from ct_pose import extract
-        extract(root/cfg['source'],np.load(root/cfg['timestamps']),cfg['start_frame'],cfg['frames'],root/cfg['reference'])
+        ts=np.load(root/cfg['timestamps']); validate_timestamps(ts)
+        extract(root/cfg['source'],ts,cfg['start_frame'],cfg['frames'],root/cfg['reference'])
     else:
+        ref=np.load(root/cfg['reference']); validate_timestamps(ref['t'])
         import pose_full
         pose_full.use_crop=lambda found: mode=='crop'
         d=root/cfg[mode]
         sys.argv=['pose_full.py',str(root/cfg['proxy']),'models/pose_heavy.task',str(d/'pose.npy'),'1',str(root/cfg['clip'])]
         pose_full.main()
-        ref=np.load(root/cfg['reference'])
         assert np.load(d/'pose.npy').shape==np.load(d/'pose_world.npy').shape==(len(ref['t']),33,3)
         np.save(d/'t.npy',ref['t'])
 
@@ -39,7 +61,7 @@ def main():
     target.parent.mkdir(parents=True,exist_ok=True)
     busy=subprocess.run(['pgrep','-fl','pose_full|prep.py|ball.py'],capture_output=True,text=True)
     if busy.returncode!=1: sys.exit('其他heavy程序執行中：'+busy.stdout+busy.stderr)
-    lock=Path('testset/results/heavy.lock');lock.mkdir()
+    lock=Path('testset/results/heavy.lock');lock.parent.mkdir(parents=True,exist_ok=True);lock.mkdir()
     owner=lock/'owner.txt'
     try:
         owner.write_text(f'#68 3D / CalTennis / {a.mode} / 機位{a.camera+1} / '+datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).isoformat()+'\n',encoding='utf-8')
@@ -67,8 +89,7 @@ def main():
         target.with_suffix('.run.json').write_text(json.dumps(record,ensure_ascii=False,indent=2),encoding='utf-8')
         print(json.dumps(record,ensure_ascii=False),flush=True)
     finally:
-        if owner.exists():subprocess.run(['trash',str(owner)],check=True)
-        lock.rmdir()
+        release_lock(lock)
 
 
 if __name__=='__main__':main()
