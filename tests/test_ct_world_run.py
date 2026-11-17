@@ -12,7 +12,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'docs/research/caltenn
 import ct_world_run as run
 
 with tempfile.TemporaryDirectory() as td:
-    root=Path(td); lock=root/'heavy.lock'; lock.mkdir(); owner=lock/'owner.txt';owner.write_text('測試')
+    root=Path(td); lock=root/'heavy.lock'; lock.mkdir(); owner=lock/'owner.txt';owner.write_text('測試',encoding='utf-8')
     original=RuntimeError('原始錯誤')
     try:
         try: raise original
@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory() as td:
     except RuntimeError as e: assert e is original
     assert not lock.exists(),'trash失敗應清理owner並嘗試移除鎖'
 
-    lock.mkdir();owner.write_text('測試');errlog=io.StringIO()
+    lock.mkdir();owner.write_text('測試',encoding='utf-8');errlog=io.StringIO()
     try:
         try: raise original
         finally:
@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory() as td:
     owner.unlink();lock.rmdir()
 
     # 乾淨工作目錄亦須先建立testset/results，低記憶體錯誤要保留。
-    (root/'manifest.json').write_text(json.dumps({'cameras':[{'reference':'out/reference.npz'}]}))
+    (root/'manifest.json').write_text(json.dumps({'cameras':[{'reference':'out/reference.npz'}]}),encoding='utf-8')
     def command(args,**kw):
         if args[0]=='trash':Path(args[1]).unlink();return subprocess.CompletedProcess(args,0)
         assert args[0]=='pgrep';return subprocess.CompletedProcess(args,1,'','')
