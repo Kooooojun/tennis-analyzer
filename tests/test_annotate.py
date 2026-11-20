@@ -131,4 +131,25 @@ with tempfile.TemporaryDirectory() as tmp:
             x, y = (p[0, 0, :2] * (W, H)).astype(int)
             assert frame[y-1:y+2, x-1:x+2].mean() > 180, "輸出圓點須落在原片位置"
 
+# #137：pose_world 長度和 pose 不同（另一輪的 3D）就不畫 3D，跟 measure_full、export 同一條規則；stderr 一行警告，同長不印。
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp); wd = root / "work" / "clip"; wd.mkdir(parents=True); src = root / "source.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=960x540:r=60:d=0.05",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(src)], check=True)
+    p = np.zeros((3, 33, 3), np.float32); p[:, :, :2] = 0.5; p[:, :, 2] = 1; np.save(wd / "pose.npy", p)
+    for nw, use3d in ((5, False), (2, False), (3, True)):  # 較長、較短（前 2 格重疊）、同長
+        np.save(wd / "pose_world.npy", np.ones((nw, 33, 3), np.float32))
+        worlds = []; err = io.StringIO()
+        def knee(p, world, size):
+            worlds.append(world); return None, None
+        with patch.object(mod, "work", return_value=root / "work"), patch.object(mod, "web", return_value=root / "web"), \
+             patch.object(mod, "videos", return_value=["clip"]), patch.object(mod, "live_knee", side_effect=knee), \
+             patch.object(mod, "h264_args", return_value=["-c:v", "libx264", "-crf", "18"]), \
+             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            mod.annotate("synth", "clip", src)
+        assert len(worlds) == 3 and all((w is not None) == use3d for w in worlds), (nw, [w is not None for w in worlds])
+        lines = err.getvalue().splitlines()
+        want = [] if use3d else [f"warning: video 1 track 0: pose_world has {nw} frames, pose has 3; drawing 2D only"]
+        assert lines == want, (nw, lines)
+
 print("ok")

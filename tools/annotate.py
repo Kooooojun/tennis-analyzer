@@ -116,6 +116,9 @@ def annotate(s, name, src, panel="auto"):
     poses = {k: np.load(track_file(Wd, "pose", k)) for k in ks}; pose = poses[0]
     worlds = {k: np.load(w) if (w := track_file(Wd, "pose_world", k)).exists() else None for k in ks}
     vn = videos(s).index(name) + 1
+    for k, wk in worlds.items():  # pose_world from another run: frames do not line up, draw 2D only (as measure_full, export_session)
+        if wk is not None and len(wk) != len(poses[k]):
+            print(f"warning: video {vn} track {k}: pose_world has {len(wk)} frames, pose has {len(poses[k])}; drawing 2D only", file=sys.stderr); worlds[k] = None
     sp = web(s) / "strokes.json"; allS = load(sp) if sp.exists() else []
     S = starts(sorted(({**x, "no": i + 1, "c": round(x["t"] * FPS)} for i, x in enumerate(allS) if x["video"] == vn), key=lambda x: x["c"]))
     w, h = probe(src); sc = LONG / max(w, h); W, H = int(round(w * sc / 2)) * 2, int(round(h * sc / 2)) * 2

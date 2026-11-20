@@ -1,12 +1,14 @@
 # export_session.py <session> — one 150-frame clip per stroke (contact at frame 90; clamped to the video start/end, so shorter clips carry their own contact index) plus trimmed pose
 # -> web/sessions/<s>/clips/sNN.mp4 and web/sessions/<s>/strokes_raw.json. Stroke numbers here are what refine.json refers to.
-import subprocess, numpy as np
+import subprocess, sys, numpy as np
 from common import session, work, web, load, save, KEEP, PORTRAIT, track_file
 
 s = session(); Wd = work(s); D = web(s); (D / "clips").mkdir(parents=True, exist_ok=True)
 r = load(Wd / "strokes_all.json")
 P = {key: np.load(track_file(Wd / key[0], "pose", key[1])) for key in {(x["video"], x.get("track", 0)) for x in r}}
 WP = {key: track_file(Wd / key[0], "pose_world", key[1]) for key in P}; WP = {key: np.load(p) for key, p in WP.items() if p.exists()}
+for (v, k), w in WP.items():
+    if len(w) != len(P[v, k]): print(f"warning: video {next(x['vn'] for x in r if x['video'] == v)} track {k}: pose_world has {len(w)} frames, pose has {len(P[v, k])}; using 2D only", file=sys.stderr)
 WP = {key: w for key, w in WP.items() if len(w) == len(P[key])}  # pose_world from another run: frames do not line up, use 2D only (as measure_full)
 for old in (D / "clips").glob("s*.mp4"): old.unlink()
 out = []
