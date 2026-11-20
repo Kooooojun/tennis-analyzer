@@ -191,3 +191,5 @@ if os.environ.get("SITE_E2E_URL"):
 if os.environ.get("SITE_E2E_URL") and os.environ.get("SITE_SERVER_LOG"):
     subprocess.run(["node", str(R / "tests" / "site_cache_drip.mjs")], check=True,
                    env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-drip"))} if os.environ.get("SITE_RESULTS") else {})})
+elif os.environ.get("SITE_E2E_URL"):
+    print("skipped site_cache_drip.mjs: set SITE_SERVER_LOG to the log passed to site_cache_server.py")
