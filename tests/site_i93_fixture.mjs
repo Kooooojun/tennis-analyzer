@@ -7,6 +7,14 @@ import http2 from 'node:http2';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
+// #129 不變式：每個 rAF 檢查「播放鈕顯示 ⏸ ⇔ 對應影片 _want 為真」，記下不一致的時刻。
+export const watchPlay=page=>page.addInitScript(()=>{
+ window.playMismatch={count:0,samples:0,first:[]};const id=x=>document.getElementById(x);
+ const check=()=>{try{playMismatch.samples++;for(const [button,video] of [['play','v'],['cmpPlay','vA']]){const b=id(button),m=id(video);if(!b||!m)continue;const shown=b.textContent.includes('⏸'),want=!!m._want;if(shown!==want){playMismatch.count++;if(playMismatch.first.length<10)playMismatch.first.push({button,text:b.textContent,want,paused:m.paused,readyState:m.readyState,reloading:!!m._reloading,ms:Math.round(performance.now())});}}}catch{}requestAnimationFrame(check);};
+ requestAnimationFrame(check);
+});
+export const playMismatch=page=>page.evaluate(()=>window.playMismatch);
+
 export async function fixture(ref=process.env.SITE_REF){
  const seconds=Number(process.env.SITE_CLIP_SECONDS||3);
  if(!Number.isInteger(seconds)||seconds<3||seconds>10)throw new Error('合成片長度須為 3–10 秒整數');
