@@ -60,6 +60,12 @@ assert e2(False, f([dict(stroke=1, field="elbow", value=150)]))
 assert e2(False, f([dict(stroke=2, field="knee", value=130)]))
 assert e2(False, f([dict(stroke=2, field="knee3d", value=130)]))  # knee3d is None here anyway
 assert e2(False, f([dict(stroke=1, field="knee", value=120)])) == []
+# characterization (#128): knee3d shares knee_warn but not the 2D knee2d_ok gate; contact_fwd shares the vis gate
+S8 = [st(knee3d=118, knee_warn=True), st(contact_fwd=0.1, vis=0.2), st(knee3d=118, knee2d_ok=False)]
+e8 = lambda *fs: check(dict(findings=list(fs)), S8, dict(groups=score_session(S8, False)))
+assert e8(f([dict(stroke=1, field="knee3d", value=118)]))
+assert e8(f([dict(stroke=2, field="contact_fwd", value=0.1)]))
+assert e8(f([dict(stroke=3, field="knee3d", value=118)])) == []
 assert e2(False, f([dict(kind="FH", field="open_min", stat="median", value=20)]))
 assert e2(True, f([dict(kind="FH", field="open_min", stat="median", value=20)])) == []
 assert e2(False, f([dict(stroke=1, field="open_min", value=20)]))
@@ -70,7 +76,7 @@ e3 = lambda *fs: check(dict(findings=list(fs)), S3, dict(groups=score_session(S3
 assert e3(f([dict(kind="FH", field="prep", stat="median", value=0.4)])) == []
 assert e3(f([dict(kind="FH", field="prep", stat="median", value=0.5)]))
 assert e3(f([dict(stroke=3, field="prep", value=1.5)]))
-S4 = [st(prep=0.3), st(prep=0.5), st(prep=1.0, prep_trunc=None)]  # null = old stroke via export_session  # old session: no prep_trunc field, 1.0 = the old window edge
+S4 = [st(prep=0.3), st(prep=0.5), st(prep=1.0, prep_trunc=None)]  # null = strokes.json refined before prep_trunc existed; 1.0 = the old window edge
 assert check(dict(findings=[f([dict(stroke=3, field="prep", value=1.0)])]), S4, dict(groups=score_session(S4, False)))
 # numbers in text other than degrees (docs/scoring.md §8): %, 秒 and bare decimals need a cite; ranges, 拍 counts and #NN do not
 c1 = [dict(stroke=1, field="knee", value=120)]
