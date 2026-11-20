@@ -6,7 +6,7 @@ import re
 import numpy as np
 from platform_util import utf8_stdout
 from trend import NAMES, _entry, compare
-from score import METRICS
+from score import METRICS, _value
 
 utf8_stdout()
 
@@ -28,16 +28,11 @@ def _match(actual, cited, txt=None):
 
 
 def _usable(s, field, show_open=False):
-    """The stroke's value for `field`, or None when a quality gate drops it (same gates as score.py, docs/scoring.md §3).
+    """The stroke's value for `field`, or None when a quality gate drops it: score._value's gates (docs/scoring.md §3) plus two for cites only.
     elbow is never citable: single-camera elbow error p90 is 37-48 deg (testset/results/eval-caltennis.md)."""
-    if field == "elbow": return None
-    if field in ("knee", "knee3d") and s.get("knee_warn"): return None
-    if field == "knee" and s.get("knee2d_ok") is False: return None
-    if field == "open_min" and not show_open: return None
-    if field in ("contact_h", "contact_fwd") and not (_num(s.get("vis")) and s["vis"] >= 0.5): return None
-    if field == "prep" and (s.get("prep_trunc") is True or s.get("prep_trunc") is None and _num(s.get("prep")) and s["prep"] >= 0.999): return None  # lower bound only, score.py leaves it out too
-    v = s.get(field)
-    return v if _num(v) else None
+    if field == "elbow" or field == "open_min" and not show_open: return None
+    v = _value(s, "knee", field) if field in ("knee", "knee3d") else _value(s, field)
+    return v if _num(v) else None  # this _num rejects bool, score's does not
 
 
 def _cite(c, strokes, groups, show_open=False):
