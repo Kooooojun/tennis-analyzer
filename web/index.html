@@ -1047,7 +1047,7 @@ function mediaLoader(vid){
   };
   const retry=(tap=false,still=false)=>{
     if(still) stopDead(vid);
-    if(vid===v&&!still&&m.dataset.fail&&keep?.[1]) vid._want=vid._resume=true;  // no syncPlay here: reload() syncs once it really restarts (current behavior when inactive)
+    if(vid===v&&!still&&m.dataset.fail&&keep?.[1]){ vid._want=vid._resume=true; syncPlay(); }
     delete m.dataset.fail; m.disabled=true; tries=0; retryAt=0; reload(tap,still); setMsg("影片下載中…");
   };
   const fail=()=>{
