@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
-import {fixture} from './site_i93_fixture.mjs';
+import {fixture,watchPlay,playMismatch} from './site_i93_fixture.mjs';
 const {chromium,webkit,devices}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE));
 const f=await fixture(),results=[];
 const engines=process.env.SITE_ENGINES?.split(',')||['chromium','chrome','webkit'];
@@ -330,11 +330,13 @@ try{
     if(name==='rapidH2'&&engine==='webkit')continue;
     if(process.env.SITE_CASES&&!process.env.SITE_CASES.split(',').includes(name))continue;
     const context=await browser.newContext({ignoreHTTPSErrors:true,...(engine==='webkit'?devices['iPhone 13']:{})}),page=await context.newPage(),errors=[];
-    page.on('pageerror',e=>errors.push(e.message));
+    page.on('pageerror',e=>errors.push(e.message));await watchPlay(page);
     try{
      if(['poseLongRetryStatus','poseFailure','poseVisibleTime','noSource','poseLeaveOverview','poseLeaveHome','poseCompareVisibleTime','poseCompareRouteRetry','poseScrollRetry','poseRetryBudget','poseBackgroundTimeout'].includes(name))await page.clock.install();
      await page.goto(f.url);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>S&&v.readyState>=3&&!v.seeking);
-     await page.waitForTimeout(650);const details=await test(page);assert.deepEqual(errors,[]);results.push({engine,case:name,pass:true,...details});
+     await page.waitForTimeout(650);const details=await test(page);assert.deepEqual(errors,[]);
+     const play=await playMismatch(page);assert.equal(play.count,0,'播放鈕文字必須等於播放意圖：'+JSON.stringify(play.first));
+     results.push({engine,case:name,pass:true,playSamples:play.samples,playMode:play.mode,...details});
     }catch(e){results.push({engine,case:name,pass:false,error:e.message,errors});}
     finally{await context.close();}
     console.log(JSON.stringify(results.at(-1)));
