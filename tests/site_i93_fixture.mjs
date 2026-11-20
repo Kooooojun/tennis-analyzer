@@ -7,11 +7,15 @@ import http2 from 'node:http2';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
-// #129 不變式：每個 rAF 檢查「播放鈕顯示 ⏸ ⇔ 對應影片 _want 為真」，記下不一致的時刻。
+// #129 不變式：「播放鈕顯示 ⏸ ⇔ 對應影片 _want 為真」，記下不一致的時刻。
+// 取樣不能進假時鐘的計時器佇列（會改變 page.clock 案例的時序）：rAF 是原生的就每格取樣；
+// 假時鐘先裝好時（WebKit）改在每個媒體事件、點擊、分頁切換之後用 MessageChannel 取樣。
 export const watchPlay=page=>page.addInitScript(()=>{
- window.playMismatch={count:0,samples:0,first:[]};const id=x=>document.getElementById(x);
- const check=()=>{try{playMismatch.samples++;for(const [button,video] of [['play','v'],['cmpPlay','vA']]){const b=id(button),m=id(video);if(!b||!m)continue;const shown=b.textContent.includes('⏸'),want=!!m._want;if(shown!==want){playMismatch.count++;if(playMismatch.first.length<10)playMismatch.first.push({button,text:b.textContent,want,paused:m.paused,readyState:m.readyState,reloading:!!m._reloading,ms:Math.round(performance.now())});}}}catch{}requestAnimationFrame(check);};
- requestAnimationFrame(check);
+ window.playMismatch={count:0,samples:0,first:[],mode:''};const id=x=>document.getElementById(x);
+ const check=()=>{try{playMismatch.samples++;for(const [button,video] of [['play','v'],['cmpPlay','vA']]){const b=id(button),m=id(video);if(!b||!m)continue;const shown=b.textContent.includes('⏸'),want=!!m._want;if(shown!==want){playMismatch.count++;if(playMismatch.first.length<10)playMismatch.first.push({button,text:b.textContent,want,paused:m.paused,readyState:m.readyState,reloading:!!m._reloading,ms:Math.round(performance.now())});}}}catch{}};
+ if(String(window.requestAnimationFrame).includes('[native code]')){const raf=window.requestAnimationFrame.bind(window),loop=()=>{check();raf(loop);};playMismatch.mode='raf';raf(loop);}
+ else {const ch=new MessageChannel();ch.port1.onmessage=check;playMismatch.mode='event';
+  for(const type of ['play','playing','pause','waiting','canplay','seeking','seeked','loadedmetadata','emptied','error','timeupdate','click','visibilitychange'])document.addEventListener(type,()=>ch.port2.postMessage(0),true);}
 });
 export const playMismatch=page=>page.evaluate(()=>window.playMismatch);
 

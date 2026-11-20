@@ -336,7 +336,7 @@ try{
      await page.goto(f.url);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>S&&v.readyState>=3&&!v.seeking);
      await page.waitForTimeout(650);const details=await test(page);assert.deepEqual(errors,[]);
      const play=await playMismatch(page);assert.equal(play.count,0,'播放鈕文字必須等於播放意圖：'+JSON.stringify(play.first));
-     results.push({engine,case:name,pass:true,playSamples:play.samples,...details});
+     results.push({engine,case:name,pass:true,playSamples:play.samples,playMode:play.mode,...details});
     }catch(e){results.push({engine,case:name,pass:false,error:e.message,errors});}
     finally{await context.close();}
     console.log(JSON.stringify(results.at(-1)));

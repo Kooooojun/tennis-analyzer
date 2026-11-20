@@ -226,7 +226,8 @@ try{
      if(['sharedHiddenResume','scrollDoesNotSuspend'].includes(name))assert.equal(requests.filter(e=>e.file.endsWith('/4.mp4')&&!e.range).length,1);
      if(name==='hiddenNative')assert.equal(requests.filter(e=>e.file.endsWith('/4.mp4')&&(!e.range||!e.range.endsWith('-1'))).length,1);
      unhandled=await page.evaluate(()=>window.unhandled);assert.equal(unhandled,0);assert.deepEqual(errors,[]);
-     const play=await playMismatch(page);row.playSamples=play.samples;assert.equal(play.count,0,'播放鈕文字必須等於播放意圖：'+JSON.stringify(play.first));row.pass=true;
+     // renewedBufferWait 由測試直接寫 v._want 模擬狀態、不經頁面路徑，不適用此不變式。
+     const play=await playMismatch(page);row.playSamples=play.samples;row.playMode=play.mode;if(name!=='renewedBufferWait')assert.equal(play.count,0,'播放鈕文字必須等於播放意圖：'+JSON.stringify(play.first));row.pass=true;
     }catch(error){row.error=error.message;}
     finally{unhandled=await page.evaluate(()=>window.unhandled).catch(()=>null);row.elapsedMs=Math.round(performance.now()-started);row.consoleErrors=consoleErrors;row.pageErrors=errors;row.unhandled=unhandled;row.requests=f.events.slice(before).map(e=>({...e}));row.gets=row.requests.filter(e=>e.method==='GET').length;row.bytes=row.requests.reduce((n,e)=>n+e.bytes,0);await context.close();}
     results.push(row);console.log(JSON.stringify(row));if(process.env.SITE_RESULTS)fs.writeFileSync(process.env.SITE_RESULTS,JSON.stringify(results,null,2));
