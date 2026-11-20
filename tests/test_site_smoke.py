@@ -2,11 +2,12 @@
 # Local E2E requires Node, playwright-core with Chromium/WebKit installed, and private session fixtures.
 # Start: python tests/site_cache_server.py --root "$SITE_FIXTURE_ROOT" --log "$SITE_SERVER_LOG"
 # Run: SITE_E2E_URL="$SITE_URL" PLAYWRIGHT_MODULE="$PW_MODULE" python tests/test_site_smoke.py
+# Manual only (Chromium needs a headed window, so they cannot run unattended):
 # Background: add SITE_SERVER_LOG="$SITE_SERVER_LOG"; run node tests/site_cache_background.mjs,
 # then repeat with SITE_ENGINE=webkit (Chromium needs a headed browser or SITE_CHROMIUM_EXECUTABLE).
 # Playing background: same env plus SITE_CHROMIUM_EXECUTABLE if needed; run
 # node tests/site_cache_playing_background.mjs (25 s per policy and engine, includes native-pause simulation).
-# Drip: use the same env as background and run node tests/site_cache_drip.mjs (1 KiB / 2 s native fallback).
+# Drip (1 KiB / 2 s native fallback, about 60 s) runs below when SITE_SERVER_LOG is set, because it reads that log.
 # Run: .venv/bin/python tests/test_site_smoke.py   (plain asserts; cases follow testset/results/cross-platform_pred.md)
 # Builds a synthetic session (Chinese name and notes, no real data) with build_site.py in a scratch copy of tools/, under the
 # default locale and again with a cp1252 stdout, and checks data.js is UTF-8 with LF only and the ?v= hash matches the file bytes.
@@ -182,3 +183,13 @@ if os.environ.get("SITE_E2E_URL"):
 if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "site_contact_untrusted.mjs")], check=True)
     subprocess.run(["node", str(R / "tests" / "site_i112_web.mjs")], check=True)
+    # Without SITE_E2E_URL these build their own synthetic fixture; with it they expect a real two-session copy.
+    for name in ["site_advice_uncertainty", "site_score_uncertainty", "site_score_count", "site_knee_estimate"]:
+        subprocess.run(["node", str(R / "tests" / (name + ".mjs"))], check=True,
+                       env={**{k: v for k, v in os.environ.items() if k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-" + name))} if os.environ.get("SITE_RESULTS") else {})})
+
+if os.environ.get("SITE_E2E_URL") and os.environ.get("SITE_SERVER_LOG"):
+    subprocess.run(["node", str(R / "tests" / "site_cache_drip.mjs")], check=True,
+                   env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-drip"))} if os.environ.get("SITE_RESULTS") else {})})
+elif os.environ.get("SITE_E2E_URL"):
+    print("skipped site_cache_drip.mjs: set SITE_SERVER_LOG to the log passed to site_cache_server.py")
