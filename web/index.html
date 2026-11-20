@@ -881,7 +881,9 @@ const TAP="點畫面載入影片";
 const bAtLoopEnd=vid=>vid.id==="vB"&&vid.ended&&$("vA")._want;
 const playSafe=(vid,badge)=>{ const token=vid._loadToken, source=vid.src; return vid.play()?.catch(e=>{ if(token!==vid._loadToken||source!==vid.src||e.name!=="NotAllowedError") return; vid._blocked=true; if(!vid.readyState) badge.textContent=TAP; if(vid._want) stopDead(vid); }); };
 // Initial loads prime iOS with play(); an explicit pause must also cancel play() before metadata arrives.
-const hold=vid=>{ vid._cancelResume?.(); vid._want=false; vid._resume=false; vid.pause(); if(vid===v) $("play").textContent="▶ 播放"; else if(vid.id==="vA"||vid.id==="vB") $("cmpPlay").textContent="▶ 同步播放"; };
+// The only writer of the play buttons' text: it follows playback intent (_want), never media events. vA is declared later.
+const syncPlay=()=>{ $("play").textContent=v._want?"⏸ 暫停":"▶ 播放"; $("cmpPlay").textContent=$("vA")._want?"⏸ 暫停":"▶ 同步播放"; };
+const hold=vid=>{ vid._cancelResume?.(); vid._want=false; vid._resume=false; vid.pause(); syncPlay(); };
 // a clip is fetched only once its stage is on screen (home and the overview tab fetch none); route() runs the waiting ones
 const LATER=new Map();
 // the comparison clips also wait until scrolled near (_near), so opening the video tab fetches only the main clip
@@ -965,7 +967,7 @@ function stopDead(vid,preserve=false){
   const group=vid===v?[v]:[$("vA"),$("vB")];
   for(const x of group){ if(!preserve) x._cancelResume?.(); x._want=x._resume=false; x._reloading=false; x.pause(); }
   for(const x of group) if(x.readyState&&x._align) x._align();
-  $(vid===v?"play":"cmpPlay").textContent=vid===v?"▶ 播放":"▶ 同步播放";
+  syncPlay();
 }
 function mediaLoader(vid){
   const m=document.createElement("button"); m.type="button"; m.className="vid-msg"; m.tabIndex=0; m.hidden=true; m.disabled=true;
@@ -1005,7 +1007,7 @@ function mediaLoader(vid){
         if(frame!=null) vid.currentTime=frame;
         vid._reloading=false;
         if(!want) stopDead(vid);
-        else if(vid===v){ playSafe(vid,$("badge")); $("play").textContent="⏸ 暫停"; tick(); }
+        else if(vid===v){ playSafe(vid,$("badge")); tick(); }
         else cmpStart();
       }else vid._start?.();
       if(vid===v||!vid._want) vid._reloading=false;
@@ -1020,7 +1022,7 @@ function mediaLoader(vid){
     vid._clip=vid._start=null; vid._clipKey=key?clipKey(key):key; vid._blocked=vid._badBlob=vid._edgeWait=false; vid._pendingFrame=null;
     vid._want=vid._resume=vid._reloading=false; delete m.dataset.fail; hideMsg();
     vid.pause(); vid.removeAttribute("src"); vid.load(); releaseClips(); trimClips();
-    $(vid===v?"play":"cmpPlay").textContent=vid===v?"▶ 播放":"▶ 同步播放";
+    syncPlay();
   };
   loader.set=(s,start)=>{
     vid._clip=s; vid._start=start; attemptUrl=new URL(clipSrc(s),location.href).href;
@@ -1040,12 +1042,12 @@ function mediaLoader(vid){
     if(vid!==v&&!want) stopDead(vid);
     keep=[frame,want]; vid._loadToken={}; dropProbe(); probeTried=false; loader.entry=null;
     vid._badBlob=false; vid._want=vid._resume=want; vid._reloading=url.href; tries++; clocks(); attemptUrl=url.href;
-    if(vid===v) $("play").textContent=want?"⏸ 暫停":"▶ 播放";
+    syncPlay();
     source(attemptUrl,frame!=null);
   };
   const retry=(tap=false,still=false)=>{
     if(still) stopDead(vid);
-    if(vid===v&&!still&&m.dataset.fail&&keep?.[1]) vid._want=vid._resume=true;
+    if(vid===v&&!still&&m.dataset.fail&&keep?.[1]) vid._want=vid._resume=true;  // no syncPlay here: reload() syncs once it really restarts (current behavior when inactive)
     delete m.dataset.fail; m.disabled=true; tries=0; retryAt=0; reload(tap,still); setMsg("影片下載中…");
   };
   const fail=()=>{
@@ -1175,7 +1177,7 @@ for(const x of players){
   for(const event of ["progress","canplaythrough"]) x.addEventListener(event,()=>{ if(S) preloadNeighbors(S); });
   x.addEventListener("pause",()=>{
     if(x._edgeWait||bAtLoopEnd(x)){ x._edgeWait=true; return; }
-    if(x.paused&&!x.error&&!x._reloading){ if(x!==v&&x._want) stopDead(x); else x._want=x._resume=false; }
+    if(x.paused&&!x.error&&!x._reloading){ if(x!==v&&x._want) stopDead(x); else { x._want=x._resume=false; syncPlay(); } }
   });
 }
 function updateTitle(){
@@ -1215,7 +1217,7 @@ function load(id, scroll, defer=false){
   $("mStance").innerHTML=num(S.stance,"×",2); $("cStance").textContent=S.stance==null?"看不出來（髖寬被視角壓縮或腳被擋）":"兩踝距離 ÷ 兩髖距離";
   $("stage").style.aspectRatio=S.size?`${S.size[0]}/${S.size[1]}`:"";  // landscape clips get a wide stage
   $("stage").classList.toggle("wide", !!S.size && S.size[0]>S.size[1]); $("stage").parentElement.classList.toggle("wide", !!S.size && S.size[0]>S.size[1]); document.querySelector("main").classList.toggle("wideplayer", !!S.size && S.size[0]>S.size[1]);
-  const s=S, start=()=>{ if(S!==s) return; const want=canResume(v), frame=v._pendingFrame??S.contact-48; goto(frame); if(want){ v._want=v._resume=true; playSafe(v,$("badge")); $("play").textContent="⏸ 暫停"; } };
+  const s=S, start=()=>{ if(S!==s) return; const want=canResume(v), frame=v._pendingFrame??S.contact-48; goto(frame); if(want){ v._want=v._resume=true; playSafe(v,$("badge")); syncPlay(); } };
   v._clip=s; v._start=start;
   const request=()=>{ mainLoadTimer=null; whenShown(v,()=>{ setClip(v,s,start); render(cur); }); };
   if(defer) mainLoadTimer=setTimeout(request,350); else request();
@@ -1260,13 +1262,12 @@ function toggle(){
   if(v._want||!v.paused&&v.readyState) stopDead(v);
   else {
     if(mainLoadTimer){ clearTimeout(mainLoadTimer); mainLoadTimer=null; setClip(v,S,v._start); render(cur); }
-    v._want=v._resume=true; $("play").textContent="⏸ 暫停";
+    v._want=v._resume=true; syncPlay();
     if(!v._fetching){ if(v.readyState) cancelAlign(v); playSafe(v,$("badge")); }
   }
 }
 v.loop=true;
-v.addEventListener("playing",()=>{ if(v.paused||!v._want) return; $("play").textContent="⏸ 暫停"; tick(); });
-v.addEventListener("pause",()=>{if(!v.paused||v._want&&(v._reloading||v.error)) return; $("play").textContent="▶ 播放";});
+v.addEventListener("playing",()=>{ if(v.paused||!v._want) return; tick(); });
 v.addEventListener("seeked",()=>{ if(v.paused) render(frameOf(v.currentTime)); });
 $("play").onclick=toggle; $("prev").onclick=()=>goto(cur-1); $("next").onclick=()=>goto(cur+1);
 seek.oninput=()=>goto(+seek.value);
@@ -1333,12 +1334,11 @@ function cmpTick(){
 }
 vA.loop=true; vB.loop=false;
 for(const x of [v,vA,vB]) x.addEventListener("loadedmetadata",()=>{ x._blocked=false; });  // a tap lifted Low Power Mode's block; later loads show times again
-vA.addEventListener("playing",()=>{ if(vA.paused||!vA._want) return; $("cmpPlay").textContent="⏸ 暫停"; cmpTick(); });
-vA.addEventListener("pause",()=>{ if(!vA.paused||vA._want&&(vA._reloading||vA.error)) return; $("cmpPlay").textContent="▶ 同步播放"; });
+vA.addEventListener("playing",()=>{ if(vA.paused||!vA._want) return; cmpTick(); });
 function cmpStart(){
   if([vA,vB].some(x=>x.parentElement.querySelector(".vid-msg[data-fail]"))){ stopDead(vA); return; }
   vA._want=vB._want=vA._resume=vB._resume=true;
-  $("cmpPlay").textContent="⏸ 暫停";
+  syncPlay();
   if(vA._fetching||vB._fetching){ cmpWait(); return; }
   if(!vA.readyState||!vB.readyState){
     cmpWait();
@@ -1350,7 +1350,6 @@ function cmpStart(){
   if(!vB.seeking&&Math.abs(vB.currentTime-cmpBt())>1.5/FPS){ if(cmpInRange()) cmpWait(); vB.currentTime=cmpBt(); if(cmpInRange()) return; }
   vA.playbackRate=vB.playbackRate=cmpRate;
   playSafe(vA,$("badgeA")); if(cmpInRange()){ vB._edgeWait=false; playSafe(vB,$("badgeB")); } else cmpHoldEdge();
-  if(!vA.paused) $("cmpPlay").textContent="⏸ 暫停";
 }
 function cmpWait(){ for(const x of [vA,vB]){ x._reloading=x.src; x.pause(); } }
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&vA._want&&vB._want){ if(shown(vA)&&shown(vB)) cmpStart(); cmpTick(); } });
