@@ -7,6 +7,7 @@ s = session(); Wd = work(s); D = web(s); (D / "clips").mkdir(parents=True, exist
 r = load(Wd / "strokes_all.json")
 P = {key: np.load(track_file(Wd / key[0], "pose", key[1])) for key in {(x["video"], x.get("track", 0)) for x in r}}
 WP = {key: track_file(Wd / key[0], "pose_world", key[1]) for key in P}; WP = {key: np.load(p) for key, p in WP.items() if p.exists()}
+WP = {key: w for key, w in WP.items() if len(w) == len(P[key])}  # pose_world from another run: frames do not line up, use 2D only (as measure_full)
 for old in (D / "clips").glob("s*.mp4"): old.unlink()
 out = []
 for i, x in enumerate(r):
