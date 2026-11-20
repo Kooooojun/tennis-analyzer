@@ -108,6 +108,10 @@ class SourceGateTests(unittest.TestCase):
     def test_pose_method_gate_and_source_fps(self):
         r = self.cli(None, None); self.assertEqual(r.returncode, 0, r.stderr); baseline = np.load(self.d / "events.npy")
         self.assertEqual(len(baseline), 1)
+        # the lag goes next to events.npy: one sound, no ball track -> fallback 0, written and marked
+        lag = (self.d / "lag.txt").read_text(encoding="utf-8").split()
+        self.assertEqual(lag[0], "0"); self.assertIn("fallback", lag)
+        self.assertIn("sound lag 0 frames (fallback)", r.stdout)
         cases = [("24", None, False), ("24", "1", False), ("24", "2", True), ("24", "3", True),
                  ("24", "2.0", False), ("24", "bad", False), ("24", "directory", False),
                  ("24", "\ufeff2", True), ("\ufeff24", "2", True), ("60", "2", False), ("50", "2", False), (None, "2", False)]

@@ -7,7 +7,8 @@
 # Two candidates 0.6-0.9 s apart are a hit and its bounce or wall echo: the one with more low band and a faster hand stays.
 # A slower swing (HAND_LO, a scoop or self-fed start) counts only with a loud low band one rally beat from a normal hit.
 # For method >=2 poses below 50 source fps, the normal gate may fall to 3; a gate <=HAND_LO deliberately disables the slow tier.
-# Rows are (t, pk, on) like before, t moved back by the sound lag, measured per video from ball turns (estimate_lag).
+# Rows are (t, pk, on) like before, t moved back by the sound lag, measured per video from ball turns (estimate_lag);
+# the lag goes to lag.txt next to events.npy: `<frames>`, or `<LAG> fallback` (fewer than 3 matches, or they disagree).
 # With several tracked people (pose_t1.npy.. next to pose.npy) any tracked person's fast wrist confirms a hit; people the
 # pose model never sees (far doubles players) still cannot confirm theirs. A wrist is not trusted while its person's hip
 # jumps (HIP): the pose model hopping between bodies or body parts makes most false hits at rest.
@@ -93,14 +94,15 @@ def ball_turns(ball, wrists, aspect):
     return out
 
 
-def estimate_lag(hit_t, turns, lo=-3, hi=15):
+def estimate_lag(hit_t, turns, lo=-3, hi=15, default=LAG):
     """Sound lag in frames: median over hits of (sound frame - nearest ball turn lo..hi frames before it).
-    Falls back to LAG with fewer than 3 matches or when they disagree (IQR > 4 frames): one video, one offset."""
+    Falls back to `default` (LAG; None tells a fallback from a measured 0) with fewer than 3 matches or when they
+    disagree (IQR > 4 frames): one video, one offset."""
     turns = np.asarray(turns); d = []
     for t in hit_t:
         x = t * FPS - turns; x = x[(x >= lo) & (x <= hi)]
         if len(x): d.append(x.min())
-    if len(d) < 3 or np.subtract(*np.percentile(d, [75, 25])) > 4: return LAG
+    if len(d) < 3 or np.subtract(*np.percentile(d, [75, 25])) > 4: return default
     return int(round(np.median(d)))
 
 
@@ -156,7 +158,7 @@ def ball_windows(rows, hand, who, n):
 
 
 if __name__ == "__main__":
-    from platform_util import read_text, utf8_stdout
+    from platform_util import read_text, utf8_stdout, write_text
     utf8_stdout()
     if len(sys.argv) != 5: sys.exit("usage: events.py <sounds.npy> <ball.npy> <pose.npy> <events.npy>")
     rows, pp = np.load(sys.argv[1]).reshape(-1, 4), Path(sys.argv[3])
@@ -173,7 +175,11 @@ if __name__ == "__main__":
     w, h = size(pp.parent / "proxy.mp4"); ball = np.load(sys.argv[2]); n = min(len(ball), len(poses[0]))
     hand, who = hands(poses, w / h, who=True)
     wr = np.concatenate([np.where((q[:n, [15, 16], 2] > 0.2)[..., None], q[:n, [15, 16], :2], np.nan) for q in poses], axis=1)
-    lag = estimate_lag([r[0] for r in pick(rows, hand, lag=0, slack=15, who=who, low=False)], ball_turns(ball[:n], wr, w / h))
+    lag = estimate_lag([r[0] for r in pick(rows, hand, lag=0, slack=15, who=who, low=False)], ball_turns(ball[:n], wr, w / h),
+                       default=None)
+    fallback = lag is None; lag = LAG if fallback else lag
     out = np.array(pick(rows, hand, lag, who=who, source_fps=source_fps), dtype=np.float64).reshape(-1, 3)
+    # before events.npy: prep re-runs this only when events.npy is stale, so a crash in between must not lose the lag
+    write_text(Path(sys.argv[4]).parent / "lag.txt", f"{lag}{' fallback' if fallback else ''}\n")
     np.save(sys.argv[4], out)
-    print(f"{len(rows)} sound candidates -> {len(out)} hits, sound lag {lag} frames")
+    print(f"{len(rows)} sound candidates -> {len(out)} hits, sound lag {lag} frames{' (fallback)' if fallback else ''}")

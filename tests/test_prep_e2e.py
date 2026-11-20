@@ -110,7 +110,7 @@ r = prep("synth", "2"); assert r.returncode == 0
 assert "來源比例" not in r.stderr and "沒有 3D 姿態" not in r.stderr and "舊 work" not in r.stderr
 assert r.stdout.splitlines()[-1] == "ready: 2 videos -> work/synth", r.stdout
 assert (W / "videos.json").read_text(encoding="utf-8") == '["A x", "b"]\n'  # case-insensitive name order; a space stays inside one name
-want = {"proxy.mp4", "audio.f32", "audio_hp.f32", "pose.npy", "pose_world.npy", "people.txt", "sounds.npy", "ball.npy", "events.npy", "src_fps.txt", "pose_method.txt", "pose.log", "ball.log"}
+want = {"proxy.mp4", "audio.f32", "audio_hp.f32", "pose.npy", "pose_world.npy", "people.txt", "sounds.npy", "ball.npy", "events.npy", "src_fps.txt", "pose_method.txt", "pose.log", "ball.log", "lag.txt", "events.log"}
 for d in ("A x", "b"):
     got = {p.name for p in (W / d).iterdir()}
     assert got == want, (d, got ^ want)
@@ -119,6 +119,9 @@ import cv2, numpy as np
 for d in ("A x", "b"):
     assert np.load(W / d / "sounds.npy").shape == (1, 4), d
     assert np.load(W / d / "events.npy").shape == (0, 3), d
+    lag = (W / d / "lag.txt").read_text(encoding="utf-8").split()   # no hits: the lag falls back to 0, written and marked
+    assert lag[0] == "0" and "fallback" in lag, (d, lag)
+    assert "sound lag 0 frames (fallback)" in (W / d / "events.log").read_text(encoding="utf-8"), d
 c = cv2.VideoCapture(str(W / "A x" / "proxy.mp4")); assert (c.get(3), c.get(4)) == (540, 960), "portrait proxy"
 c = cv2.VideoCapture(str(W / "b" / "proxy.mp4")); assert (c.get(3), c.get(4)) == (960, 540)
 del c

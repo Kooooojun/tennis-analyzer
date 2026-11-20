@@ -1,5 +1,5 @@
 # candidates.py <session> — hit sounds where a tracked player's wrist swung, as contact sheets to label by eye.
-# Writes work/<s>/cands.json, sheet<idx>.jpg (one candidate each: 12 wide crops around the hit sound from the original video + 3 whole frames;
+# Writes work/<s>/cands.json, sheet<idx>.jpg (one candidate each: 12 wide crops around the estimated contact (hit sound - this video's lag) from the original video + 3 whole frames;
 # --legacy: the old sheets, 24 candidates per sheet, 5 frames each: -0.75s -0.42s -0.13s contact +0.2s)
 # and labels.txt with one "<idx> ? ?" line per candidate for you to fill in.
 # Several people tracked (prep.sh people > 1): first writes work/<s>/players.jpg (each tracked person over time) and a players.txt
@@ -19,7 +19,7 @@ from proxy import map_pose
 
 OFF = [-45, -25, -8, 0, 12]  # --legacy sheets: 24 candidates per sheet, 5 small square crops each
 PER_SHEET = 24
-OFF_NEW = [-12, -9, -6, -3, -2, -1, 0, 1, 2, 3, 6, 9]  # default sheets: one candidate per sheet, frames around the hit sound (60 fps)
+OFF_NEW = [-12, -9, -6, -3, -2, -1, 0, 1, 2, 3, 6, 9]  # default sheets: one candidate per sheet, frames around the estimated contact (60 fps)
 WHOLE = [-45, -20, 0]
 TILE = (375, 250)  # 4 x 3 crops + a row of whole frames = 1500 x 1000: small enough that an image reader does not shrink it
 LEGACY = "--legacy" in sys.argv[2:]
@@ -66,7 +66,7 @@ def text(t, s, y=22, c=(0, 255, 255)):
 
 
 def sheet(c, idx, Ps, mark, src, low, padded=False):
-    """One candidate, 1500x1000: 12 wide crops of the hitter around the hit sound (every 3 frames, every frame within 3), brightened,
+    """One candidate, 1500x1000: 12 wide crops of the hitter around the estimated contact, hit sound - lag (events.py) (every 3 frames, every frame within 3), brightened,
     cut from the original video when there is one (low: proxy only, the ball is about half as big); under them 3 whole frames
     (-45 -20 0: a feed toss, and who else is there). padded=True 時先反映射所有人的 proxy 姿態到原片。"""
     f = int(round(c["t"] * FPS))
@@ -81,8 +81,10 @@ def sheet(c, idx, Ps, mark, src, low, padded=False):
         L = min(float(np.linalg.norm(sh - hp)), H / 3) if np.isfinite([*sh, *hp]).all() else H / 6  # cap: a pose glitch must not ask for a gigapixel crop
         x0, y0, w, h = wide((sh + hp) / 2 if np.isfinite([*sh, *hp]).all() else wh / 2, max(L, H / 20), W, H)
         t = cv2.resize(brighten(cut(F[T[o]], x0, y0, w, h)), TILE, interpolation=cv2.INTER_AREA if w > TILE[0] else cv2.INTER_CUBIC)
-        text(t, f"{idx} {o:+d}" if o else f"{idx} v{c['vn']} {int(c['t'] // 60)}:{c['t'] % 60:04.1f} hit sound" + (f" @{c['player']}" if len(Ps) > 1 else ""))
-        if o == 0: t[:, :3] = t[:, -3:] = (0, 0, 255)
+        text(t, f"{idx} {o:+d}" if o else f"{idx} v{c['vn']} {int(c['t'] // 60)}:{c['t'] % 60:04.1f}" + (f" @{c['player']}" if len(Ps) > 1 else ""))
+        if o == 0:
+            text(t, "est. contact (sound-lag)", y=44)  # ASCII hyphen: putText cannot draw U+2212
+            t[:, :3] = t[:, -3:] = (0, 0, 255)
         row.append(t)
         if len(row) == 4: rows.append(np.hstack(row)); row = []
     gw = int(TILE[1] * W / H); g = []

@@ -57,6 +57,9 @@ assert estimate_lag(hits, [50, 170, 290, 410]) == 10                 # every sou
 assert estimate_lag(hits, [50, 170]) == LAG                          # too few matches -> default
 assert estimate_lag(hits, [59, 168, 285, 402]) == LAG                # matches disagree (1..18) -> default
 assert estimate_lag(hits, [50, 170, 290, 410, 100, 230]) == 10       # turns far from any hit are ignored
+assert estimate_lag(hits, [60, 180, 300, 420], default=None) == 0  # measured 0 (turn on the sound frame) is not a fallback
+assert estimate_lag(hits, [50, 170], default=None) is None           # fallback is told apart when asked
+assert estimate_lag(hits, [59, 168, 285, 402], default=None) is None
 
 # T8: a far, fragmented track seen only around the hit (25 of the 60 frames match used to need) still gets a row;
 # the other fragment, gone by the hit, does not
