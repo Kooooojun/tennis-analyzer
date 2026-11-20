@@ -55,7 +55,7 @@ def world(facing):
 
 
 def run_case(pose_world):
-    """回傳 (strokes_all 列, strokes_raw.json, refine 結果, strokes.json 或 None)。"""
+    """回傳 (strokes_all 列, strokes_raw.json, refine 結果, strokes.json 或 None, export 的 stderr 行)。"""
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         root = Path(tmp)
         shutil.copytree(ROOT / "tools", root / "tools", ignore=shutil.ignore_patterns("__pycache__"))
@@ -76,7 +76,7 @@ def run_case(pose_world):
         raw = json.loads((d / "strokes_raw.json").read_text(encoding="utf-8"))
         r = run("refine.py")
         fin = json.loads((d / "strokes.json").read_text(encoding="utf-8")) if r.returncode == 0 else None
-        return rows, raw, r, fin
+        return rows, raw, r, fin, e.stderr.splitlines()
 
 
 side, front = world("side"), world("front")
@@ -89,20 +89,23 @@ def check(name, cond, msg):
 
 
 # 同長：3D 照用，兩條路一致（側面 cam_az 90）
-rows, raw, r, fin = run_case(side)
+rows, raw, r, fin, warn = run_case(side)
+check("同長不警告", warn == [], warn)
 check("同長", r.returncode == 0 and all("world" in x for x in raw) and fin and
       all(s["knee3d"] is not None and s["cam_az"] == a["cam_az"] == 90 for s, a in zip(fin, rows)),
       (r.returncode, r.stderr[-300:], fin and [(s["knee3d"], s["cam_az"]) for s in fin]))
 
 # 較長（前段是另一輪、面向鏡頭的 3D）：不可錯位用 3D，要跟 strokes_all（measure_full）一樣是 None
-rows, raw, r, fin = run_case(np.concatenate([front, side]))
+rows, raw, r, fin, warn = run_case(np.concatenate([front, side]))
+check("較長警告", warn == [f"warning: video 1 track 0: pose_world has {2 * N} frames, pose has {N}; using 2D only"], warn)
 check("較長", r.returncode == 0 and not any("world" in x for x in raw) and fin and
       all(s[k] is None and a[k] is None for s, a in zip(fin, rows) for k in ("knee3d", "cam_az", "knee_warn")) and
       all(s["contact_fwd"] == a["contact_fwd"] is not None for s, a in zip(fin, rows)),
       (r.returncode, fin and [{k: s[k] for k in ("knee3d", "cam_az", "knee_warn", "contact_fwd")} for s in fin]))
 
 # 較短（第 2 拍片段只蓋到 30／150 格）：refine 不可 IndexError，整條 track 走 2D
-rows, raw, r, fin = run_case(side[:300])
+rows, raw, r, fin, warn = run_case(side[:300])
+check("較短警告", warn == [f"warning: video 1 track 0: pose_world has 300 frames, pose has {N}; using 2D only"], warn)
 check("較短", r.returncode == 0 and not any("world" in x for x in raw) and fin and
       all(s["knee3d"] is None and s["cam_az"] is None for s in fin),
       (r.returncode, r.stderr.strip().splitlines()[-1:] if r.stderr.strip() else "", [len(x.get("world") or []) for x in raw]))
