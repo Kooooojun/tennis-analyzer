@@ -78,7 +78,7 @@ python tools/run.py export_session.py <s>
 python tools/run.py strip.py <s> raw 1,2,3,...      # -> work/<s>/strip.jpg, frames -8..+4 around contact
 ```
 
-Contact times already have each video's sound lag taken out: prep measures it from ball turns next to the wrist and writes it to `work/<s>/<video>/lag.txt` (frames; `0 fallback` when fewer than 3 hits matched a ball turn or they disagreed, so that video's times are the raw sound, which reaches the camera a little after contact). Sessions prepped before `lag.txt` existed have no such file. Look at the strips in batches of 10–15 strokes and find the frame where the ball touches the strings; look harder at videos whose lag fell back. Write `work/<s>/refine.json`:
+Contact times already have each video's sound lag taken out: prep measures it from ball turns next to the wrist and writes it to `work/<s>/<video>/lag.txt` (frames; `0 fallback` when fewer than 3 hits matched a ball turn or they disagreed, so that video's times are the raw sound, which reaches the camera a little after contact). Sessions prepped before `lag.txt` existed have no such file; to get one, delete that video's `events.npy` and re-run prep (only events re-run, not pose or ball). Look at the strips in batches of 10–15 strokes and find the frame where the ball touches the strings; look harder at videos whose lag fell back. Write `work/<s>/refine.json`:
 
 ```json
 {"default_off": 0, "off": {"5": -21}, "drop": [39, 50], "set": {"65": {"drill": "rally"}}}
