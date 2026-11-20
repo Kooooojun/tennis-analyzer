@@ -229,8 +229,8 @@ G = score_session([dict(kind="FH", prep=0.4)] * 5 + [dict(kind="FH", prep=1.5, p
 assert G["n"] == 5 and G["median"] == 0.4, G
 # old sessions have no prep_trunc: a prep at the old 1.0 s window edge is the cut value, not a measurement -> left out too
 assert _value(dict(prep=1.0), "prep") is None and _value(dict(prep=0.999), "prep") is None and _value(dict(prep=0.98), "prep") == 0.98
-assert _value(dict(prep=1.0, prep_trunc=False), "prep") == 1.0
-assert _value(dict(prep=1.0, prep_trunc=None), "prep") is None  # export_session writes null for old strokes  # new sessions: a real 1.0 s
+assert _value(dict(prep=1.0, prep_trunc=False), "prep") == 1.0  # new sessions: a real 1.0 s
+assert _value(dict(prep=1.0, prep_trunc=None), "prep") is None  # null = no prep_trunc key: refined before it existed (refine recomputes it now)
 print("prep-trunc tests ok")
 # --- serve-form-view-gates: a front / back camera makes lean None; half the strokes usable = coverage 0.5 still scores
 G = score_session([dict(kind="FH", lean=5.0 + i) for i in range(6)] + [dict(kind="FH", lean=None)] * 6, False)[0]["metrics"]["lean"]
