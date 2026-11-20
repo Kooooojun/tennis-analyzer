@@ -20,7 +20,7 @@ Reply to the user in the language they write in. The page and reel text are Trad
 python tools/run.py prep.py <s> [people]
 ```
 
-`people` 是追蹤人數（預設 2，可用 1–4）。每支影片會在 `work/<s>/<video>/` 產生 proxy、音訊、每人的姿態、擊球聲、球軌（`ball.npy`，RacketVision）及事件（`events.npy`，聲音經任一人的手速確認，再由球軌估計聲音延遲）；`videos.json` 固定影片順序。姿態單人約即時，多人約半速。
+`people` 是追蹤人數（預設 2，可用 1–4）。每支影片會在 `work/<s>/<video>/` 產生 proxy、音訊、每人的姿態、擊球聲、球軌（`ball.npy`，RacketVision）及事件（`events.npy`，聲音經任一人的手速確認，再由球軌估計聲音延遲並扣掉；延遲存在 `lag.txt`，log 在 `events.log`）；`videos.json` 固定影片順序。姿態單人約即時，多人約半速。
 
 追球只推論第一輪擊球候選附近的原批次，窗外全 NaN；無候選時不載入或執行模型，仍解碼整片以保留輸出長度。省時幅度隨候選密度而變：研究中 Apple GPU 的對牆片耗時為全片 26.74%，30 fps 開發片為 62.77%（各一次，非通用速度保證，見 [視窗研究](../../../docs/research/ball-windows-continuity.md)）。全片推論參考值：Apple GPU 約每秒影片 2.4 秒；CPU 約 60–70 秒（僅 CI 機器量過）；CUDA 預期約 1–2 秒（未實測），直式約為橫式 4 倍。新版耗時要依候選批次估算；CPU 的 prep 提示會列出待推論格數，實際裝置與平均 ms/frame 見 `ball.log`。在背景執行並告知使用者預估；可中斷續跑。聲音或任一姿態軌更新時會重算球軌；輸入未更新的舊全片球軌仍可沿用。
 
@@ -44,11 +44,11 @@ If one row shows two different people, the tracker swapped them partway. Name th
 python tools/run.py candidates.py <s>
 ```
 
-This writes one sheet per candidate, `work/<s>/sheet<idx>.jpg` (1500×1000): 12 wide crops of the hitter around the hit sound (−12, −9, −6, −3, −2, −1, 0, +1, +2, +3, +6, +9 frames at 60 fps, brightened, cut from the original video in `videos/<s>/`), and under them the whole frame at −45, −20 and 0. Sessions without the original video get crops from `proxy.mp4` and say "proxy resolution only" (the ball is about half as big). `--legacy` (`tools/candidates.py <s> --legacy`) writes the old small sheets (24 candidates each, 5 square crops) instead. Read every sheet, in batches of about 10: read 10 sheets, write those 10 lines into labels.txt, then the next 10 (one sheet per candidate, so 100 candidates are 100 images; a batch keeps what you saw next to what you write). Fill `work/<s>/labels.txt`, one line per idx, in the form `idx kind drill [comment]`:
+This writes one sheet per candidate, `work/<s>/sheet<idx>.jpg` (1500×1000): 12 wide crops of the hitter around the estimated contact (−12, −9, −6, −3, −2, −1, 0, +1, +2, +3, +6, +9 frames at 60 fps, brightened, cut from the original video in `videos/<s>/`), and under them the whole frame at −45, −20 and 0. Frame 0 (red border, labelled `est. contact (sound-lag)`) is the hit sound moved back by this video's sound lag (`work/<s>/<video>/lag.txt`), not the raw sound. Sessions without the original video get crops from `proxy.mp4` and say "proxy resolution only" (the ball is about half as big). `--legacy` (`tools/candidates.py <s> --legacy`) writes the old small sheets (24 candidates each, 5 square crops) instead. Read every sheet, in batches of about 10: read 10 sheets, write those 10 lines into labels.txt, then the next 10 (one sheet per candidate, so 100 candidates are 100 images; a batch keeps what you saw next to what you write). Fill `work/<s>/labels.txt`, one line per idx, in the form `idx kind drill [comment]`:
 
 - **Keep a line only when you see the ball touch the racket** on that sheet: the ball on the strings, or just leaving them with its direction changed (it was coming in, now it goes back out). A hit sound plus a swinging arm is not proof: bounces, a ball dropped from the hand that falls past the racket, a swing while the ball is still in the other hand, shadow swings, the follow-through of the previous hit and picking a ball up all make a candidate. When you cannot see contact, write `x` and the reason as the comment: `x dropped` (ball fell past, untouched), `x in-hand` (ball still in the free hand during the swing), `x shadow` (swing with no ball near), `x follow-through` (end of the previous stroke), `x pickup` (picking up a ball, walking), `x no-swing`. A ball hidden behind the body at contact is not contact: look at the frames after it (+3 … +9) for the ball leaving the racket.
 - 複核完整動作後能定位真接觸就用 `refine.json` 的 `off` 修正；已確認擊球卻因畫外或遮擋無法定位接觸格，才在 `set` 標 `contact_untrusted: true` 並重跑 refine 與 score，假擊球仍標 `x`／`drop`。
-- A kind already filled in only means the backswing looked like that stroke (`kind_conf` ≥ `PREFILL_MIN` in tools/kind.py, currently 0.58). It is **not** evidence that the ball was hit: check contact on every line, prefilled or not. Fill every `?` yourself from its sheet; never replace them in bulk (`sed`, an editor's replace-all). `assemble.py` warns when there are 10 or more lines and under 3% of them are `x` (ignore it if every line really is a hit, e.g. a clean feeding drill).
+- A kind already filled in only means the backswing looked like that stroke (`kind_conf` ≥ `PREFILL_MIN` in tools/kind.py). It is **not** evidence that the ball was hit: check contact on every line, prefilled or not. Fill every `?` yourself from its sheet; never replace them in bulk (`sed`, an editor's replace-all). `assemble.py` warns when there are 10 or more lines and under 3% of them are `x` (ignore it if every line really is a hit, e.g. a clean feeding drill).
 - With several players each line is prefilled `idx <kind guess or ?> ? @name`: the person whose wrist swung most at that hit sound, named from players.txt. The sheet label shows the same `@name`, the crops follow that person, and the dot on the whole frames marks them. If the crops show a different person than the name says (a tracker swap), change the name. If the crops show someone who is not hitting, use `x`. A partner's shadow swing or ball bounce can look like a stroke while the other player really hit: check the whole frames.
 - `kind` is FH, BH, SV (serve), OH (overhead), or `x`. Use `x` also when it is not a player (another person the tracker jumped to) or a duplicate of the stroke just before.
 - `drill` is `feed` if the user tossed the ball to themselves (look at the whole frames −45 / −20: the ball is in their hand or a free hand is releasing it), `rally` if it came from the other side, `high` if it was self-fed high, `unsure` if you can't tell. SV takes no drill.
@@ -69,7 +69,7 @@ Then build the stroke list:
 python tools/run.py assemble.py <s>
 ```
 
-It validates labels.txt and lists the candidates where its automatic kind (`auto_kind`: FH/BH/SV/OH, or `?` = it would not guess) disagrees with yours. Re-check those on the sheet. `candidates.py` pre-fills the kind column of labels.txt with that guess when `kind_conf` >= `PREFILL_MIN` (currently 0.58; a guess about the stroke kind, not about contact: confirm it on the sheet, and fill in the drill). `assemble.py` also lists the FH/BH strokes with `kind_conf` below `PREFILL_MIN` (weak swing evidence: look again for contact). SV and OH are left out: their `kind_conf` is fixed below that line by design, so it says nothing about contact. It is reliable for forehands, much weaker for backhands, and only a hint for OH vs SV; see docs/research/stroke-classify.md.
+It validates labels.txt and lists the candidates where its automatic kind (`auto_kind`: FH/BH/SV/OH, or `?` = it would not guess) disagrees with yours. Re-check those on the sheet. `candidates.py` pre-fills the kind column of labels.txt with that guess when `kind_conf` >= `kind.PREFILL_MIN` (a guess about the stroke kind, not about contact: confirm it on the sheet, and fill in the drill). `assemble.py` also lists the FH/BH strokes with `kind_conf` below `PREFILL_MIN` (weak swing evidence: look again for contact). SV and OH are left out: their `kind_conf` is fixed below that line by design, so it says nothing about contact. It is reliable for forehands, much weaker for backhands, and only a hint for OH vs SV; see docs/research/stroke-classify.md.
 
 ## 3. Clips and contact frames (judgment)
 
@@ -78,11 +78,13 @@ python tools/run.py export_session.py <s>
 python tools/run.py strip.py <s> raw 1,2,3,...      # -> work/<s>/strip.jpg, frames -8..+4 around contact
 ```
 
-The hit sound arrives 1–3 frames after the ball meets the strings. Look at the strips in batches of 10–15 strokes and find the frame where the ball touches the strings. Write `work/<s>/refine.json`:
+Contact times already have each video's sound lag taken out: prep measures it from ball turns next to the wrist and writes it to `work/<s>/<video>/lag.txt` (frames; `0 fallback` when fewer than 3 hits matched a ball turn or they disagreed, so that video's times are the raw sound, which reaches the camera a little after contact). Sessions prepped before `lag.txt` existed have no such file; to get one, delete that video's `events.npy` and re-run prep (only events re-run, not pose or ball). Look at the strips in batches of 10–15 strokes and find the frame where the ball touches the strings; look harder at videos whose lag fell back. Write `work/<s>/refine.json`:
 
 ```json
-{"default_off": -2, "off": {"5": -21}, "drop": [39, 50], "set": {"65": {"drill": "rally"}}}
+{"default_off": 0, "off": {"5": -21}, "drop": [39, 50], "set": {"65": {"drill": "rally"}}}
 ```
+
+`default_off` moves every stroke of the session, so leave it at 0 (or out). Set it only when the strips show the same offset across the whole session; the lag differs per video, so fix single strokes with `off`.
 
 Numbers are raw stroke numbers (the numbers export printed). Use `drop` for false strokes you only notice now. Use `set` for relabels.
 

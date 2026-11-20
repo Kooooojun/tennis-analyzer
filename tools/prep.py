@@ -1,5 +1,6 @@
 # usage: python tools/prep.py <session> [people]   e.g. python tools/prep.py 2026-11-05   (people = max people to track, default 2)
-# For every video in videos/<session>/: 60fps proxy (540x960 portrait, 960x540 landscape), high-passed audio, pose (one file per tracked person), hit sounds, ball track, hit events (sound + ball).
+# For every video in videos/<session>/: 60fps proxy (540x960 portrait, 960x540 landscape), high-passed audio, pose (one file per tracked person), hit sounds, ball track, hit events (sound + ball;
+# the per-video sound lag in lag.txt, events.py's log in events.log).
 # Wrist motion per hit (match.py) runs in candidates.py, once the racket hand of each person is known.
 # Re-running skips finished steps, so it is safe to resume after an interruption; a step re-runs when its output is missing or an input is newer.
 # Every ffmpeg output is written to <name>.part first and renamed, so a killed run never leaves a half file that looks finished.
@@ -204,7 +205,7 @@ def main(argv):
                 wp = Path(tmp) / "windows.npy"; np.save(wp, windows)
                 py("ball.py", D / "proxy.mp4", D / "ball.npy", "--windows", wp, out=D / "ball.log")
         if stale(D / "events.npy", D / "sounds.npy", D / "ball.npy", *poses):
-            py("events.py", D / "sounds.npy", D / "ball.npy", pose, D / "events.npy", out=subprocess.DEVNULL)
+            py("events.py", D / "sounds.npy", D / "ball.npy", pose, D / "events.npy", out=D / "events.log")
     write_text(W / "videos.json", json.dumps(names) + "\n")
     print(f"ready: {len(names)} videos -> work/{S}")
 
