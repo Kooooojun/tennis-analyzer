@@ -7,9 +7,8 @@ s = session(); Wd = work(s); D = web(s); (D / "clips").mkdir(parents=True, exist
 r = load(Wd / "strokes_all.json")
 P = {key: np.load(track_file(Wd / key[0], "pose", key[1])) for key in {(x["video"], x.get("track", 0)) for x in r}}
 WP = {key: track_file(Wd / key[0], "pose_world", key[1]) for key in P}; WP = {key: np.load(p) for key, p in WP.items() if p.exists()}
-for (v, k), w in WP.items():
-    if len(w) != len(P[v, k]): print(f"warning: video {next(x['vn'] for x in r if x['video'] == v)} track {k}: pose_world has {len(w)} frames, pose has {len(P[v, k])}; using 2D only", file=sys.stderr)
-WP = {key: w for key, w in WP.items() if len(w) == len(P[key])}  # pose_world from another run: frames do not line up, use 2D only (as measure_full)
+for key in [key for key, w in WP.items() if len(w) != len(P[key])]:  # pose_world from another run: frames do not line up, use 2D only (as measure_full)
+    v, k = key; print(f"warning: video {next(x['vn'] for x in r if x['video'] == v)} track {k}: pose_world has {len(WP[key])} frames, pose has {len(P[key])}; using 2D only", file=sys.stderr); del WP[key]
 for old in (D / "clips").glob("s*.mp4"): old.unlink()
 out = []
 for i, x in enumerate(r):
