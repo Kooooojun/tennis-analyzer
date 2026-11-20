@@ -1,7 +1,7 @@
 # refine.py <session> — strokes_raw.json + work/<s>/refine.json -> web/sessions/<s>/strokes.json
 # Hit times in strokes_raw.json already have the per-video sound lag taken out (events.py estimate_lag); refine.json moves each contact to the right frame
 # (picked by eye from strip.py), relabels, and drops false strokes. Numbers in refine.json are raw stroke numbers (#1 = s00).
-#   {"default_off": -2, "off": {"5": -21}, "set": {"65": {"drill": "rally"}}, "drop": [39, 50]}
+#   {"default_off": 0, "off": {"5": -21}, "set": {"65": {"drill": "rally"}}, "drop": [39, 50]}
 # Always starts from strokes_raw.json, so re-running with an edited refine.json is safe.
 from common import session, work, web, load, save
 from metrics import measure_clip, arm_checks, form_checks
