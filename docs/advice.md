@@ -14,8 +14,8 @@
 
 | 縮寫 | 來源 | 讀到哪裡 |
 |---|---|---|
-| TA | Tennis Australia, *Technical and Tactical Fundamentals*（教練發展手冊）[PDF](https://www.tennis.com.au/wp-content/uploads/2014/11/Technical-and-Tactical-fundamentals-guidelines_low-res.pdf) | 全文 |
-| LTA | LTA〈How to play a tennis forehand〉[網頁](https://www.lta.org.uk/play/tennis-tips-and-techniques/how-to-play-a-tennis-forehand/) | 網頁內文 |
+| TA | Tennis Australia, *Technical Fundamentals*（2013，教練發展手冊）[PDF](https://www.tennis.com.au/wp-content/uploads/2014/11/Technical-and-Tactical-fundamentals-guidelines_low-res.pdf) | 全文 |
+| LTA | LTA〈How to hit a tennis forehand〉[網頁](https://www.lta.org.uk/play/tennis-tips-and-techniques/how-to-play-a-tennis-forehand/) | 網頁內文 |
 | USTA-G | USTA〈Get your forehand flowing〉（2018，USTA National Campus 教練）[網頁](https://www.usta.com/en/home/improve/tips-and-instruction/national/improve-your-tennis-game--get-your-forehand-flowing.html) | 網頁文字，影片沒看 |
 | USTA-P | USTA〈Tennis 101: The Forehand〉（2017，USTA Player Development）[網頁](https://www.usta.com/en/home/improve/tips-and-instruction/national/learning-the-basics--forehand.html) | 網頁 |
 | ITF-C | ITF 擊球修正檢核表（Crespo & Miley, *ITF Advanced Coaches Manual*, 1998）。原手冊沒拿到；內容取自用它做評量工具的論文（Frontiers in Sports and Active Living 2024，3 位教練現場評分，評分者間 ICC 0.97–0.98）[PMC11026554](https://pmc.ncbi.nlm.nih.gov/articles/PMC11026554/) | 論文全文 |
@@ -23,7 +23,7 @@
 | EF | Tapan, Şahan & Erman 2023，Frontiers in Psychology 14:1308244（60 位 10 歲兒童，外部焦點口令的瞄準分數在後測與保留測都較高）[PMC10721975](https://pmc.ncbi.nlm.nih.gov/articles/PMC10721975/) | 全文 |
 | SC | 本 repo [`docs/scoring.md`](scoring.md)（指標定義、閘門、驗證數字） | — |
 
-Nesbit 2008（膝角）與 Landlinger 2010（動力鏈）的出處與用法見 `docs/scoring.md`。
+Nesbit 2008（膝角）的出處與用法見 `docs/scoring.md`。Landlinger 2010（動力鏈順序）取自專案內部研究報告《網球分析關鍵指標》，未公開、這裡沒有連結。
 
 **口訣與練法的出處（老實標）**：有來源的只有 LTA 的「非持拍手指著球」、對牆練習、空揮；USTA-G 的「用非持拍手接球練轉身，再加上擊球」；TA／LTA／USTA-P／ITF-C 的擊球點用詞。表裡其他口訣（「打在前腳前」「先坐下去，再打」「收到左肩」「肚臍轉向網子」「每球都在同一個點碰」）和大部分練法是**自擬**：照教練共識的要點改寫成短句，沒有經過真教練驗證。
 
@@ -38,7 +38,7 @@ Nesbit 2008（膝角）與 Landlinger 2010（動力鏈）的出處與用法見 `
 | 3 | **蹲低／腿部負荷**：`knee3d`（沒有才用 `knee`）、`leg_load`（重心降低） | 膝角只有側面可信（正前／正後由 `knee_warn` 擋掉）；`leg_load` 比較不受水平視角影響 | 引拍時外側腳負重、擊球時腿往上推 | 「先坐下去，再打」 | 對牆／自拋：拋球後先蹲到對打時的高度再出手。對打：分腿跳後落地就蹲 | 正拍前膝角有實證（Nesbit 2008，SC）；「外側腳負重、腿部驅動」為教練共識（TA；REV 引 Nesbit、Seeley：膝的活動和拍速正相關） | `knee_warn`；對打跑動（量膝的窗會混進跑步跨步）；跨機位比絕對值；已經達到參考值（≤ 125°）時不當問題 |
 | 4 | **收拍完整**：`finish`（擊球後 0.5 秒內較高手腕高於肩多少） | 只在一個對牆側後方機位驗過（SC） | 收拍收到對側肩上方，代表揮拍有加速穿過球 | 「收到左肩，看手肘指前方」 | 對牆：每拍停住收拍姿勢一秒再回位。自拋同。對打：先求穩，不要求 | 教練共識但有分歧（TA「Racquet finishes over the opposite shoulder」；LTA 進階版收到非持拍手肩上，但對初學者說收拍可以短、像推）；實證弱（REV：「follow-through … poorly investigated」） | **數字不能單獨用**：試寫時看到收到對側肩的拍也讀到負值（手腕在肩下），只有看圖確認才能講；初學者控球階段不講 |
 | 5 | **擊球時手腕高度**：`contact_h` | 很受接觸格誤差影響（SC） | 球的理想高度約膝到腰（LTA），但那是球、不是手腕 | — | — | 單一來源意見（LTA）；SC 已把它降為只評一致性 | 幾乎都不該當主要的事；一致性低時先懷疑接觸格 |
-| 6 | **身體出力**：`wrist_speed`、`trunk_share`、`turn` | `wrist_speed` 跨機位差大；`trunk_share`、`turn` 只顯示（SC §11） | 只用手臂打（肩不動）是常見問題 | 「肚臍轉向網子」 | 自拋：先轉身再揮。對打：同 | 動力鏈順序有實證（Landlinger 2010，SC），但 30–60 fps 解析不到；「用手臂打」為教練意見 | `trunk_share`、`turn` 不計分，不能當主要的事；手速只比同機位 |
+| 6 | **身體出力**：`wrist_speed`、`trunk_share`、`turn` | `wrist_speed` 跨機位差大；`trunk_share`、`turn` 只顯示（SC §11） | 只用手臂打（肩不動）是常見問題 | 「肚臍轉向網子」 | 自拋：先轉身再揮。對打：同 | 動力鏈順序有實證（Landlinger 2010，內部研究報告），但 30–60 fps 解析不到；「用手臂打」為教練意見 | `trunk_share`、`turn` 不計分，不能當主要的事；手速只比同機位 |
 | 7 | **一致性**（同一欄位的 `cons`） | 同上各欄位 | 業餘者擊球點不穩是常態；重點是擊球那一刻的位置可重複（REV 引 Knudson 1990） | 「每球都在同一個點碰」 | 對牆定點；自拋同一個位置丟球 | 實證（REV：重要的是擊球時關節位置的可重複性） | 一組 < 10 拍；一致性分區間很寬；`contact_h` 的一致性（主要反映接觸格誤差） |
 | 8 | **看圖才看得出來**（沒有欄位，由分析者看四階段圖與縮圖） | 圖要拍到全身、球、球拍 | 非持拍手指球（LTA、TA）、拍子不舉超過頭（TA 正拍「Hitting hand does not raise above the head」）、分腿跳（ITF-C 第 3 項）、平衡（ITF-C 第 11 項） | 依項目 | 依項目 | 教練共識（依項目） | 只看到 1–2 拍；人在畫面邊緣被切掉；看圖結論要附拍號，並標「看圖觀察」 |
 | 9 | 不用的欄位 | — | — | — | — | — | `elbow`（單機肘角 p90 誤差 37–48°）；`showOpen` 不是 true 時的 `open_min`；`open_contact`（隨站姿合理變化） |
