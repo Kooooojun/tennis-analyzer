@@ -228,7 +228,7 @@ try{
 
      // 版面：桌機面板在影片旁邊（橫片、直片都是）；手機在影片下方
      for(const portrait of real?[null]:[false,true]){
-      if(portrait!=null)await page.evaluate(p=>{ALL.forEach(s=>{s.size=p?[360,640]:[640,360];});load(S.id,false);scrollTo(0,0);},portrait);
+      await page.evaluate(p=>{if(p!=null){ALL.forEach(s=>{s.size=p?[360,640]:[640,360];});load(S.id,false);}scrollTo(0,0);},portrait);
       const lay=await page.evaluate(()=>{const a=$('stage').getBoundingClientRect(),b=$('r3dCv').getBoundingClientRect();return {beside:b.left>=a.right-1&&b.top<a.bottom,below:b.top>=a.bottom-1};});
       check(mobile?lay.below:lay.beside,`${tag}：${portrait?'直':'橫'}片面板位置 ${JSON.stringify(lay)}`);
       check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tag}：${portrait?'直':'橫'}片面板打開時水平溢出`);

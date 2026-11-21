@@ -1324,8 +1324,13 @@ const sizeOf=s=>s.size||[540,960];
 const pts3=(s,f)=>s.world?.[f]||null;
 const pts2=(s,f)=>{ const fr=s.frames?.[f], [w,h]=sizeOf(s); return fr?fr.map(p=>[p[0]*w,p[1]*h,0]):null; };  // pixels: equal x/y units, like metrics.py _scale
 const minKnee=P=>Math.min(angle3(P,24,26,28)??180,angle3(P,23,25,27)??180);
+const IK_MIN=60*Math.PI/180;  // tightest knee the demo draws; real targets are 100–130°, so only a foreshortened 2D leg ever reaches it
 function kneeIK(P,drop,fwd=[0,0,-1]){  // P: 17 [x,y,z] points, y down. Feet stay, everything above the knees moves down by drop, each knee is re-solved with its thigh and shin lengths kept
   const sub=(a,b)=>a.map((x,i)=>x-b[i]), dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2], len=a=>Math.sqrt(dot(a,a));
+  for(const [h,k,a] of LEGS){  // cap the drop so neither knee folds past IK_MIN: past |thigh−shin| the leg cannot reach and would stretch (2D thighs can look very short)
+    const H=P[K[h]], A=P[K[a]], L1=len(sub(H,P[K[k]])), L2=len(sub(P[K[k]],A)), D2=L1*L1+L2*L2-2*L1*L2*Math.cos(IK_MIN), hz=(H[0]-A[0])**2+(H[2]-A[2])**2, vy=A[1]-H[1];
+    drop=Math.max(0,Math.min(drop,hz>=D2?vy:vy-Math.sqrt(D2-hz)));
+  }
   const Q=P.map((p,i)=>i>=K[27]?p.slice():i===K[25]||i===K[26]?null:[p[0],p[1]+drop,p[2]]);
   for(const [h,k,a] of LEGS){
     const H0=P[K[h]], Kn=P[K[k]], A=P[K[a]], L1=len(sub(H0,Kn)), L2=len(sub(Kn,A)), d=sub(Q[K[h]],A), dl=len(d)||1, u=d.map(x=>x/dl);
