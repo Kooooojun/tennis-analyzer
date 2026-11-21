@@ -1,5 +1,5 @@
 # strip.py --stages: one row per stroke, four tiles (準備 / 引拍 / 擊球 / 收拍), the whole skeleton drawn on the clip frame,
-# left side orange and right side blue, to check by eye that the body is not mirrored and the tracker did not follow someone else.
+# right side orange and left side blue (the same as the web page and the highlight reel), to check by eye that the body is not mirrored and the tracker did not follow someone else.
 # Synthetic only (cv2 writes the clips; no user footage). Cases follow testset/results/method-notes/pred.md, failure modes 6 and 7.
 import json, shutil, subprocess, sys, tempfile
 from pathlib import Path
@@ -47,19 +47,21 @@ def tiles(img, rows):
 
 
 def colour_near(tile, x, y, want):
-    """True when a pixel within 2 px of (x, y) in tile (BGR) is orange ('L') or blue ('R')."""
+    """True when a pixel within 2 px of (x, y) in tile (BGR) is blue ('L', the left side) or orange ('R', the right side)."""
     th, tw = tile.shape[:2]; px, py = int(x * tw), int(y * th)
     for dy in range(-2, 3):
         for dx in range(-2, 3):
             b, g, r = (int(v) for v in tile[py + dy, px + dx])
-            if want == "L" and r > 200 and r > b + 120: return True
-            if want == "R" and b > 200 and b > r + 120: return True
+            if want == "R" and r > 200 and r > b + 120: return True
+            if want == "L" and b > 200 and b > r + 120: return True
     return False
 
 
 # the old call keeps working (positional frame range, strip.jpg), with or without the new flag next to it
 run("1,2", "-8", "4", "2"); assert cv2.imread(str(T / "work" / s / "strip.jpg")).shape[0] == 2 * 200
-run("1", "--stages", "-8", "4", "2"); assert cv2.imread(str(T / "work" / s / "strip.jpg")) is not None, "the flag must not shift the positional arguments"
+for f in ("strip.jpg", "stages.jpg"): (T / "work" / s / f).unlink(missing_ok=True)  # the check must see this call's file, not the one left by the call above
+run("1", "--stages", "-8", "4", "2")
+assert cv2.imread(str(T / "work" / s / "stages.jpg")) is not None and not (T / "work" / s / "strip.jpg").exists(), "the flag makes stages.jpg, not a strip, and the frame numbers next to it are ignored"
 
 r = run("1,2,3,4", "--stages")
 out = T / "work" / s / "stages.jpg"; assert str(out.name) in r.stdout, r.stdout
@@ -72,7 +74,7 @@ for row in range(4):
         lost = (row == 1 and col == 3) or (row == 3 and col == 3)  # stroke 2 finish: tracker lost; stroke 4 finish: the clip ended, the last picture must not carry frame 90's skeleton
         for side, a, b in (("L", 1, 3), ("L", 3, 5), ("L", 7, 9), ("L", 9, 11), ("R", 2, 4), ("R", 4, 6), ("R", 8, 10), ("R", 10, 12)):
             x, y = mid(a, b)
-            assert colour_near(tile, x, y, side) == (not lost), (row, col, side, a, b)  # left orange / right blue; none where there is no skeleton
+            assert colour_near(tile, x, y, side) == (not lost), (row, col, side, a, b)  # left blue / right orange (as on the page); none where there is no skeleton
         if lost:  # nothing orange or blue anywhere: the gap is visible as a gap, not as a skeleton drawn at the corner
             hsv = cv2.cvtColor(tile, cv2.COLOR_BGR2HSV); assert not ((hsv[..., 1] > 150) & (hsv[..., 2] > 150))[30:].any()
 # a dark and a bright picture both carry the colours (checked above); the missing clip falls back to a plain mid-grey picture

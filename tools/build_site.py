@@ -16,12 +16,13 @@ POSE = ("frames", "world")  # per-frame arrays: ~99% of the bytes, only needed f
 def method_ver(s):
     """prep's work/<s>/<video>/versions.txt of every video, folded into one dict for the page's method note.
     None when no video has a readable one (old work dirs: the page says 未記錄); `recorded` of `videos` folders had it."""
-    names = load(work(s) / "videos.json", False)  # the session's own videos; a folder left behind by a removed video does not count
+    try: names = load(work(s) / "videos.json", False)  # the session's own videos; a folder left behind by a removed video does not count
+    except (OSError, ValueError): names = None  # empty or broken file: count the folders instead, never stop the whole build
     dirs = [work(s) / n for n in names if (work(s) / n).is_dir()] if isinstance(names, list) else [p for p in work(s).glob("*") if p.is_dir()]; recs = []
     for p in dirs:
         f = p / "versions.txt"
         kv = dict(l.split("=", 1) for l in f.read_text(encoding="utf-8", errors="replace").splitlines() if "=" in l) if f.is_file() else {}  # never exits: a bad file is just "not recorded"
-        if kv.get("mediapipe") and all(kv.get(k, "").isdigit() for k in ("pose_frames", "pose_detected", "pose_interpolated")): recs.append(kv)
+        if kv.get("mediapipe") and all(kv.get(k, "").isdecimal() for k in ("pose_frames", "pose_detected", "pose_interpolated")): recs.append(kv)
     if not recs: return None
     same = lambda k: " / ".join(sorted({r[k] for r in recs if r.get(k)}))  # videos made with different versions list every one
     total = lambda k: sum(int(r[k]) for r in recs)

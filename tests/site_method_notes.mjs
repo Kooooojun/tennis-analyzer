@@ -10,6 +10,8 @@ const f=await fixture();
 const failures=[],check=(ok,msg)=>{if(!ok)failures.push(msg);};
 const DISCLAIMER='這是練習參考，不能代替教練或醫療判斷。';
 const METHOD={mediapipe:'1.1.1 / 1.2.0',model:'pose_heavy.task',sha256:'ab'.repeat(32),url:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task',method:'4',frames:1000,detected:840,interpolated:60,videos:3,recorded:2};
+const METHOD_2997={...METHOD,frames:1000,detected:9,interpolated:991,videos:1,recorded:1};  // 29.97 fps：60 fps 格線和來源格幾乎不重合，幾乎每格都是內插；不能看起來像「只偵測到 9 格」
+const METHOD_60={...METHOD,frames:1000,detected:900,interpolated:0,videos:1,recorded:1};  // ≥50 fps：沒有內插，不寫「其中 0 格」
 const poseJs=(id,frames)=>`POSE("synthetic",${id},${JSON.stringify({frames})});`;
 const full=Array.from({length:17},(_,i)=>[.3+(i%3)*.1,.2+i*.025,.99]);
 const zeros=Array.from({length:17},()=>[0,0,0]);  // 全 0 的骨架仍是骨架；null 才是沒偵測到
@@ -55,7 +57,7 @@ try{
      await context.close();
     }
     // ---- 方法說明：舊場次（欄位不存在／null）與有版本紀錄 ----
-    for(const [name,methodVer] of [['舊 data.js（沒有欄位）',undefined],['methodVer 為 null',null],['有版本紀錄',METHOD]]){
+    for(const [name,methodVer] of [['舊 data.js（沒有欄位）',undefined],['methodVer 為 null',null],['有版本紀錄',METHOD],['29.97 fps',METHOD_2997],['60 fps',METHOD_60]]){
      const {page,context,errors}=await open(browser,{...opts,methodVer});
      await page.evaluate(()=>go(DAY,'overview'));
      const note=(await page.locator('#methodNote').textContent()).replace(/\s+/g,' ');
@@ -63,14 +65,18 @@ try{
      check(!/undefined|null|NaN/.test(note),`${tag} ${name}：方法說明不能出現 undefined／null／NaN：「${note}」`);
      if(methodVer){
       check(note.includes('1.1.1 / 1.2.0')&&note.includes('pose_heavy.task')&&note.includes('abababababab')&&note.includes('https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task'),`${tag} ${name}：版本、模型檔、sha256 前 12 碼、來源要寫出來：「${note}」`);
-      check(/1000/.test(note)&&/840/.test(note)&&/60/.test(note)&&/內插/.test(note),`${tag} ${name}：有骨架與內插格數：「${note}」`);
-      check(/3 支中 2 支有紀錄/.test(note),`${tag} ${name}：只有部分影片有紀錄要講「3 支中 2 支有紀錄」：「${note}」`);
+      const want={'有版本紀錄':['有骨架 900 格','其中 60 格是低 fps 換成 60 fps 時內插的','其餘 100 格沒偵測到人'],'29.97 fps':['有骨架 1000 格','其中 991 格是低 fps 換成 60 fps 時內插的','其餘 0 格沒偵測到人'],'60 fps':['有骨架 900 格','其餘 100 格沒偵測到人']}[name];
+      for(const w of want)check(note.replace(/\s/g,'').includes(w.replace(/\s/g,'')),`${tag} ${name}：方法說明要寫「${w}」：「${note}」`);
+      check(/1000/.test(note),`${tag} ${name}：總格數 1000：「${note}」`);
+      check(!/偵測\s*\d/.test(note),`${tag} ${name}：不再單獨列「偵測 N」（29.97 fps 會看起來像沒抓到）：「${note}」`);
+      check(name==='60 fps'?!/內插/.test(note):/內插/.test(note),`${tag} ${name}：內插只在真的有內插格時才寫：「${note}」`);
+      check(name==='有版本紀錄'?/3 支中 2 支有紀錄/.test(note):!/支中/.test(note),`${tag} ${name}：只有部分影片有紀錄要講「3 支中 2 支有紀錄」，全有就不講：「${note}」`);
       check(!note.includes('未記錄'),`${tag} ${name}：有紀錄時不寫未記錄：「${note}」`);
      }else check(note.includes('未記錄'),`${tag} ${name}：舊場次要寫「未記錄」：「${note}」`);
      check(/3D 估計.*單鏡頭.*僅供參考/.test(await page.locator('#overview').textContent()),`${tag} ${name}：總覽原有的 3D 估計說明不能被擠掉`);
      check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tag} ${name}：總覽無水平溢出`);
      check(!errors.length,`${tag} ${name}：總覽錯誤 ${errors}`);
-     if(process.env.SITE_RESULTS&&methodVer!==null){fs.mkdirSync(process.env.SITE_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.SITE_RESULTS,`${engine.name()}-${opts.mobile?'mobile':'desktop'}-method-${methodVer?'recorded':'unrecorded'}.png`),fullPage:true});}
+     if(process.env.SITE_RESULTS&&methodVer!==null&&(!methodVer||methodVer===METHOD)){fs.mkdirSync(process.env.SITE_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.SITE_RESULTS,`${engine.name()}-${opts.mobile?'mobile':'desktop'}-method-${methodVer?'recorded':'unrecorded'}.png`),fullPage:true});}
      await context.close();
     }
     // ---- 免責句（總覽與建議）與暫定標示 ----

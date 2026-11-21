@@ -59,6 +59,17 @@ assert (m["mediapipe"], m["frames"], m["detected"], m["interpolated"], m["videos
 (T / "work" / s / "old").mkdir(); (T / "work" / s / "videos.json").write_text('["v1", "v2", "v3"]', encoding="utf-8")  # "old" is a folder of a removed video
 m = built_ver()
 assert (m["videos"], m["recorded"]) == (3, 2), m
+# a count that only looks like digits (superscript two: str.isdigit() is True, int() raises) is "not recorded", never a crash of the whole build
+good3 = (T / "work" / s / "v3" / "versions.txt").read_text(encoding="utf-8")
+(T / "work" / s / "v3" / "versions.txt").write_text(good3.replace("pose_interpolated=0", "pose_interpolated=\u00b2"), encoding="utf-8")
+m = built_ver(); assert (m["videos"], m["recorded"], m["frames"]) == (3, 1, 100), m
+(T / "work" / s / "v1" / "versions.txt").write_text(base + "pose_frames=100\npose_detected=\u00b2\npose_interpolated=10\n", encoding="utf-8")
+assert built_ver() is None  # no readable record left
+(T / "work" / s / "v3" / "versions.txt").write_text(good3, encoding="utf-8")
+# an empty or broken videos.json does not stop the build either: the page folders are counted instead (v1 is still unreadable, v2 non-UTF-8, v3 fine)
+for bad in ("", "{not json", "\xff"):
+    (T / "work" / s / "videos.json").write_text(bad, encoding="utf-8", errors="surrogateescape")
+    m = built_ver(); assert (m["videos"], m["recorded"]) == (4, 1), (bad, m)  # v1, v2, v3 and the leftover "old"
 shutil.rmtree(T.parent)
 print("ok")
 
@@ -208,7 +219,9 @@ if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "site_i112_web.mjs")], check=True)
     # Without SITE_E2E_URL these build their own synthetic fixture; with it they expect a real two-session copy.
     # site_card_medians 驗新行為，在 SITE_REF（修改前的網頁）上本來就會失敗，所以只在跑工作區網頁時執行。
-    for name in ["site_advice_uncertainty", "site_score_uncertainty", "site_score_count", "site_knee_estimate", "site_method_notes"] + ([] if os.environ.get("SITE_REF") else ["site_card_medians"]):
+    # site_method_notes 同理（#146 的做法）：驗方法說明與單拍格數的新行為，舊網頁上必紅。
+    if os.environ.get("SITE_REF"): print("skipped site_card_medians.mjs, site_method_notes.mjs: they check new behaviour, SITE_REF runs the old page")
+    for name in ["site_advice_uncertainty", "site_score_uncertainty", "site_score_count", "site_knee_estimate"] + ([] if os.environ.get("SITE_REF") else ["site_card_medians", "site_method_notes"]):
         subprocess.run(["node", str(R / "tests" / (name + ".mjs"))], check=True,
                        env={**{k: v for k, v in os.environ.items() if k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-" + name))} if os.environ.get("SITE_RESULTS") else {})})
 

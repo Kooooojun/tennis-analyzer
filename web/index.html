@@ -727,7 +727,7 @@ function methodNote(d){  // 方法說明：套件／模型版本與骨架格數�
   if(!m) return `方法說明：套件與模型版本未記錄（這場在版本紀錄功能出現前處理，沒有為此重跑）。${lim}`;
   const model=[m.model,m.sha256&&`sha256 ${m.sha256.split(" / ").map(x=>x.slice(0,12)).join(" / ")}`,m.url&&`來源 ${m.url}`].filter(Boolean).join("，");
   const seen=m.detected+m.interpolated;
-  return `方法說明：MediaPipe ${m.mediapipe}${model?`，姿勢模型 ${model}`:""}${m.recorded<m.videos?`（${m.videos} 支中 ${m.recorded} 支有紀錄）`:""}。主要追蹤的人 ${m.frames} 格中有 ${seen} 格有骨架（偵測 ${m.detected}、低 fps 來源換到 60 fps 時內插 ${m.interpolated}），其餘 ${m.frames-seen} 格沒偵測到人。${lim}`;
+  return `方法說明：MediaPipe ${m.mediapipe}${model?`，姿勢模型 ${model}`:""}${m.recorded<m.videos?`（${m.videos} 支中 ${m.recorded} 支有紀錄）`:""}。主要追蹤的人共 ${m.frames} 格（60 fps），有骨架 ${seen} 格${m.interpolated?`（其中 ${m.interpolated} 格是低 fps 換成 60 fps 時內插的）`:""}，其餘 ${m.frames-seen} 格沒偵測到人。${lim}`;
 }
 const fpsLow = d => d.srcFps!=null && d.srcFps<50;  // build_site.py srcFps: lowest source fps from prep.sh; missing = old session, not shown
 function drawOverview(){

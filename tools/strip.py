@@ -2,7 +2,7 @@
 # frame where ball meets strings (for refine.json) or to double-check a label. Default frames -8..+4 around the stored contact.
 # -> work/<s>/strip.jpg
 # strip.py <session> <raw|final> "no,no,.." --stages — the pre-labelling skeleton check: one row per stroke, four whole frames
-# (ready, backswing end, contact, finish) with the full skeleton drawn on them, left side orange and right side blue. Look for a body
+# (ready, backswing end, contact, finish) with the full skeleton drawn on them, right side orange and left side blue (the same as the web page and the highlight reel). Look for a body
 # that is mirrored (colours swap sides while the person does not) or a skeleton on someone else. -> work/<s>/stages.jpg
 import sys, cv2, numpy as np
 from common import FPS, PORTRAIT, session, work, web, load
@@ -15,7 +15,7 @@ D = web(s); d = load(D / ("strokes_raw.json" if which == "raw" else "strokes.jso
 
 if STAGES:
     TH, MINVIS = 320, 0.3  # tile height; landmarks below this visibility are not drawn (annotate.py uses the same)
-    LEFT, RIGHT, MID = (30, 150, 255), (255, 130, 30), (230, 230, 230)  # BGR orange / blue / neutral
+    LEFT, RIGHT, MID = (255, 130, 30), (30, 150, 255), (230, 230, 230)  # BGR blue / orange / neutral: right orange, left blue, like web/index.html and highlights.py
     # the 17 points of common.KEEP: odd index = left side (landmark 11, 13, 15, 23, ...), even = right. A bone inside one side takes that side's colour.
     BONES = [(1, 2), (1, 3), (3, 5), (2, 4), (4, 6), (1, 7), (2, 8), (7, 8), (7, 9), (9, 11), (8, 10), (10, 12), (11, 13), (13, 15), (11, 15), (12, 14), (14, 16), (12, 16)]
 
