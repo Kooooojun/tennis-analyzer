@@ -184,7 +184,8 @@ if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "site_contact_untrusted.mjs")], check=True)
     subprocess.run(["node", str(R / "tests" / "site_i112_web.mjs")], check=True)
     # Without SITE_E2E_URL these build their own synthetic fixture; with it they expect a real two-session copy.
-    for name in ["site_advice_uncertainty", "site_score_uncertainty", "site_score_count", "site_knee_estimate"]:
+    # site_card_medians 驗新行為，在 SITE_REF（修改前的網頁）上本來就會失敗，所以只在跑工作區網頁時執行。
+    for name in ["site_advice_uncertainty", "site_score_uncertainty", "site_score_count", "site_knee_estimate"] + ([] if os.environ.get("SITE_REF") else ["site_card_medians"]):
         subprocess.run(["node", str(R / "tests" / (name + ".mjs"))], check=True,
                        env={**{k: v for k, v in os.environ.items() if k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-" + name))} if os.environ.get("SITE_RESULTS") else {})})
 
