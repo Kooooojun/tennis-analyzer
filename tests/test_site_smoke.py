@@ -54,6 +54,11 @@ assert m == dict(mediapipe="1.1.1", model="pose_heavy.task", sha256="ab" * 32, u
 vid("v3", base.replace("1.1.1", "1.2.0") + "pose_frames=50\npose_detected=40\npose_interpolated=0\n")
 m = built_ver()
 assert (m["mediapipe"], m["frames"], m["detected"], m["interpolated"], m["videos"], m["recorded"]) == ("1.1.1 / 1.2.0", 150, 120, 10, 3, 2), m
+# a versions.txt that is not UTF-8 (saved by another tool) is "not recorded", never a crash of the whole build; videos.json decides which folders count
+(T / "work" / s / "v2" / "versions.txt").write_bytes(b"\xff\xfem\x00e\x00")
+(T / "work" / s / "old").mkdir(); (T / "work" / s / "videos.json").write_text('["v1", "v2", "v3"]', encoding="utf-8")  # "old" is a folder of a removed video
+m = built_ver()
+assert (m["videos"], m["recorded"]) == (3, 2), m
 shutil.rmtree(T.parent)
 print("ok")
 

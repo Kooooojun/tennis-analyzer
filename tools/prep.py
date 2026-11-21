@@ -204,7 +204,9 @@ def main(argv):
             if k.isdigit() and int(k) >= N: delete(t)
         if stale(pose, D / "proxy.mp4"):
             py("pose_full.py", D / "proxy.mp4", R / "models" / "pose_heavy.task", pose, N, V, log=D / "pose.log")
-            write_text(D / "versions.txt", pose_versions(R / "models" / "pose_heavy.task", pose, V))
+            try: write_text(D / "versions.txt", pose_versions(R / "models" / "pose_heavy.task", pose, V))
+            except (Exception, SystemExit) as e:  # a side record must never cost the pose run that just finished (ffprobe or package metadata failing)
+                print(f"警告：{n} 沒寫 versions.txt（{e}）；頁面會寫「未記錄」", file=sys.stderr)
         elif not pt.is_file(): print("舊 work 目錄沒有人數紀錄，沿用現有姿態；要重跑請刪 pose.npy", file=sys.stderr)
         write_text(pt, f"{N}\n"); write_text(pm, f"{POSE_METHOD}\n")
         missing_world = [p.name for p in sorted(D.glob("pose*.npy"))

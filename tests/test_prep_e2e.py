@@ -52,6 +52,20 @@ def test_pose_frame_counts():
     assert prep_module.pose_frame_counts(np.zeros((6, 33, 4)), 30.0) == (6, 6, 3)  # a skeleton of zeros is still a skeleton
 
 
+def test_versions_failure_keeps_pose():
+    """Recording versions is a side effect: when it fails, the pose run that just finished is kept (no pose_method.txt-less redo) and prep goes on."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d); (root / "videos" / "v").mkdir(parents=True); (root / "videos" / "v" / "clip.mp4").touch(); err = io.StringIO()
+        with patch.object(prep_module, "R", root), patch.object(prep_module, "need_ffmpeg"), \
+             patch.object(prep_module, "probe", return_value=(1920, 1080, 60)), patch.object(prep_module, "h264_args", return_value=[]), \
+             patch.object(prep_module, "stale", side_effect=lambda p, *a: p.name == "pose.npy"), patch.object(prep_module, "py"), \
+             patch.object(prep_module, "pose_versions", side_effect=SystemExit("ffprobe could not read")), contextlib.redirect_stderr(err):
+            prep_module.main(["v", "1"])
+        W = root / "work" / "v" / "clip"
+        assert not (W / "versions.txt").exists() and (W / "pose_method.txt").is_file(), list(W.iterdir())  # prep went on and wrote its usual records
+        assert "沒寫 versions.txt" in err.getvalue(), err.getvalue()
+
+
 def audio_commands(streams):
     with tempfile.TemporaryDirectory() as d:
         root = Path(d); (root / "videos" / "audio").mkdir(parents=True)
@@ -85,6 +99,7 @@ def test_duration_fallback():
 test_empty_audio()
 test_duration_fallback()
 test_pose_frame_counts()
+test_versions_failure_keeps_pose()
 
 tmp = Path(tempfile.mkdtemp(prefix="prep_e2e_")); R = tmp / "repo"
 shutil.copytree(REPO / "tools", R / "tools", ignore=shutil.ignore_patterns("__pycache__"))

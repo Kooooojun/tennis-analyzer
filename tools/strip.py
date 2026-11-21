@@ -19,7 +19,7 @@ if STAGES:
     # the 17 points of common.KEEP: odd index = left side (landmark 11, 13, 15, 23, ...), even = right. A bone inside one side takes that side's colour.
     BONES = [(1, 2), (1, 3), (3, 5), (2, 4), (4, 6), (1, 7), (2, 8), (7, 8), (7, 9), (9, 11), (8, 10), (10, 12), (11, 13), (13, 15), (11, 15), (12, 14), (14, 16), (12, 16)]
 
-    def stage_tile(im, pose, label):
+    def stage_tile(im, pose, label, none="no skeleton"):
         t = cv2.resize(im, (round(im.shape[1] * TH / im.shape[0]), TH)); h, w = t.shape[:2]
         pt = lambda q: (int(q[0] * w), int(q[1] * h))
         ok = pose is not None and sum(q[2] >= MINVIS for q in pose) > 0
@@ -29,7 +29,7 @@ if STAGES:
                 cv2.line(t, pt(pose[a]), pt(pose[b]), (0, 0, 0), 7, cv2.LINE_AA); cv2.line(t, pt(pose[a]), pt(pose[b]), col, 3, cv2.LINE_AA)  # dark outline: readable on bright and dark pictures
         for q in pose if ok else []:
             if q[2] >= MINVIS: cv2.circle(t, pt(q), 5, (0, 0, 0), -1, cv2.LINE_AA); cv2.circle(t, pt(q), 3, (255, 255, 255), -1, cv2.LINE_AA)
-        if not ok: cv2.putText(t, "no skeleton", (w // 2 - 50, h // 2), 0, 0.6, (200, 200, 200), 2)
+        if not ok: cv2.putText(t, none, (w // 2 - 50, h // 2), 0, 0.6, (200, 200, 200), 2)
         cv2.putText(t, label, (4, 18), 0, 0.55, (0, 255, 255), 2)
         return t
 
@@ -44,12 +44,14 @@ if STAGES:
             ok, im = cap.read()
             if not ok: break
             if i in {k for _, k in wanted}: got[i] = im
-        if got and any(k not in got for _, k in wanted):  # the clip ended early: its last frame stands in
+        if cap is not None: cap.release()
+        real = set(got)
+        if got and any(k not in got for _, k in wanted):  # the clip ended early: its last frame stands in, without a skeleton (it belongs to another frame)
             last = got[max(got)]; got = {k: got.get(k, last) for _, k in wanted}
         if not got:
             print(f"沒有原片 {clip.name}：#{n} 畫在灰底上，看不出有沒有追錯人", file=sys.stderr)
             Ww, Hh = r.get("size") or PORTRAIT; blank = np.full((Hh, Ww, 3), 96, np.uint8); got = {k: blank.copy() for _, k in wanted}
-        rows.append(np.hstack([stage_tile(got[k], r["frames"][k], f"#{n} {name} {k - c:+d}") for name, k in wanted]))
+        rows.append(np.hstack([stage_tile(got[k], r["frames"][k] if k in real or not real else None, f"#{n} {name} {k - c:+d}", "no skeleton" if k in real or not real else "clip ended") for name, k in wanted]))
     width = max(x.shape[1] for x in rows)  # clips of different shapes: pad on the right
     out = work(s) / "stages.jpg"; out.parent.mkdir(parents=True, exist_ok=True)
     imwrite(out, np.vstack([np.pad(x, ((0, 0), (0, width - x.shape[1]), (0, 0))) for x in rows])) or sys.exit(f"could not write {out}"); print(out)

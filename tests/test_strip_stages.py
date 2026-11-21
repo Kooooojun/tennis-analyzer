@@ -24,9 +24,13 @@ body = [[*P[i], 1.0] for i in range(17)]
 frames = lambda hole=(): [None if f in hole else body for f in range(N)]
 common = dict(kind="FH", contact=C, prep=0.5, size=[W, H])
 clip("black.mp4", 0); clip("white.mp4", 255)
+w = cv2.VideoWriter(str(D / "clips" / "short.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 60, (W, H))  # ends at frame 80: the finish tile (frame 90) has no picture
+for _ in range(80): w.write(np.full((H, W, 3), 0, np.uint8))
+w.release()
 strokes = [dict(id=0, src="clips/black.mp4", frames=frames(), **common),
            dict(id=1, src="clips/white.mp4", frames=frames(hole=range(80, N)), **common),  # tracker lost the person after contact
-           dict(id=2, src="clips/gone.mp4", frames=frames(), **common)]  # the clip file is missing
+           dict(id=2, src="clips/gone.mp4", frames=frames(), **common),  # the clip file is missing
+           dict(id=3, src="clips/short.mp4", frames=frames(), **common)]
 (D / "strokes.json").write_text(json.dumps(strokes), encoding="utf-8")
 
 
@@ -57,22 +61,22 @@ def colour_near(tile, x, y, want):
 run("1,2", "-8", "4", "2"); assert cv2.imread(str(T / "work" / s / "strip.jpg")).shape[0] == 2 * 200
 run("1", "--stages", "-8", "4", "2"); assert cv2.imread(str(T / "work" / s / "strip.jpg")) is not None, "the flag must not shift the positional arguments"
 
-r = run("1,2,3", "--stages")
+r = run("1,2,3,4", "--stages")
 out = T / "work" / s / "stages.jpg"; assert str(out.name) in r.stdout, r.stdout
-img = cv2.imread(str(out)); th, tw = tiles(img, 3)
+img = cv2.imread(str(out)); th, tw = tiles(img, 4)
 assert "沒有原片" in r.stderr or "沒有原片" in r.stdout, "a missing clip is reported, not silent"
 mid = lambda a, b: ((P[a][0] + P[b][0]) / 2, (P[a][1] + P[b][1]) / 2)
-for row in range(3):
+for row in range(4):
     for col in range(4):
         tile = img[row * th:(row + 1) * th, col * tw:(col + 1) * tw]
-        lost = row == 1 and col == 3  # stroke 2, 收拍: no skeleton in that frame
+        lost = (row == 1 and col == 3) or (row == 3 and col == 3)  # stroke 2 finish: tracker lost; stroke 4 finish: the clip ended, the last picture must not carry frame 90's skeleton
         for side, a, b in (("L", 1, 3), ("L", 3, 5), ("L", 7, 9), ("L", 9, 11), ("R", 2, 4), ("R", 4, 6), ("R", 8, 10), ("R", 10, 12)):
             x, y = mid(a, b)
             assert colour_near(tile, x, y, side) == (not lost), (row, col, side, a, b)  # left orange / right blue; none where there is no skeleton
         if lost:  # nothing orange or blue anywhere: the gap is visible as a gap, not as a skeleton drawn at the corner
             hsv = cv2.cvtColor(tile, cv2.COLOR_BGR2HSV); assert not ((hsv[..., 1] > 150) & (hsv[..., 2] > 150))[30:].any()
 # a dark and a bright picture both carry the colours (checked above); the missing clip falls back to a plain mid-grey picture
-means = [img[row * th:(row + 1) * th, :tw].mean() for row in range(3)]
+means = [img[row * th:(row + 1) * th, :tw].mean() for row in range(4)]
 assert means[0] < 70 and means[1] > 180 and 40 < means[2] < 140, means
 print("ok")
 shutil.rmtree(T.parent)
