@@ -223,8 +223,9 @@ if os.environ.get("SITE_E2E_URL"):
     # site_card_medians 驗新行為，在 SITE_REF（修改前的網頁）上本來就會失敗，所以只在跑工作區網頁時執行。
     # site_method_notes 同理（#146 的做法）：驗方法說明與單拍格數的新行為，舊網頁上必紅。
     # site_trend_per_player 同理（#152）：每位球員各一張比較表，舊網頁混在一起，必紅。
-    if os.environ.get("SITE_REF"): print("skipped site_card_medians.mjs, site_method_notes.mjs, site_trend_per_player.mjs: they check new behaviour, SITE_REF runs the old page")
-    for name in ["site_advice_uncertainty", "site_score_uncertainty", "site_score_count", "site_knee_estimate"] + ([] if os.environ.get("SITE_REF") else ["site_card_medians", "site_method_notes", "site_trend_per_player"]):
+    # site_drill_diff_cite 同理（#159）：drill_diff 引用的小標籤，舊網頁顯示 undefined，必紅；只跑合成場次（真實副本沒有這種引用）。
+    if os.environ.get("SITE_REF"): print("skipped site_card_medians.mjs, site_method_notes.mjs, site_trend_per_player.mjs, site_drill_diff_cite.mjs: they check new behaviour, SITE_REF runs the old page")
+    for name in ["site_advice_uncertainty", "site_score_uncertainty", "site_score_count", "site_knee_estimate"] + ([] if os.environ.get("SITE_REF") else ["site_card_medians", "site_method_notes", "site_trend_per_player", "site_drill_diff_cite"]):
         subprocess.run(["node", str(R / "tests" / (name + ".mjs"))], check=True,
                        env={**{k: v for k, v in os.environ.items() if k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-" + name))} if os.environ.get("SITE_RESULTS") else {})})
     # 3D replay (#145): synthetic skeletons first, then the real session copy at SITE_E2E_URL; like site_card_medians, not on SITE_REF (the page before it).

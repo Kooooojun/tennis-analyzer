@@ -147,7 +147,7 @@ Write `web/sessions/<s>/notes.json`:
 
 After the findings, give each player **one** main thing to practise (at most one second thing), or say plainly that the data are not enough. Rules, the framework table and sources: `docs/advice.md`. Steps per player:
 
-1. Pick one candidate with `docs/advice.md` (the four gates, then the order). Compare two drills with ≥ 10 usable strokes each (`check_findings.py` enforces it for `main`), or cite a scored metric (the check accepts it whatever its n, so make sure the group has ≥ 10 yourself).
+1. Pick one candidate with `docs/advice.md` (the four gates, then the order). Compare two drills with ≥ 10 usable strokes each (`check_findings.py` enforces it for `main`; you can cite `drill_diff` directly, e.g. `{"kind": "FH", "drill_diff": "contact_fwd", "stat": "diff", "value": -0.25}`, and when its interval contains 0 the text must say 不確定 or 暫定), or cite a scored metric (the check accepts it whatever its n, so make sure the group has ≥ 10 yourself).
 2. Look at it: `python tools/run.py strip.py <s> final "N,N,N,N" --stages` on at least 3 strokes of that player (both sides of a comparison). Put the stroke numbers you looked at in `look`. If the picture does not show it (for example the turn is early although `prep` is short), drop the candidate.
 3. Nothing passes → `insufficient` plus `film_next` (camera at the side about 90°, whole body in the middle of the frame, 30+ strokes of one kind, a stand-still fed set). You may still add a `second`: one strength to keep or one picture observation, marked 看圖觀察.
 
