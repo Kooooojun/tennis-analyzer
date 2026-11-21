@@ -116,6 +116,12 @@ async function view(browser,engine,label,opts){
   // Esc 關、焦點回按鈕
   await page.locator('#viewBtn').click();await page.locator('#skel').focus();await page.keyboard.press('Escape');
   check(!(await menu(page)).open&&await page.evaluate(()=>document.activeElement.id==='viewBtn'),`${tag} Esc 要關、焦點回 #viewBtn：${await page.evaluate(()=>document.activeElement.id)}`);
+  // 焦點在 body（Safari 點按鈕不給焦點）時 Esc 也要關
+  await page.locator('#viewBtn').click();await page.evaluate(()=>document.activeElement.blur());await page.keyboard.press('Escape');
+  check(!(await menu(page)).open,`${tag} 焦點不在選單裡按 Esc 也要關`);
+  // 焦點在「顯示」按鈕按 Shift+Tab：離開選單就關
+  await page.locator('#viewBtn').click();await page.locator('#viewBtn').focus();await page.keyboard.press('Shift+Tab');
+  check(!(await menu(page)).open,`${tag} 在「顯示」按鈕按 Shift+Tab 要關`);
   // 點外面關
   await page.locator('#viewBtn').click();await page.mouse.click(2,2);
   check(!(await menu(page)).open,`${tag} 點外面要關`);

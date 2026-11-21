@@ -185,7 +185,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   input[type=range]{margin:6px 0 0}
   .now{margin-top:6px}
   .controls{gap:4px;margin-top:6px;flex-wrap:wrap}
-    .controls button,.now button{padding:7px 7px;font-size:12.5px;white-space:nowrap;flex:none}
+  .controls button,.now button{padding:7px 7px;font-size:12.5px;white-space:nowrap;flex:none}
   .phase-badge{top:auto;bottom:8px;right:8px}
   .controls .sep,.controls .hint{display:none}
   .controls select{padding:7px 26px 7px 7px;font-size:12.5px}
@@ -1440,9 +1440,9 @@ $("viewBtn").onclick=()=>viewMenu($("viewPanel").hidden);
 addEventListener("pointerdown",e=>{ if(!$("viewPanel").hidden&&!e.target.closest("#viewBtn,#viewPanel")) viewMenu(false); });
 for(const el of [$("viewBtn"),$("viewPanel")]) el.addEventListener("keydown",e=>{
   const P=$("viewPanel");
-  if(e.key==="Escape"&&!P.hidden){ viewMenu(false); $("viewBtn").focus(); }
-  else if(e.key==="Tab"&&el===P&&(e.shiftKey?e.target===P.firstElementChild:e.target===P.lastElementChild)) viewMenu(false);  // 走出選單就收起來；不看 focusout，因為 Safari 點按鈕不會給焦點
+  if(e.key==="Tab"&&(el===P?(e.shiftKey?e.target===P.firstElementChild:e.target===P.lastElementChild):e.shiftKey)) viewMenu(false);  // 走出選單就收起來；不看 focusout，因為 Safari 點按鈕不會給焦點
 });
+addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("viewPanel").hidden){ viewMenu(false); $("viewBtn").focus(); } });  // 掛在 document：Safari 點按鈕不給焦點，焦點在 body 時 Esc 也要能關
 tg("skel","skel"); tg("guides","guides"); tg("trail","trail");
 $("theme").onclick=()=>{ const r=document.documentElement, dark=matchMedia("(prefers-color-scheme: dark)").matches; const now=r.dataset.theme||(dark?"dark":"light"); r.dataset.theme=now==="dark"?"light":"dark"; document.querySelectorAll('meta[name="theme-color"]').forEach(m=>m.content=css("--bg")); render(cur); };
 $("chart").addEventListener("click",e=>{ const r=e.currentTarget.getBoundingClientRect(); goto(e.currentTarget._map(e.clientX-r.left)); });
