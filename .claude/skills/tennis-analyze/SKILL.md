@@ -12,6 +12,8 @@ Run everything from the repo root with `python tools/run.py <script> ...` (it ru
 Write files (labels.txt, profiles.json, findings, players.txt) with the Write tool, never with shell redirection (`>`, `Set-Content`): on Windows those write UTF-16 or ANSI and the scripts stop with an encoding error.
 Keep every command on one line: no `$(...)`, no `VAR=1` prefixes, forward slashes in paths, so the same command works in zsh and PowerShell. A session is a folder name under `videos/`, conventionally the date (`2026-11-05`).
 
+Before the first analysis of a session, tell the user once: a single camera's 3D pose is an estimate that camera angle and occlusion change; it helps find what to practise, and it does not replace a coach or medical judgment. The page says the same (「這是練習參考，不能代替教練或醫療判斷。」).
+
 Reply to the user in the language they write in. The page and reel text are Traditional Chinese; write findings and reel text in the user's language if it differs.
 
 ## 1. Prepare
@@ -76,7 +78,10 @@ It validates labels.txt and lists the candidates where its automatic kind (`auto
 ```
 python tools/run.py export_session.py <s>
 python tools/run.py strip.py <s> raw 1,2,3,...      # -> work/<s>/strip.jpg, frames -8..+4 around contact
+python tools/run.py strip.py <s> raw 1,12,24,... --stages   # -> work/<s>/stages.jpg, the four-stage skeleton check
 ```
+
+Look at the four-stage check once per session, before you trust any number, and again after `refine.py` if you dropped or moved strokes. Pick about six strokes across the videos, forehand and backhand, and every tracked person. Each row is one stroke at ready, backswing end, contact and finish, with the whole skeleton on the original frame: left side orange, right side blue. Check by eye that the colours stay on the same side of the body along the row (orange on the player's left, also when the player turns) and that the skeleton is on the player, not on someone else. A body whose left/right labels are all swapped together is caught by neither `pose_jump` nor `lr_swap` (docs/scoring.md §3.1, known gap 1), so this picture is the only check. If a row is wrong: a wrong person goes into `drop` in refine.json; for a swapped body name the strokes in the notes `caveat` and do not cite their left/right-dependent numbers (hand, turn, knee side). Without the original clip the tiles are grey and only the colours can be checked, so find the clip first.
 
 Contact times already have each video's sound lag taken out: prep measures it from ball turns next to the wrist and writes it to `work/<s>/<video>/lag.txt` (frames; `0 fallback` when fewer than 3 hits matched a ball turn or they disagreed, so that video's times are the raw sound, which reaches the camera a little after contact). Sessions prepped before `lag.txt` existed have no such file; to get one, delete that video's `events.npy` and re-run prep (only events re-run, not pose or ball). Look at the strips in batches of 10–15 strokes and find the frame where the ball touches the strings; look harder at videos whose lag fell back. Write `work/<s>/refine.json`:
 
@@ -101,7 +106,7 @@ Compute what matters from `web/sessions/<s>/strokes.json`. Each stroke has these
 - `player`: who hit it (`me` for single-player sessions). Compare and score each player separately.
 - `knee`: the 10th-percentile knee angle 0.8–0.1 s before contact. Lower means more bent. ≤130 is good, >150 is nearly straight.
 - `contact_h`：擊球時手腕高度（2D），接觸格附近五格（前後各兩格）的中位數。資料以肩髖長為單位，顯示乘以 100：髖＝0、肩＝100（身體傾斜時肩的垂直投影略低）。只評一致性，不給絕對分；保留可見度閘門。30–80 只可標中性色「參考（暫定）」，不能當理想區間或要求打在腰到胸。LTA 正拍教材約膝到腰的建議因來球而異，是教練教材而非實驗結論，且描述球的位置，不能套作手腕高度目標。
-- `knee3d` (same window on the 3D skeleton, null for sessions without `pose_world.npy`) and `knee_warn` (true when the angle is unreliable for that stroke; `knee_warn_why` says why: `"gap"` = |knee3d - knee| > 20°, `"view"` = the camera is within 30° of straight in front or behind, from `cam_az`, the estimated camera azimuth 0 = front, 90 = side, 180 = behind). Neither 2D nor 3D knee angles are view-proof: side-on is the most accurate, and front/back views get no knee number. The web page and reel show `knee3d` when present. Thresholds above were set on 2D `knee`; 3D reads about 9° lower on average.
+- `knee3d` (same window on the 3D skeleton, null for sessions without `pose_world.npy`) and `knee_warn` (true when the angle is unreliable for that stroke; `knee_warn_why` says why: `"gap"` = |knee3d - knee| > 20°, `"view"` = the camera is within 30° of straight in front or behind, from `cam_az`, the estimated camera azimuth 0 = front, 90 = side, 180 = behind). Neither 2D nor 3D knee angles are view-proof: side-on is the most accurate. Front/back views still get `knee` and `knee3d`, and the page shows them with a warning, but they are not scored and cannot be cited (`knee_warn` excludes them, docs/scoring.md §8). The web page and reel show `knee3d` when present. Thresholds above were set on 2D `knee`; 3D reads about 9° lower on average.
 - `prep`: seconds from backswing end (hitting wrist furthest back relative to the hips, searched 1.0 s before contact; when the furthest-back frame is the window start it is followed back until the wrist moves forward again, up to 1.5 s) to contact. Longer means the racket was ready earlier. On 對牆影片 A it matched hand-picked frames within 2 frames (median). `prep_trunc: true` = still furthest back at the clip start, the time is a lower bound (show it as ≥, left out of the score). Camera within 30° of front / behind: prep uses the 3D swing direction and `contact_fwd` is null.
 - `contact_fwd`: wrist ahead of the hip centre along the swing direction at contact, in torso lengths (same unit as `contact_h`). Its spread across strokes is the contact-point consistency. It moves about 0.1 per frame of contact error, so set refine.json contacts carefully before reading the spread, and compare only same-camera sessions.
 - `serve_arm_straight` (SV) and `bh_elbow_ok` / `bh_front_ok` (one-handed BH: the player's `"backhand": "one"` in `work/<s>/profiles.json`, names it does not list fall back to `work/profiles.json`; a lefty uses the left arm): true / false / null (null = cannot tell from this view). They are checks, not scores, and the page shows them as grey reference only (never pass/fail: no bent arm was caught in test data, so do not cite a null or true as "fine"); rules in docs/scoring.md §9. Forehands get none.
@@ -130,7 +135,7 @@ Write `web/sessions/<s>/notes.json`:
 ```
 
 - `camera` decides comparability. Sessions with the same camera text can be compared in absolute numbers. A phone on the ground close to the player makes knees read about 15° straighter than a raised phone behind the baseline.
-- Filming advice for the user: put the camera at the player's side (about 90° to the direction they face), still, whole body in frame. Straight behind or in front gives the worst knee angles (CalTennis: back 2D 34°, 3D 22° median error) and those strokes get no knee number.
+- Filming advice for the user: put the camera at the player's side (about 90° to the direction they face), still, whole body in frame. Straight behind or in front gives the worst knee angles (CalTennis: back 2D 34°, 3D 22° median error) and those strokes' knee numbers are shown with a warning, not scored and not citable.
 - Set `showOpen` to true only when the camera is roughly behind the player at hip height or higher (shoulder turn needs that view; knees will then mostly be gated).
 - Every finding needs `cite`: the numbers it states (single stroke, group stat or score), checked by the script below. Formats: `docs/scoring.md` §8.
 - At most 5 findings, each tied to stroke numbers the user can click; with thin evidence write fewer, never add a problem to fill the count. Mark the good ones `good: true`. Use `info: true` for neutral notes. Good and info findings need `cite` too: every finding is checked, with no exemption.
@@ -167,6 +172,24 @@ python tools/run.py build_site.py
 ```
 
 Open `web/index.html` (`python tools/run.py open web/index.html`) and look at it before you report. Check that the findings, jump buttons, compare presets and reel all work.
+
+## Reply format
+
+After `check_findings.py` passes and you have looked at the page, reply in this order:
+
+1. One sentence: what the session showed.
+2. A table with the columns 問題／數據／目標／練習, one row per problem finding in `notes.json` (at most 5; fewer is fine). 數據: the numbers its `cite` backs, with the stroke numbers. 目標: only the user's own good strokes or rally median, and only when the finding cites that number; otherwise 「—」. 練習: the one concrete action and how to check it next time (same camera position, which field); no reps or sets. A row needs at least two strokes or an n ≥ 3 group, the same rule as the finding itself.
+3. What went well: the `good: true` findings, with stroke numbers.
+4. Where the result is and how to use it: `web/index.html`, the tabs, the jump buttons, the reel when you made one.
+5. Next-shoot advice (the 1–3 lines from section 4, 推論 marked).
+
+## Precision and run record
+
+- Candidate sheets are cut from the original video, but strips and clips come from the 60 fps proxy (a source below 50 fps has repeated frames there). When a contact frame matters, confirm it on an original-frame sheet; a proxy or a lower frame rate does not replace that.
+- A single camera's world landmarks are a model's estimate, not a calibrated 3D measurement: no fixed angle error is guaranteed, and the page labels them 「3D估」.
+- `prep.py` writes `work/<s>/<video>/versions.txt` when it runs pose: mediapipe version, pose model file with its sha256 and download URL, the pose method, and the frame counts (60 fps rows, rows with a skeleton, rows made by interpolating a source below 50 fps). `build_site.py` shows them in the overview's method note, and each stroke shows 「這拍有效骨架 N／M 格」. A session prepped before this has no file: the page says 未記錄; do not re-run prep for it.
+- If `models/` files or Python packages are missing (`setup.py` or `prep.py` fails), report the step that cannot be done. Never substitute another session's or an existing demo recording for this analysis.
+- A practice target names its source and limits (the user's own strokes, or the cite); a number without a source is not a target.
 
 ## Answering questions later
 
