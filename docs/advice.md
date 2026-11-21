@@ -113,7 +113,8 @@ Nesbit 2008（膝角）的出處與用法見 `docs/scoring.md`。Landlinger 2010
 `check_findings.py` 的核對（不過就 exit 1，`build_site.py` 也不寫檔）：
 
 - `title`、`why`、`practice`、`cue` 裡的數字照 finding 文字的規則都要有 `cite` 對得上；`#NN` 與 `jump` 的拍號要存在；進退步詞彙照舊核對。
-- `main` 至少要有**這位球員**的一個 metric 引用（`stat` 不是 `n`，或 `total` 等分組分數），或一個比較：同一欄位、同一拍種、兩種不同 `drill` 的 median／mean 引用，各 ≥ 10 拍可用（`MAIN_MIN_N`，暫定）。metric 引用不看拍數，門檻 1 的「每組 ≥ 10 拍」要自己確認。`jump` 每項是 `[拍號, 標籤]`。
+- `main` 至少要有**這位球員**的一個 metric 引用（`stat` 不是 `n`，或 `total` 等分組分數），或一個比較：同一欄位、同一拍種、兩種不同 `drill` 的 median／mean 引用，各 ≥ 10 拍可用（`MAIN_MIN_N`，暫定）；**也可以直接引 `drill_diff`**（`stat` 是 `diff`、`ci_lo` 或 `ci_hi`，格式見 `docs/scoring.md` §8；兩邊各 ≥ 10 拍才有值，不夠就報錯）。metric 引用不看拍數，門檻 1 的「每組 ≥ 10 拍」要自己確認。`jump` 每項是 `[拍號, 標籤]`。
+- 引用 `drill_diff` 的 `diff`／`ci_lo`／`ci_hi` 而區間含 0 時，文字要寫「不確定」或「暫定」（同「差值不能當成確定的事」），否則報錯。區間含 0 又沒有第二場同機位同方向，挑選規則門檻 1 仍不讓它當主要的事，那是分析者的事。
 - `insufficient` 不能和 `main` 同時出現，一定要有 `film_next`。
 - 每位球員最多一筆；`main`、`second` 各是一個物件（不能塞陣列）。
 - 問題型 finding（不是 `info`、不是 `good`）只要有引用 `prep`（`field` 或 `metric`），就必須有 `look`（≥ 3 個存在的拍號）。finding 的 `look` 可省；寫了就照同樣規則核對。

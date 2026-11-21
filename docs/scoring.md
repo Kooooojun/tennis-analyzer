@@ -200,7 +200,7 @@
 - **拍數門檻**：自拋與對打**各自**過閘門後都要 ≥ 10 拍（`MIN_N_DRILL`），否則 `diff`、`ci`、`sem` 為 `null`，`reason` 寫哪一邊幾拍。中位數與拍數（`feed`、`rally`）仍照給，方便看缺多少。發球沒有自拋／對打之分，整個 `drill_diff.metrics` 為 `null`，`reason` 寫原因。
 - **區間**：沿用第 7 節的做法：每支影片內有放回重抽原拍數 1000 次，自拋與對打各抽各的；種子同 `BOOTSTRAP_SEED`，每組重新建亂數產生器，依影片首次出現的順序抽，同一輸入可逐位重現。每次重抽重新套（逐拍的）品質閘門、各取中位數相減；和第 7 節的整組重抽不同的三處：膝角來源用整組定一次、重抽時不重新判定；**不套 `MIN_COVER`**（可用拍數 / 該組拍數 ≥ 50%），所以該指標 `status` 是「資料不足」時 `drill_diff` 仍可能有值，使用前要自己再看 `status`；重抽依「練習類型 × 影片」分層，每邊拍數固定。`ci` 是第 2.5、97.5 百分位，`sem` 是樣本標準差（`ddof=1`），`valid`／`samples` 同第 7 節。任何一次重抽有一邊沒有可用的拍，`ci`、`sem` 為 `null`（不補零），`reason` 說明。`feed`／`rally` 的中位數、`diff`、`ci`、`sem` 都取 3 位（`diff` 先用未四捨五入的中位數相減，所以和兩個中位數相減最多差 0.001）。
 - **怎麼讀**：區間含 0 就不能說兩種練習有差；`contact_fwd` 差 < 0.2 與接觸格誤差（錯 1 格約差 0.1）同量級，要看圖確認。這是同一場內的抽樣誤差，不含機位、跑動（對打的膝與準備時間可能混進跑步動作）和接觸格判定誤差；跨場、跨機位不比。
-- **版本**：只多一個欄位，沒有改錨點、閘門或公式，**`SCORE_VERSION` 不升**（維持 10），既有 `total`、`form`、`consistency`、`metrics`、`uncertainty` 逐位不變。`score_session(..., with_uncertainty=True)` 才算 `drill_diff`（它也是 bootstrap）；純評分呼叫沒有這個欄位。網頁、`check_findings`、`notes.json` 目前都不讀它。
+- **版本**：只多一個欄位，沒有改錨點、閘門或公式，**`SCORE_VERSION` 不升**（維持 10），既有 `total`、`form`、`consistency`、`metrics`、`uncertainty` 逐位不變。`score_session(..., with_uncertainty=True)` 才算 `drill_diff`（它也是 bootstrap）；純評分呼叫沒有這個欄位。`check_findings` 讀它（第 8 節的 `drill_diff` 引用）；網頁目前不讀。
 
 ```json
 "drill_diff": {"direction": "自拋 − 對打（feed − rally）", "min_n": 10, "reason": null,
@@ -219,18 +219,21 @@
 | 單拍 | `{"stroke": 5, "field": "knee3d", "value": 119.4}` | `strokes.json` 第 5 筆（拍號 = 頁面 `#05`，從 1 數，不是 `id` 欄位） |
 | 群組統計 | `{"kind": "FH", "drill": "feed", "field": "knee3d", "stat": "median", "value": 155}` | 從 `strokes.json` 過品質閘門重算；`stat` = median／mean／min／max／n；`player` 預設 me，`drill` 省略 = 全部 |
 | 分數 | `{"kind": "FH", "metric": "knee", "stat": "score", "value": 6.3}` | `scores.json`；`stat` = median／spread／n／score／cons，`metric` 也可是 total／form／consistency |
+| 自拋減對打 | `{"kind": "FH", "drill_diff": "contact_fwd", "stat": "diff", "value": -0.15}` | `scores.json` 該組的 `drill_diff.metrics`（第 7.2 節）；`drill_diff` = `contact_fwd`／`knee`／`contact_h`／`prep`；`stat` = `diff`（自拋 − 對打）／`ci_lo`／`ci_hi`（區間下、上界）／`feed`／`rally`（兩邊的中位數）；`player` 預設 me |
 | 跨場方向 | `{"kind": "FH", "metric": "total", "value": 7.6, "change": "up"}` | 同一分數的正式走勢與 SEM；`change` 只接受 up／down，分項一致性加 `stat: "cons"`，不接受單拍或原始統計引用 |
 
 規則：
 
 - 容許四捨五入：引用值是實際值照「引用自己的小數位數」四捨五入的結果（寫 155 接受 154.5–155.5；寫 0.5 接受 0.45–0.55）。
+- `drill_diff` 引用的值照上面的容差核對（`diff` 與 `ci_lo`／`ci_hi` 是帶正負號的 `-0.15`，文字也要寫帶負號的數字；文字裡寫了區間端點就要分別引 `ci_lo`、`ci_hi`）。該組沒有 `drill_diff`（舊 `scores.json`，或發球）、metric 或 stat 不存在、`diff` 或 `ci` 是 `null`（一邊 < 10 拍，或重抽有一邊沒有可用的拍），都報錯，訊息附 `drill_diff` 的 `reason`；沒有區間就不能引 `diff`。`feed`／`rally` 中位數不要求 `diff` 存在。
+- **區間含 0（`ci_lo ≤ 0 ≤ ci_hi`，含貼著 0）時，引用 `diff`／`ci_lo`／`ci_hi` 的 finding（標題＋文字）不能寫成確定的差**：文字裡要有「不確定」「暫定」「不能確定」「無法判定」「不能當成確定」或「區間含 0」之一，否則報錯。選「要求字樣」而不是一律擋，是因為 `docs/advice.md` 允許區間含 0 但同人同機位另一場同方向時仍可講（那條是分析者的事，檢查器看不到別場）；區間不含 0 不要求。檢查器不判斷整句是不是真的是不確定語氣，只認字樣。
 - 被品質閘門排除的值（`knee_warn`、`vis < 0.5`、2D `knee` 的 `knee2d_ok == false`、`showOpen` 不是 true 時的 `open_min`）、空值、`null` 分數都不能引用。`elbow` 一律不能引用（單機肘角 p90 誤差 37–48°）。
 - 引用的拍或組不存在、群組統計沒有任何可用拍，都報錯。沒有 `cite` 也報錯。
 - 文字裡每個「數字＋°」必須跟某個引用值差在 0.5 以內；文字或 `jump` 裡的 `#NN` 必須存在。所以句子裡寫了角度就一定要有對應引用。
 - 文字裡每個「數字＋%」「數字＋秒」和不帶單位的小數（`0.27`、`9.0`）也要對得上某個引用值，照文字自己的小數位數四捨五入（寫 `0.43 秒` 接受 0.425–0.435）；`%` 另外接受引用值 ×100（`contact_h` 0.53 寫成 `53%`）。所以這些數字也一定要有引用。
 - 不檢查：整數不帶 °／%／秒（`62 拍`、`3 次`、`2 支`，是計數）、`#12` 拍號、範圍裡的數字（`0.3–0.8`、`1-10`、`75%-85%`，是目標不是引用）；但帶 ° 的範圍（`154–156°`、`120°-130°`）兩端都照角度核對。範圍中間的連字號不算負號；半形 `-` 只有兩側都沒有空白才算範圍（`0.5 -0.20` 的 `-0.20` 是負數，要引用）。`1:04.8` 這種時間不會被拆出假小數；半形逗號只有後面接 3 位數才算千分位（`1,234.5` 整個不核對，`7.6,9.0` 的兩個數都要引用）。
 - 限制：一般範圍（不帶 °）兩端都不核對，所以把引用值寫成範圍的一端不會被抓到；帶 °／%／秒的整數與不帶單位的小數一律要有引用。
-- 問題型 finding（沒有 `good: true` 也沒有 `info: true`）不能只靠單拍，至少要有下列其一：① 一個 `metric` 引用——`stat` 不是 `n`（含 `total`／`form` 等分組分數）就算，`stat: "n"` 時 scores.json 該指標的 `n` 要 ≥ `score.MIN_N`（3）；② 一個 `stat` 群組統計引用：`stat` 只認 `median`／`mean`（`min`／`max`／`n` 等於單拍值或只是計數，不算），`field` 必須是 `score.METRICS` 的量測欄位或 `knee3d`（`id`、`elbow` 等不算），這條引用不可帶 `metric` 鍵，且重算時過品質閘門的可用拍數 ≥ `score.MIN_N`；③ 兩個以上**不同拍號**的單拍引用（同一拍引用兩個欄位只算一拍）。帶 `stroke` 的引用永遠是單拍；帶 `metric` 的引用多出來的 `field` 不看。不足時 `check_findings.py` 報「問題型 finding 至少要有…」。`good`／`info` 照舊，單拍就夠。
+- 問題型 finding（沒有 `good: true` 也沒有 `info: true`）不能只靠單拍，至少要有下列其一：① 一個 `metric` 引用——`stat` 不是 `n`（含 `total`／`form` 等分組分數）就算，`stat: "n"` 時 scores.json 該指標的 `n` 要 ≥ `score.MIN_N`（3）；② 一個 `stat` 群組統計引用：`stat` 只認 `median`／`mean`（`min`／`max`／`n` 等於單拍值或只是計數，不算），`field` 必須是 `score.METRICS` 的量測欄位或 `knee3d`（`id`、`elbow` 等不算），這條引用不可帶 `metric` 鍵，且重算時過品質閘門的可用拍數 ≥ `score.MIN_N`；③ 兩個以上**不同拍號**的單拍引用（同一拍引用兩個欄位只算一拍）；④ 一個 `drill_diff` 的 `diff`／`ci_lo`／`ci_hi` 引用（兩邊各 ≥ 10 拍才有值；`feed`／`rally` 中位數不算）。帶 `stroke` 的引用永遠是單拍；帶 `metric` 的引用多出來的 `field` 不看。不足時 `check_findings.py` 報「問題型 finding 至少要有…」。`good`／`info` 照舊，單拍就夠。
 - `tools/build_site.py` 建站時對每個有 `scores.json` 的場次跑同一套核對，任何一條不通過就整個建站 exit 1、不寫出任何檔案。沒有 `scores.json` 的場次不能核對，頁面上的引用標「未核對」。
 - 標題與內文出現「進步／退步／改善／變好／變差／比較穩／一致了」等變化宣稱時，依 cite 的球員與拍種查同機位、同版本的正式走勢；具名指標即使未逐項寫在 cite 也核對。「下降／降低」只在緊接「分／分數／總分／一致性／技術」（可接「也／又／都／再」）時算分數退步宣稱，例如「總分下降」「重心降低分數下降」；動作指令「降低重心」、原始角度或散佈的「下降」不算。變化在誤差內、沒有可比資料或缺少誤差估計，均失敗；改寫為「在誤差內，無法判定退步」等中性文字，不放寬門檻。
 - 新寫的確定變化宣稱須在對應 `metric` 引用明列 `change`，每項方向各自嚴格核對，即使文字中性或含練習指令也不免除；中性觀察與未來建議不加 `change`。舊文字仍作保守核對，先分離獨立子句，再排除否定／無法判定的說法；「比前場不穩／變不穩」算退步，不能被「比…穩」誤當進步，單純「膝蓋不穩」則是本場觀察，不要求歷史。「建議：總分比前場退步」仍核對分數宣稱，不能因其他位置有「建議／請」而整段跳過。

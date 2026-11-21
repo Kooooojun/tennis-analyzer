@@ -757,9 +757,14 @@ function drawCharts(){
   drawTrend(); markStrips();
 }
 function citeText(c){  // one cite from notes.json (docs/scoring.md §8) in plain words
-  const f=ITEM[c.metric||c.field]||c.metric||c.field, v=c.value;
+  const f=ITEM[c.metric||c.field||c.drill_diff]||c.metric||c.field||c.drill_diff, v=c.value;
   if(c.stroke!=null) return `#${String(c.stroke).padStart(2,"0")} ${f} ${v}`;
   const g=[c.player&&c.player!=="me"?PN(c.player):"", NAMES[c.kind]||c.kind||"", c.drill==="feed"?"自拋":c.drill==="rally"?"對打":c.drill==="high"?"高拋":""].filter(Boolean).join("・");
+  if(c.drill_diff){  // self-feed minus rally (scores.json drill_diff): the interval is the one score.py wrote, 2+ decimals like the value
+    const ci=scoreGroup(c)?.drill_diff?.metrics?.[c.drill_diff]?.ci, diff=c.stat==="diff";
+    const w={diff:"中位數差",ci_lo:"中位數差的區間下界",ci_hi:"中位數差的區間上界",feed:"自拋中位數",rally:"對打中位數"}[c.stat]||c.stat||"";
+    return `${g} ${diff?"自拋−對打 ":""}${f} ${w} ${v}${diff?(ci?`（區間 ${ci.join(" 到 ")}）`:"（區間不足）"):""}`;
+  }
   const groupScore=["total","form","consistency","power","uncapped"].includes(c.metric);
   const scored=c.metric&&(groupScore||["score","cons"].includes(c.stat||"score")), sg=scored?scoreGroup(c):null;
   const u=groupScore?sg?.uncertainty?.[c.metric]:sg?.metrics?.[c.metric]?.uncertainty?.[c.stat||"score"];
