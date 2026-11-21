@@ -191,6 +191,23 @@
 
 借用說明：YuSak1/tennis-swing-analysis-v3（MIT）的 `_plateau_score`、`_higher_better` 與本檔 `lin`、`band` 做的是同一件事（區間內滿分、外側線性降分），這裡沿用自己的實作，**沒有複製其程式碼**，所以不需要附授權聲明。VisioTennis（無授權）只參考「建議必須引用數值並機械核對」的做法；Tennis-AI-Coach（無授權）只參考「覆蓋率不足不評分」。
 
+### 7.2 自拋減對打的差（`drill_diff`，只加欄位，不進分數）
+
+同一位球員、同一拍種，把自拋（`drill == "feed"`）的中位數減掉對打（`drill == "rally"`）的中位數，並給 bootstrap 區間，讓機器能判斷「差量得準不準」。研究和建議用它取代人工拿兩個中位數相減。
+
+- **方向與單位**：差 = **自拋 − 對打**（負數＝自拋比對打小）。`contact_fwd`、`contact_h` 單位是肩髖長（資料存 0–1 尺度，同第 2 節），`knee` 是度（沿用該組的 `knee_src`，2D／3D 不混），`prep` 是秒。每個指標的 `unit` 欄寫出來。目前只算這四項，其他指標不算。
+- **輸入與閘門**：值就是分數用的值（第 3 節品質閘門：手腕可見度 < 0.5、`knee_warn`、2D 膝縮短、`prep_trunc` 的拍都不算）。`high`、`unsure`、沒有 `drill` 的拍不進任何一邊。膝角來源看整個拍種組（同 `score_group`），不是各練習類型各選各的。
+- **拍數門檻**：自拋與對打**各自**過閘門後都要 ≥ 10 拍（`MIN_N_DRILL`），否則 `diff`、`ci`、`sem` 為 `null`，`reason` 寫哪一邊幾拍。中位數與拍數（`feed`、`rally`）仍照給，方便看缺多少。發球沒有自拋／對打之分，整個 `drill_diff.metrics` 為 `null`，`reason` 寫原因。
+- **區間**：沿用第 7 節的做法：每支影片內有放回重抽原拍數 1000 次，自拋與對打各抽各的；種子同 `BOOTSTRAP_SEED`，每組重新建亂數產生器，依影片首次出現的順序抽，同一輸入可逐位重現。每次重抽重新套（逐拍的）品質閘門、各取中位數相減；和第 7 節的整組重抽不同的三處：膝角來源用整組定一次、重抽時不重新判定；**不套 `MIN_COVER`**（可用拍數 / 該組拍數 ≥ 50%），所以該指標 `status` 是「資料不足」時 `drill_diff` 仍可能有值，使用前要自己再看 `status`；重抽依「練習類型 × 影片」分層，每邊拍數固定。`ci` 是第 2.5、97.5 百分位，`sem` 是樣本標準差（`ddof=1`），`valid`／`samples` 同第 7 節。任何一次重抽有一邊沒有可用的拍，`ci`、`sem` 為 `null`（不補零），`reason` 說明。`feed`／`rally` 的中位數、`diff`、`ci`、`sem` 都取 3 位（`diff` 先用未四捨五入的中位數相減，所以和兩個中位數相減最多差 0.001）。
+- **怎麼讀**：區間含 0 就不能說兩種練習有差；`contact_fwd` 差 < 0.2 與接觸格誤差（錯 1 格約差 0.1）同量級，要看圖確認。這是同一場內的抽樣誤差，不含機位、跑動（對打的膝與準備時間可能混進跑步動作）和接觸格判定誤差；跨場、跨機位不比。
+- **版本**：只多一個欄位，沒有改錨點、閘門或公式，**`SCORE_VERSION` 不升**（維持 10），既有 `total`、`form`、`consistency`、`metrics`、`uncertainty` 逐位不變。`score_session(..., with_uncertainty=True)` 才算 `drill_diff`（它也是 bootstrap）；純評分呼叫沒有這個欄位。網頁、`check_findings`、`notes.json` 目前都不讀它。
+
+```json
+"drill_diff": {"direction": "自拋 − 對打（feed − rally）", "min_n": 10, "reason": null,
+  "metrics": {"contact_fwd": {"unit": "肩髖長", "feed": {"median": 0.800, "n": 24}, "rally": {"median": 0.950, "n": 16},
+    "diff": -0.150, "ci": [-0.270, -0.030], "sem": 0.060, "valid": 1000, "samples": 1000, "reason": null}, ...}}
+```
+
 ## 8. 建議要對得上數據（`tools/check_findings.py`）
 
 注意：`cite` 的 `{stat, field}` 引用是從 strokes.json 原始值算的（沒有置中）；`metric` 路徑讀的是 scores.json 的 `spread`，`score_version` 7 起是分影片置中後的值。兩者在多影片場次會不同。
