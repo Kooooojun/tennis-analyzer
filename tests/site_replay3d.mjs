@@ -203,6 +203,10 @@ try{
      check(lm.length>0&&lm.every(m=>m.overlap===false||m.inside&&!m.covers&&m.joint<.5&&m.line<.5),`${tag}：前傾標註位置 ${JSON.stringify(lm)}`);
      // 方法說明：偵測與插值影格數、拍攝角度限制、示意調整了什麼
      const method=await page.evaluate(()=>({text:$('r3dMethod').textContent,n:S.frames.length,ok:S.frames.filter(Boolean).length,w:S.world?S.world.filter(Boolean).length:0}));
+     if(!real){  // a source under 50 fps is interpolated to 60 fps by pose_full.to60: the note must say so, never "插值 0 格"
+      const low=await page.evaluate(()=>{const d=DAYS[DAY],keep=d.srcFps;d.srcFps=30;R3D.s=null;render(cur);const t=$('r3dMethod').textContent;d.srcFps=keep;R3D.s=null;render(cur);return t;});
+      check(low.includes('30 fps')&&low.includes('插值')&&!low.includes('插值 0 格'),`${tag}：低 fps 方法說明 ${low}`);
+     }
      check(method.text.includes(`這拍 ${method.n} 格`)&&method.text.includes(`骨架 ${method.ok} 格`)&&method.text.includes(`3D ${method.w} 格`)&&method.text.includes('插值 0 格')&&/正前、正後方/.test(method.text),`${tag}：方法說明 ${method.text}`);
      // 鍵盤：聚焦 canvas 後方向鍵旋轉、不換格；Home 重設
      await page.locator('#r3dCv').focus();const f0=await page.evaluate(()=>cur);

@@ -1337,7 +1337,7 @@ function kneeIK(P,drop){  // P: 17 [x,y,z] points, y down. Feet stay, everything
     const H0=P[K[h]], Kn=P[K[k]], A=P[K[a]], L1=len(sub(H0,Kn)), L2=len(sub(Kn,A)), d=sub(Q[K[h]],A), dl=len(d)||1, u=d.map(x=>x/dl);
     const D=Math.max(Math.abs(L1-L2),Math.min(L1+L2,dl)), o=sub(H0,A);
     let n=sub(sub(Kn,A),o.map(x=>x*dot(sub(Kn,A),o)/(dot(o,o)||1)));  // where the knee sits off the original ankle→hip line: it bends the same way, in that plane
-    if(len(n)<1e-9) n=[-u[1],u[0],0];  // shortcut: a dead-straight leg (e.g. a pose clamped at the frame edge) has no bend direction; bend it sideways in the image plane, which 2D points also have
+    if(len(n)<1e-9) n=[Math.sign(P[K[a+4]][0]-A[0])||1,0,0];  // shortcut: a dead-straight leg (e.g. a pose clamped at the frame edge) has no bend direction; bend it toward the toes along image x (2D points have it too), never backwards
     n=sub(n,u.map(x=>x*dot(n,u))); const nl=len(n)||1, along=(L2*L2-L1*L1+D*D)/(2*D), off=Math.sqrt(Math.max(0,L2*L2-along*along));
     Q[K[k]]=A.map((x,i)=>x+u[i]*along+n[i]/nl*off);
   }
@@ -1359,9 +1359,10 @@ function demoPlan(s){  // demoTarget plus the hip drop (d3 metres, d2 pixels) th
   let plan=null;
   if(L){
     let lo=0, hi=.5*L;  // more drop = more bend, so bisect; never past half a leg
-    for(let i=0;i<40;i++){ const m=(lo+hi)/2; if(kneeP10(s,pts,m)>t.target) lo=m; else hi=m; }
+    const goal=Math.max(t.target,kneeP10(s,pts,hi)+.01);  // IK_MIN can stop the bend short of the target: aim at the reachable floor, not past it
+    for(let i=0;i<40;i++){ const m=(lo+hi)/2; if(kneeP10(s,pts,m)>goal) lo=m; else hi=m; }
     const d=(lo+hi)/2, Lo=three?legLen(s,pts2):s.world?legLen(s,pts3):null;
-    plan={...t, d3:three?d:Lo&&d*Lo/L, d2:three?Lo&&d*Lo/L:d};  // the other view drops by the same share of the leg: there it only has to look the same
+    plan={...t, reached:goal, d3:three?d:Lo&&d*Lo/L, d2:three?Lo&&d*Lo/L:d};  // the other view drops by the same share of the leg: there it only has to look the same
   }
   PLAN.set(s,{key,plan}); return plan;
 }
@@ -1395,18 +1396,18 @@ function buildR3D(){
   for(const t of ["pointerup","pointercancel"]) c3.addEventListener(t,()=>{ R3D.drag=null; });
   c3.addEventListener("keydown",e=>{  // focused canvas: arrows rotate instead of stepping frames (stopPropagation keeps the page's arrow keys off)
     const k={ArrowLeft:[-.15,0],ArrowRight:[.15,0],ArrowUp:[0,-.15],ArrowDown:[0,.15]}[e.key];
-    if(k){ R3D.yaw+=k[0]; R3D.pitch=Math.max(-.3,Math.min(1.5,R3D.pitch+k[1])); } else if(e.key==="Home") R3D.yaw=R3D.pitch=0; else return;
+    if(k&&!(e.altKey||e.ctrlKey||e.metaKey)){ R3D.yaw+=k[0]; R3D.pitch=Math.max(-.3,Math.min(1.5,R3D.pitch+k[1])); } else if(e.key==="Home") R3D.yaw=R3D.pitch=0; else return;
     e.preventDefault(); e.stopPropagation(); draw3d(cur);
   });
 }
 function r3dInfo(){  // per-stroke text: why there is or is not a demo
   R3D.s=S; const t=demoTarget(S), p=demoPlan(S), r=Math.round;
   $("r3dKnee").disabled=kneeFrameOf(S)==null; $("r3dDemo").hidden=$("r3dLegD").hidden=!p;
-  $("r3dInfo").textContent=p?`這拍有示意：把膝蓋彎到你對打時的中位數 ${KNAME[t.src==="knee3d"?"3D":"2D"]} ${r(t.target)}°。`:
+  $("r3dInfo").textContent=p?`這拍有示意：把膝蓋彎到你對打時的中位數 ${KNAME[t.src==="knee3d"?"3D":"2D"]} ${r(t.target)}°${p.reached>t.target+1?`（這拍的腿只彎得到約 ${r(p.reached)}°）`:""}。`:
     S.kind!=="FH"?"示意只做正拍。":S.knee_warn?"這拍膝角看不準，不做示意。":t?"這拍沒有骨架可以做示意。":
     `這拍不做示意：膝蓋和你對打時的中位數差不到 ${DEMO_MIN}°，或沒有對打正拍可比。`;
-  const n=S.frames?.length, az=S.cam_az;  // pose/<id>.js keeps undetected frames as null: nothing is interpolated
-  $("r3dMethod").textContent=!S.frames?"":`方法：這拍 ${n} 格，偵測到骨架 ${S.frames.filter(Boolean).length} 格、3D ${S.world?S.world.filter(Boolean).length:0} 格；沒偵測到的格不補（插值 0 格），那幾格不畫。`+
+  const n=S.frames?.length, az=S.cam_az;  // pose/<id>.js keeps undetected frames as null (not filled); a source under 50 fps is interpolated up to 60 fps before export (pose_full.to60)
+  $("r3dMethod").textContent=!S.frames?"":`方法：這拍 ${n} 格，偵測到骨架 ${S.frames.filter(Boolean).length} 格、3D ${S.world?S.world.filter(Boolean).length:0} 格；${fpsLow(DAYS[S.day])?`來源只有 ${DAYS[S.day].srcFps} fps，骨架是在來源影格之間線性插值補成 60 fps（插值格數不另計）；沒偵測到的格不補，那幾格不畫。`:"沒偵測到的格不補（插值 0 格），那幾格不畫。"}`+
     (az==null?"":`鏡頭在球員${az<30?"正前方":az>150?"正後方":"側面"}約 ${Math.round(az)}°（0°＝正前、90°＝正側面）。`)+"正前、正後方拍的膝角看不準；3D 轉到影片沒拍到的那一面也更不準。"+
     (p?`示意只調整膝蓋：髖以上整體往下移${p.d3!=null?`最多 ${Math.round(p.d3*100)} 公分`:""}、腳不動、大腿小腿長度不變；其他部位和時間都沒改。`:"");
 }
