@@ -141,6 +141,25 @@ a{color:var(--accent)}
 .caveat{font-size:12px;color:var(--muted);margin-top:8px}
 .disclaimer{color:var(--ink)}
 #methodNote{overflow-wrap:anywhere}
+/* 這場先練一件事（總覽最上面；每位球員一張）：顏色只用上面的變數，所以深淺色都跟著走 */
+#overall{display:grid;gap:10px;margin:0 0 4px}
+#overall:empty{display:none}
+.ov-card{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:12px 14px;min-width:0;overflow-wrap:anywhere}
+.ov-insufficient{border-left-color:var(--line)}  /* 資料不足：中性，不用警示色 */
+.ov-card p{margin:4px 0}
+.ov-name{font-size:13px;font-weight:600}
+.ov-kicker{font-size:12px;color:var(--muted)}
+.ov-card .ov-title{font-size:19px;line-height:1.35;margin:2px 0 6px;text-wrap:balance}
+.ov-card .ov-cue{color:var(--ink)}
+.ov-jump{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ov-jump button{font-size:13px;background:var(--chip);border-color:transparent}
+.ov-jump button:first-child{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.ov-second{margin-top:10px;padding-top:8px;border-top:1px solid var(--line);font-size:14px}
+.ov-second summary{cursor:pointer}
+.ov-second .ov-tag{font-size:11px;font-weight:600;border:1px solid var(--line);border-radius:4px;padding:0 6px;color:var(--muted);margin-right:6px;white-space:nowrap}
+.ov-card .ov-second .ov-title{display:inline;font-size:15px;margin:0}
+.ov-disclaimer{display:flex;flex-wrap:wrap;align-items:center;gap:0 10px}
+.ov-limits-btn{background:none;border:0;padding:6px 2px;color:var(--accent);font-size:12px;text-decoration:underline}
 kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--panel)}
 @media (max-width:820px), (pointer:coarse) and (max-height:500px) and (orientation:landscape){
   header{padding-block:12px 4px} h1{font-size:18px}
@@ -558,6 +577,7 @@ function series(s){
 
 // ---------- skeletons: data.js has each stroke's summary, sessions/<s>/pose/<id>.js its frames/world, fetched when the stroke is on screen ----------
 const DISCLAIMER="這是練習參考，不能代替教練或醫療判斷。";
+const ONE_LINE="練習參考，不能代替教練或醫療判斷。3D 為單鏡頭估計。";  // 總覽有「先練一件事」卡時的免責一行；原本的免責、3D 說明、方法說明收在「數字的限制 ›」
 $("disclaimerAdvice").textContent=DISCLAIMER;
 function drawPoseCount(){  // 這拍有效骨架 N／M 格：pose 檔的 frames 裡不是 null 的格數（null＝沒偵測到人；全 0 的骨架仍算有）
   const el=$("poseCount"); if(!S||!el) return;
@@ -754,9 +774,9 @@ function drawOverview(){
   const d=DAYS[DAY], sc=d.scores, r1=x=>x==null?"–":x.toFixed(1), multi=d.players.length>1;
   const counts=["FH","BH","SV","OH"].map(k=>[k,ALL.filter(s=>s.kind===k).length]).filter(([,n])=>n).map(([k,n])=>`${esc(NAMES[k]||k)} ${n}`).join("、");
   let h=`<h2>${esc(d.label)} 總覽</h2><p class="hint" style="margin:0 0 10px">${esc(d.camera||"沒寫鏡頭位置")} · 共 ${ALL.length} 拍（${counts}）${multi?` · ${d.players.length} 位玩家`:""}</p>`;
-  h+=`<p class="caveat disclaimer">${DISCLAIMER}</p>`;
-  h+=`<p class="caveat">「3D估」為 3D 估計（單鏡頭，僅供參考），是模型從單一鏡頭估出的人體相對座標，不是多機校正的實測角度。</p>`;
-  h+=`<p class="caveat" id="methodNote">${esc(methodNote(d))}</p>`;
+  const limits=`<p class="caveat disclaimer">${DISCLAIMER}</p><p class="caveat">「3D估」為 3D 估計（單鏡頭，僅供參考），是模型從單一鏡頭估出的人體相對座標，不是多機校正的實測角度。</p><p class="caveat" id="methodNote">${esc(methodNote(d))}</p>`;
+  // 有整體建議才收成一行；舊場次（沒有 overall）維持原本三段全部可見
+  h+=overallEntries(d).length?`<div id="overall"></div><p class="caveat ov-disclaimer">${ONE_LINE}<button type="button" class="ov-limits-btn" aria-expanded="false" aria-controls="ovLimits">數字的限制 ›</button></p><div id="ovLimits" hidden>${limits}</div>`:limits;
   if(fpsLow(d)) h+=`<p class="caveat" style="margin:0 0 10px">來源 ${d.srcFps} fps：proxy 補成 60 fps（重複影格），速度類數字（手速、準備時間）沒驗證過。下次用 60 fps 拍。</p>`;
   const hn=handNote(ALL); if(hn) h+=`<p class="caveat" style="margin:0 0 10px">${esc(hn)}</p>`;
   if(!sc) h+=`<p class="caveat" style="margin:0 0 10px">這場還沒評分。在電腦上跑 <code>tools/score.py ${esc(d.id)}</code>，再跑 <code>tools/build_site.py</code>。</p>`;
@@ -782,6 +802,25 @@ function drawOverview(){
   if(fs.length) h+=`<h3>本場重點</h3><ul class="highlights">`+fs.map(f=>`<li><button class="${f.good?"good":f.info?"info":""}" data-go="advice">${f.good?"✓":"△"} ${esc(f.title)}</button></li>`).join("")+`</ul>`;
   $("overview").innerHTML=h;
   $("overview").querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(DAY,b.dataset.go));
+  const lb=$("overview").querySelector(".ov-limits-btn");
+  if(lb) lb.onclick=()=>{ const open=lb.getAttribute("aria-expanded")!=="true"; lb.setAttribute("aria-expanded",open); lb.textContent=open?"數字的限制 ‹":"數字的限制 ›"; $("ovLimits").hidden=!open; };
+  drawOverall();
+}
+// ---------- 這場先練一件事: notes.json overall (docs/advice.md) → 每位球員一張卡 ----------
+const overallEntries = d => (Array.isArray(d.overall)?d.overall:[]).filter(o=>o&&(o.main||o.insufficient));  // 沒有 main 也沒有 insufficient 的壞項目略過（check_findings 已擋）；舊 data.js 沒有欄位
+function ovBody(p){  // main／second／insufficient 共用：標題、為什麼、練法、口訣、jump（jump 的拍號是最終拍號，1 起算）
+  const js=(Array.isArray(p.jump)?p.jump:[]).filter(j=>Array.isArray(j)&&byNo(j[0])).map(([n,l])=>`<button type="button" data-n="${n}">${esc(l)}</button>`).join("");
+  return (p.why?`<p class="ov-why"><b>為什麼：</b>${esc(p.why)}</p>`:"")+(p.practice?`<p class="ov-practice"><b>練法：</b>${esc(p.practice)}</p>`:"")+(p.cue?`<p class="ov-cue"><b>口訣：</b>${esc(p.cue)}</p>`:"")+(js?`<div class="ov-jump">${js}</div>`:"");
+}
+function drawOverall(){
+  const box=$("overall"); if(!box) return;  // 沒有 overall 的場次沒有這個容器
+  const d=DAYS[DAY], multi=d.players.length>1, cnt=p=>ALL.filter(s=>who(s)===p).length, pl=o=>o.player||"me";
+  const es=overallEntries(d).filter(o=>pfilter==="ALL"||pl(o)===pfilter).sort((a,b)=>cnt(pl(b))-cnt(pl(a)));  // 拍數多的在前（同 #153），同數維持原順序
+  box.innerHTML=es.map(o=>{
+    const top=o.main||o.insufficient, second=o.second?`<details class="ov-second"><summary><span class="ov-tag">次要</span><span class="ov-title">${esc(o.second.title)}</span></summary>${ovBody(o.second)}</details>`:"";
+    return `<article class="ov-card ${o.main?"ov-main":"ov-insufficient"}">${multi?`<p class="ov-name">${esc(PN(pl(o)))}</p>`:""}<p class="ov-kicker">${o.main?"這場先練一件事":"這場的方向"}</p><h3 class="ov-title">${esc(top.title)}</h3>${ovBody(top)}${o.main?"":(o.film_next?`<p class="ov-film"><b>下次這樣拍：</b>${esc(o.film_next)}</p>`:"")}${second}</article>`;
+  }).join("");
+  box.querySelectorAll(".ov-jump button").forEach(b=>b.onclick=()=>load(byNo(+b.dataset.n).id,true));
 }
 function flagList(flags,g){
   return flags.length?`<ul class="flags">`+flags.map(f=>{const note=f.item==="total"?formNote(g):"";return `<li class="${f.flag==="在誤差內"?"":f.diff>0?"up":"down"}"><span class="${note?"single-metric":""}">${esc(f.flag)}：${ITEM[f.item]||esc(f.item)} ${f.base} → ${f.now}</span>${note?`<span class="metric-note">${esc(note)}</span>`:""}</li>`;}).join("")+`</ul>`:"";
@@ -901,7 +940,7 @@ function drawTabs(){
   for(const [k,label] of tabs){ const b=document.createElement("button"); b.textContent=label; b.classList.toggle("on",filter===k); b.onclick=()=>{ filter=k; drawTabs(); drawList(); }; $("tabs").append(b); }
   const ps=DAYS[DAY].players; if(ps.length<2) return;
   $("tabs").append(Object.assign(document.createElement("span"),{className:"sep"}));
-  for(const p of ["ALL",...ps]){ const b=document.createElement("button"); b.textContent=p==="ALL"?"所有人":`${PN(p)} ${ALL.filter(s=>who(s)===p).length}`; b.classList.toggle("on",pfilter===p); b.onclick=()=>{ pfilter=p; MED=dayStats(mine()); drawTabs(); drawList(); drawChecks(); if(TAB==="charts") drawCharts(); }; $("tabs").append(b); }
+  for(const p of ["ALL",...ps]){ const b=document.createElement("button"); b.textContent=p==="ALL"?"所有人":`${PN(p)} ${ALL.filter(s=>who(s)===p).length}`; b.classList.toggle("on",pfilter===p); b.onclick=()=>{ pfilter=p; MED=dayStats(mine()); drawTabs(); drawList(); drawChecks(); drawOverall(); if(TAB==="charts") drawCharts(); }; $("tabs").append(b); }
 }
 function visible(){ return ALL.filter(s=>(filter==="ALL"||s.kind===filter)&&(pfilter==="ALL"||who(s)===pfilter)); }
 function drawList(){
@@ -1667,6 +1706,7 @@ function route(){
   players.forEach(x=>x._loader.visibility());
   if(!PLAYER_TABS.includes(TAB)){ cancelPrefetch(); cancelUnusedPoses(); }
   if(TAB==="charts") drawCharts();
+  if(TAB==="overview") drawOverall();  // pfilter 是在「每一拍」分頁選的，回到總覽時卡片要跟著選的人
   for(const [vid,fn] of LATER){ if(!vid.isConnected) LATER.delete(vid); else if(shown(vid)){ LATER.delete(vid); fn(); } }  // drop reel <video>s that drawSummary replaced
   if(S){ render(cur); cmpRender(cmpCur); }  // canvases were 0x0 while hidden
 }
