@@ -53,6 +53,7 @@ def _cite(c, strokes, groups, show_open=False):
         g = next((g for g in groups if g["kind"] == c.get("kind") and g["player"] == (c.get("player") or "me")), None)
         if g is None: return f"scores.json 沒有 {c.get('player') or 'me'} {c.get('kind')} 這組"
         m, st = c["metric"], c.get("stat", "score")
+        if not isinstance(m, str): return "metric 要是字串"  # a list or dict would raise in the dict lookup below
         if m in GROUP_KEYS: v = g.get(m)
         elif m in g["metrics"] and st in SCORE_STATS: v = g["metrics"][m].get(st)
         else: return f"scores.json 沒有 {m}／{st}"
@@ -272,6 +273,7 @@ def _item_errs(key, it, player, strokes, scores, runs=()):
     jump = it.get("jump") if isinstance(it.get("jump"), list) else None
     if "jump" in it and jump is None: errs.append("jump 要是陣列")
     elif key == "main" and not jump: errs.append("缺 jump（要看的拍號）")
+    if jump and not all(isinstance(j, (list, tuple)) and len(j) == 2 and type(j[0]) is int and isinstance(j[1], str) for j in jump): errs.append("jump 每項要是 [拍號, 標籤]")
     text = "。".join(it[k] for k in ("title", "why", "practice", "cue") if isinstance(it.get(k), str))
     errs += _finding_errs(dict(info=True, title="", text=text, cite=it.get("cite"), jump=jump), strokes, scores, runs)
     if key == "main" and not _main_evidenced(it.get("cite") if isinstance(it.get("cite"), list) else [], player, strokes, scores.get("groups", []), scores.get("show_open") is True):

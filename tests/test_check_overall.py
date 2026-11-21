@@ -107,6 +107,8 @@ assert bad(main_with(jump=None))
 assert bad(main_with(title=None))
 assert bad(main_with(why="  "))
 assert bad(main_with(jump=13)) and bad(main_with(jump="13"))       # wrong shape: an error, not a crash
+assert bad(main_with(jump=[13, "a"])) and bad(main_with(jump=[[True, "a"]])) and bad(main_with(jump=[[13]]))  # each item is [stroke, label]
+assert bad(main_with(cite=[cg(metric=["knee"], value=1)]))          # unhashable metric: an error, not a TypeError
 assert bad(with_(second=SECOND | dict(practice="")))
 assert bad(with_(second={k: v for k, v in SECOND.items() if k != "practice"}))
 
