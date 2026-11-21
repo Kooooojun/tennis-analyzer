@@ -187,6 +187,10 @@ if os.environ.get("SITE_E2E_URL"):
     for name in ["site_advice_uncertainty", "site_score_uncertainty", "site_score_count", "site_knee_estimate"]:
         subprocess.run(["node", str(R / "tests" / (name + ".mjs"))], check=True,
                        env={**{k: v for k, v in os.environ.items() if k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-" + name))} if os.environ.get("SITE_RESULTS") else {})})
+    # 3D replay (#145): synthetic skeletons first, then the real session copy at SITE_E2E_URL.
+    for real in (False, True):
+        subprocess.run(["node", str(R / "tests" / "site_replay3d.mjs")], check=True,
+                       env={k: v for k, v in os.environ.items() if real or k != "SITE_E2E_URL"})
 
 if os.environ.get("SITE_E2E_URL") and os.environ.get("SITE_SERVER_LOG"):
     subprocess.run(["node", str(R / "tests" / "site_cache_drip.mjs")], check=True,
