@@ -421,6 +421,13 @@ try{
        // 點一下 3D 不能漏到影片疊圖（點影片＝播放／暫停）
        const st=await page.locator('#stage').boundingBox(),ps1=await playState(page);await page.touchscreen.tap(st.x+st.width/2,st.y+st.height/2);await page.waitForTimeout(150);
        check(JSON.stringify(await playState(page))===JSON.stringify(ps1),`${tag}：點 3D 畫面改了播放狀態`);}
+      if(mobile){  // Codex：影片載入中／載不到的提示會藏影片格裡的疊圖，3D 不能跟著被藏；切換鈕不能蓋住階段標籤
+       const r=await page.evaluate(()=>{const m=$('stage').querySelector('.vid-msg'),was=m.hidden;m.hidden=false;const vis=getComputedStyle($('r3dCv')).visibility;m.hidden=was;
+        const pb=$('phaseBadge'),d=pb.style.display;pb.style.display='block';pb.textContent||='擊球';const a=pb.getBoundingClientRect(),b=$('r3dSwitch').getBoundingClientRect();pb.style.display=d;
+        return {vis,overlap:a.left<b.right&&b.left<a.right&&a.top<b.bottom&&b.top<a.bottom};});
+       check(r.vis==='visible',`${tag}：影片載入提示出現時 3D 被藏 ${r.vis}`);
+       check(!r.overlap,`${tag}：影片／3D 切換蓋到階段標籤`);
+      }
       check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tag}：${portrait?'直':'橫'}片 3D 打開時水平溢出`);
       if(di===0)console.log(`${tag}：${portrait?'直':'橫'}片 影片 ${lay.stage.join('×')}、3D ${lay.cv.join('×')}`);
      }
