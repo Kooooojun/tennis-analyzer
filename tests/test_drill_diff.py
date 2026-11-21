@@ -24,7 +24,7 @@ g = drill_diff(S, "FH")
 m = g["metrics"]["contact_fwd"]
 # 8: 方向 = 自拋 − 對打；11: 未四捨五入的中位數相減
 assert math.isclose(np.median([s["contact_fwd"] for s in feed]) - np.median([s["contact_fwd"] for s in rally]), -0.25)
-assert m["diff"] == -0.25 and m["feed"] == dict(median=0.76, n=12) and m["rally"] == dict(median=1.0, n=12), m  # 中位數各自四捨五入到 2 位
+assert m["diff"] == -0.25 and m["feed"] == dict(median=0.755, n=12) and m["rally"] == dict(median=1.005, n=12), m  # 中位數、差、區間都取 3 位，diff = feed − rally 看得出來
 assert g["direction"].startswith("自拋 − 對打") and m["unit"] == "肩髖長" and g["metrics"]["prep"]["unit"] == "秒" and g["metrics"]["knee"]["unit"] == "度"
 assert m["reason"] is None and m["ci"][0] < m["diff"] < m["ci"][1] and m["ci"][1] < 0, m  # 分得很開：區間不含 0
 assert m["valid"] == m["samples"] == score.BOOTSTRAP_N and m["sem"] > 0
@@ -63,7 +63,7 @@ assert sv["metrics"] is None and "發球" in sv["reason"]
 # 2: 膝角來源看整個拍種組，不是各練習類型各選各的（組內多數有 knee3d → 全用 knee3d；對打拍沒有 3D 就不算，不退回 2D）
 mixed = [dict(s, knee3d=None) if s["drill"] == "rally" and i % 12 < 6 else s for i, s in enumerate(S)]
 kn = drill_diff(mixed, "FH")["metrics"]["knee"]
-assert kn["feed"]["median"] == round(float(np.median([s["knee3d"] for s in feed])), 2) and kn["rally"]["n"] == 6 and kn["diff"] is None
+assert kn["feed"]["median"] == round(float(np.median([s["knee3d"] for s in feed])), 3) and kn["rally"]["n"] == 6 and kn["diff"] is None
 # 1: 品質閘門同分數：knee_warn、prep_trunc 的拍不算
 warn = drill_diff([dict(s, knee_warn=True) if s["drill"] == "feed" and i < 4 else dict(s, prep_trunc=True) if s["drill"] == "rally" and i % 12 < 5 else s for i, s in enumerate(S)], "FH")["metrics"]
 assert warn["knee"]["feed"]["n"] == 8 and warn["knee"]["diff"] is None and warn["prep"]["rally"]["n"] == 7 and warn["prep"]["diff"] is None

@@ -169,12 +169,12 @@ def drill_diff(strokes, kind="FH"):
     out["metrics"] = {}
     for m, unit in DRILL_DIFF.items():
         sv = [v[~np.isnan(v)] for v in vals[m]]
-        e = dict(unit=unit, feed=dict(median=_r(float(np.median(sv[0])), 2) if len(sv[0]) else None, n=len(sv[0])),
-                 rally=dict(median=_r(float(np.median(sv[1])), 2) if len(sv[1]) else None, n=len(sv[1])), diff=None, ci=None, sem=None, valid=0, samples=BOOTSTRAP_N, reason=None)
+        e = dict(unit=unit, feed=dict(median=_r(float(np.median(sv[0])), 3) if len(sv[0]) else None, n=len(sv[0])),
+                 rally=dict(median=_r(float(np.median(sv[1])), 3) if len(sv[1]) else None, n=len(sv[1])), diff=None, ci=None, sem=None, valid=0, samples=BOOTSTRAP_N, reason=None)
         short = [f"{name}可用 {len(v)} 拍" for name, v in zip(("自拋", "對打"), sv) if len(v) < MIN_N_DRILL]
         if short: e["reason"] = "；".join(short) + f"，要各 ≥ {MIN_N_DRILL} 拍"
         else:
-            e["diff"] = _r(float(np.median(sv[0]) - np.median(sv[1])), 2)
+            e["diff"] = _r(float(np.median(sv[0]) - np.median(sv[1])), 3)
             ds = []
             for d in draws:
                 a, b = (v[ix] for v, ix in zip(vals[m], d)); a, b = a[~np.isnan(a)], b[~np.isnan(b)]
