@@ -30,6 +30,12 @@ def web(s):
     return ROOT / "web" / "sessions" / s
 
 
+def src_fps(s):
+    """Lowest source fps prep.sh recorded for the session's videos, or None when unknown (older work dirs)."""
+    fps = [int(t) for p in work(s).glob("*/src_fps.txt") if (t := read_text(p).strip()).isdigit() and int(t) > 0]
+    return min(fps) if fps else None
+
+
 def videos(s):
     """Work subdirs in clock order: the n-th video is shown as 'n·m:ss' on the page."""
     return json.loads(read_text(work(s) / "videos.json"))

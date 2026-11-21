@@ -117,12 +117,56 @@ assert ee(pf([s1, dict(stroke=1, field="contact_h", value=0.5)]))            # s
 assert ee(pf([s1, s2])) == []                                                # two different strokes
 assert ee(pf([s1], good=True)) == [] and ee(pf([s1], info=True)) == []       # good / info unchanged
 assert ee(pf([dict(kind="FH", field="knee", stat="median", value=125)]))     # group stat, usable n = 2 (gated strokes do not count)
-assert ee(pf([dict(kind="FH", field="knee", stat="n", value=2)]))
+assert ee(pf([dict(kind="FH", field="knee", stat="n", value=2)]))                  # stat n is a count, not a measurement: never group evidence
 assert errs(pf([dict(kind="FH", metric="knee", stat="score", value=sc)])) == []  # metric cite (scores.json already applied MIN_N)
 S10 = [st(knee=120), st(knee=130), st(knee=140)]                             # usable n = 3 passes
 e10 = lambda *fs: check(dict(findings=list(fs)), S10, dict(groups=score_session(S10, False)))
 assert e10(pf([dict(kind="FH", field="knee", stat="median", value=130)])) == []
-assert "至少" in errs(pf([dict(kind="FH", metric="knee", stat="n", value=G[0]["metrics"]["knee"]["n"])]))[0]  # metric stat n has no MIN_N gate: not evidence
 assert errs(pf([dict(stroke=1, field="knee", value=120, metric="knee")]))  # a stroke cite stays a single stroke even with a stray metric key
+# PR #144 review round (testset/results/findings-rules/pred2.md): evidence rule tightened
+cg = lambda **kw: dict(kind="FH", **kw)
+assert ee(pf([cg(field="id", stat="n", value=2)]))                              # a count of ids is not a measurement
+assert ee(pf([s1, dict(kind="FH", field="id", stat="n", value=2)]))             # one stroke + an id count is still one stroke
+assert e10(pf([cg(field="id", stat="n", value=3)]))
+assert e10(pf([cg(field="knee", stat="min", value=120)]))                       # min / max are one stroke's value
+assert e10(pf([cg(field="knee", stat="max", value=140)]))
+assert e10(pf([cg(field="knee", stat="n", value=3)]))                           # n of a real field: a count only
+assert e10(pf([cg(field="knee", stat="mean", value=130)])) == []                # mean and median count
+assert e10(pf([cg(field="knee", stat="median", value=130)])) == []
+assert e10(pf([cg(field="elbow", stat="median", value=150)]))                   # never citable
+S11 = [st(knee=120), st(knee=130), st(knee=140)]
+e11 = lambda *fs: check(dict(findings=list(fs)), S11, dict(groups=score_session(S11, False)))
+assert e11(pf([cg(field="knee3d", stat="median", value=130)]))                  # knee3d empty here -> no usable stroke (not a crash)
+S12 = [st(knee=170, knee3d=120), st(knee=170, knee3d=130), st(knee=170, knee3d=140)]
+e12 = lambda *fs: check(dict(findings=list(fs)), S12, dict(groups=score_session(S12, False)))
+assert e12(pf([cg(field="knee3d", stat="median", value=130)])) == []             # knee3d is the knee metric's other source (score.py)
+# a metric cite with a stray field key is still a metric cite: it counts by its own n, never by the stray field's strokes
+mk = lambda **kw: pf([cg(metric="knee", stat="n", value=2, **kw)])
+assert "至少" in ee(mk(field="contact_h"))[0] and "至少" in ee(mk())[0]          # knee n = 2 < MIN_N
+assert ee(pf([cg(metric="knee", stat="n", value=2, field="knee")]))
+S13 = [st(knee=100 + i) for i in range(10)]
+e13 = lambda *fs: check(dict(findings=list(fs)), S13, dict(groups=score_session(S13, False)))
+assert e13(pf([cg(metric="knee", stat="n", value=10)])) == []                   # ok group: one metric cite is enough (docs/scoring.md §8)
+assert e13(pf([cg(metric="knee", stat="n", value=10, field="contact_h")])) == []
+assert e13(pf([cg(metric="total", stat="n", value=score_session(S13, False)[0]["total"])])) == []  # group score: not a count
+assert errs(pf([dict(kind="FH", metric="knee", stat="n", value=G[0]["metrics"]["knee"]["n"])])) == []  # knee n = 4 >= MIN_N
+
+# SKILL.md's notes.json example must pass the checker itself (synthetic strokes shaped like the example)
+import json, re
+md = (Path(__file__).resolve().parent.parent / ".claude/skills/tennis-analyze/SKILL.md").read_text(encoding="utf-8")
+ex = json.loads(re.search(r"Write `web/sessions/<s>/notes.json`:\s*```json\n(.*?)\n```", md, re.S).group(1))
+SX = [st(knee=170, knee3d=150, drill="rally") for _ in range(45)]
+for i in range(33): SX[i].update(drill="feed", knee3d=155)
+for i in range(33, 40): SX[i].update(drill="rally", knee3d=135)
+SX[16].update(drill="rally", knee3d=118)
+SX[40].update(knee3d=None)
+for i in range(41, 45): SX[i].update(knee3d=None, knee_warn=True)
+# usable knee3d: 40 strokes (#1-#40, #41 has none, #42-#45 warned) -> stat n 40; feed median 155; rally median 135 (7 strokes, #17 is among the feed ones: set it to rally's 118 then rally median stays 135)
+SX[16].update(drill="feed", knee3d=155); SX[16].update(knee3d=118)
+GX = score_session(SX, False)
+ok = check(ex, SX, dict(groups=GX)); assert ok == [], ok
+# a verification sentence written with 進步／改善 words is a change claim and is rejected (the guideline in SKILL.md says to write it neutrally)
+bad = json.loads(json.dumps(ex)); bad["findings"][0]["text"] = bad["findings"][0]["text"].replace("看 knee3d 自拋中位數有沒有往 135° 靠", "看膝蓋是否改善")
+assert check(bad, SX, dict(groups=GX)), "改善 is a change claim: SKILL.md must tell the practice line not to use it"
 assert "至少" in ee(pf([s1]))[0]                                             # message says what is missing
 print("ok")
