@@ -109,6 +109,9 @@ assert bad(main_with(why="  "))
 assert bad(main_with(jump=13)) and bad(main_with(jump="13"))       # wrong shape: an error, not a crash
 assert bad(main_with(jump=[13, "a"])) and bad(main_with(jump=[[True, "a"]])) and bad(main_with(jump=[[13]]))  # each item is [stroke, label]
 assert bad(main_with(cite=[cg(metric=["knee"], value=1)]))          # unhashable metric: an error, not a TypeError
+for k in ("stat", "field", "kind", "player", "drill", "change"):    # any non-string cite key: an error, not a TypeError
+    assert bad(main_with(cite=CF + [cg(field="id", stat="n", value=3) | {k: []}]))
+    assert run(dict(findings=[dict(title="總分進步", text="", cite=[cg(metric="total", value=1) | {k: []}])]))
 assert bad(with_(second=SECOND | dict(practice="")))
 assert bad(with_(second={k: v for k, v in SECOND.items() if k != "practice"}))
 

@@ -35,10 +35,19 @@ def _usable(s, field, show_open=False):
     return v if _num(v) else None  # this _num rejects bool, score's does not
 
 
+STR_KEYS = ("metric", "stat", "field", "kind", "player", "drill", "change")
+
+
+def _bad_keys(c):
+    """Cite keys that must be strings (None allowed) but are not: a list or dict would raise TypeError in the lookups below."""
+    return [k for k in STR_KEYS if c.get(k) is not None and not isinstance(c[k], str)]
+
+
 def _cite(c, strokes, groups, show_open=False):
     """None if the cite checks out, else the reason."""
     who = lambda s: s.get("player") or "me"
     if not isinstance(c, dict): return "cite 的每一項要是物件"
+    if _bad_keys(c): return f"cite 的 {'、'.join(_bad_keys(c))} 要是字串"
     if "change" in c and (c["change"] not in ("up", "down") or "stroke" in c or not isinstance(c.get("metric"), str) or c.get("stat", "score") not in ("score", "cons")):
         return "change 只能是 up／down，且須引用分數或分項一致性"
     if "stroke" in c:
@@ -53,7 +62,6 @@ def _cite(c, strokes, groups, show_open=False):
         g = next((g for g in groups if g["kind"] == c.get("kind") and g["player"] == (c.get("player") or "me")), None)
         if g is None: return f"scores.json 沒有 {c.get('player') or 'me'} {c.get('kind')} 這組"
         m, st = c["metric"], c.get("stat", "score")
-        if not isinstance(m, str): return "metric 要是字串"  # a list or dict would raise in the dict lookup below
         if m in GROUP_KEYS: v = g.get(m)
         elif m in g["metrics"] and st in SCORE_STATS: v = g["metrics"][m].get(st)
         else: return f"scores.json 沒有 {m}／{st}"
@@ -105,7 +113,7 @@ def _main_evidenced(cites, player, strokes, groups, show_open):
     if any("metric" in c and (c["metric"] in GROUP_KEYS or c.get("stat", "score") != "n") for c in mine): return True
     drills = {}
     for c in mine:
-        if "metric" in c or c.get("stat") not in ("median", "mean") or c.get("field") not in EVIDENCE_FIELDS or c.get("drill") is None: continue
+        if "metric" in c or c.get("stat") not in ("median", "mean") or c.get("field") not in EVIDENCE_FIELDS or not isinstance(c.get("drill"), str): continue
         if _group_n(c, strokes, show_open) >= MAIN_MIN_N: drills.setdefault((c["field"], c.get("kind")), set()).add(c["drill"])
     return any(len(d) >= 2 for d in drills.values())
 
@@ -226,7 +234,7 @@ def _finding_errs(f, strokes, scores, runs=()):
     if "look" in f: errs += _look_errs(f["look"], strokes)
     elif not f.get("good") and not f.get("info") and any(isinstance(c, dict) and "prep" in (c.get("field"), c.get("metric")) for c in cites):
         errs.append("問題型 finding 引用 prep 要有 look（看過圖的拍號，≥ 3）：prep 量的是手腕最後方到擊球，不是轉身時機")
-    errs += _change_errors({**f, "cite": cites}, scores, runs)
+    errs += _change_errors({**f, "cite": [c for c in cites if isinstance(c, dict) and not _bad_keys(c)]}, scores, runs)  # a malformed cite is already reported
     vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
     text = f.get("text", "")
     U = r"(?:°|%|％|秒)"
