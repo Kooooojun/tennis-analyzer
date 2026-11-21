@@ -998,9 +998,14 @@ function markList(){
   const box=$("strokes");
   if(box.dataset.ids!==rowIds()){ const had=document.activeElement?.closest?.("#strokes button[data-id]")?.dataset.id; fillList(); if(R3D.on) markDemo(); if(had) box.querySelector(`button[data-id="${had}"]`)?.focus(); }  // 按鈕重建了，鍵盤焦點留在同一拍上  // load() 換了拍：目前這拍進出預設列（不走 drawList，免得在 load() 中途預載）
   box.querySelectorAll("button:not(.strokes-more)").forEach(b=>b.classList.toggle("cur",S&&+b.dataset.id===S.id));
-  const c=box.classList.contains("short")&&box.querySelector(".cur");
-  if(c){ const r=c.getBoundingClientRect(), q=box.getBoundingClientRect(), m=box.querySelector(".strokes-more"), edge=Math.min(q.right,m?m.getBoundingClientRect().left:q.right);  // 固定在右端的開關蓋住它左邊那塊，不算可見範圍
-    if(r.left<q.left) box.scrollLeft+=r.left-q.left-8; else if(r.right>edge) box.scrollLeft+=r.right-edge+8; }  // 手機一排放不下時，把目前這拍捲進來
+  revealCur();
+}
+// 手機一排放不下時，把目前這拍捲進可見範圍；單拍卡藏著時（從總覽跳過來）量不到位置，route() 切過去之後會再呼叫一次
+function revealCur(){
+  const box=$("strokes"), c=box.classList.contains("short")&&box.querySelector(".cur");
+  if(!c||!box.offsetParent) return;
+  const r=c.getBoundingClientRect(), q=box.getBoundingClientRect(), m=box.querySelector(".strokes-more"), edge=Math.min(q.right,m?m.getBoundingClientRect().left:q.right);  // 固定在右端的開關蓋住它左邊那塊，不算可見範圍
+  if(r.left<q.left) box.scrollLeft+=r.left-q.left-8; else if(r.right>edge) box.scrollLeft+=r.right-edge+8;
 }
 
 // ---------- main player ----------
@@ -1740,6 +1745,7 @@ function route(){
   if(home){ cancelPrefetch(); cancelUnusedPoses(); $("h1Sub").textContent=""; $("sub").textContent=`${DAY_KEYS.length} 場練習`; drawHome(); document.querySelectorAll("video").forEach(hold); players.forEach(x=>x._loader.visibility()); return; }
   TAB=m[2]||"overview";
   document.querySelectorAll("main [data-tab]").forEach(e=>{ e.hidden=!e.dataset.tab.split(" ").includes(TAB) || (e.id==="reelCard"&&!DAYS[m[1]].reel); });  // before setDay, so clips on hidden tabs wait (whenShown)
+  revealCur();  // 單拍卡剛顯示出來：從總覽 jump 過來時，load() 當時卡還藏著，目前這拍沒捲進列的可見範圍
   if(m[1]!==DAY||!S) setDay(m[1]);
   else if(wasHome){ MED=dayStats(mine()); drawSummary(); drawChecks(); drawTabs(); drawList(); }  // home overwrote #sub and may have set pfilter
   $("days").querySelector(".on")?.scrollIntoView({block:"nearest",inline:"nearest"});

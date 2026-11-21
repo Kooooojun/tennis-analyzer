@@ -212,6 +212,13 @@ async function synthetic(browser,engine,label,opts){
    const vis=await page.evaluate(()=>{const b=document.getElementById('strokes'),c=b.querySelector('.cur').getBoundingClientRect(),r=b.getBoundingClientRect(),m=b.querySelector('.strokes-more').getBoundingClientRect();return c.left>=r.left-1&&c.right<=Math.min(r.right,m.left)+1;});  // 固定在右端的開關會蓋住它左邊那塊，不算可見範圍
    check(vis,`${tag} #${id+1} 當目前這拍時要捲進列的可見範圍（不能被固定在右端的開關蓋住）`);
   }
+  // 從總覽的 jump 鈕跳過來：單拍卡那時還是 hidden，量不到位置；切過去之後目前這拍也要在可見範圍
+  await page.evaluate(()=>{load(1);go(DAY,'overview');});await page.waitForFunction(()=>TAB==='overview'&&document.querySelector('#overall .ov-jump button'));
+  await page.evaluate(()=>{document.getElementById('strokes').scrollLeft=0;});
+  await page.locator('#overall .ov-main button',{hasText:'對打 #13'}).click();
+  await page.waitForFunction(()=>TAB==='stroke'&&S?.id===12);
+  const vis2=await page.evaluate(()=>{const b=document.getElementById('strokes'),c=b.querySelector('.cur').getBoundingClientRect(),r=b.getBoundingClientRect(),m=b.querySelector('.strokes-more').getBoundingClientRect();return c.width>0&&c.left>=r.left-1&&c.right<=Math.min(r.right,m.left)+1;});
+  check(vis2,`${tag} 從總覽 jump 到 #13：目前這拍要捲進列的可見範圍`);
   await page.evaluate(()=>{document.getElementById('strokes').scrollLeft=0;});
   const sl=await page.evaluate(()=>{const b=document.getElementById('strokes');b.scrollLeft=40;return b.scrollLeft;});
   check(sl>0,`${tag} 列真的能橫向捲動：scrollLeft=${sl}`);
