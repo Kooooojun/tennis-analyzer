@@ -203,6 +203,7 @@ def main(argv):
             k = t.stem.rsplit("_t", 1)[1]
             if k.isdigit() and int(k) >= N: delete(t)
         if stale(pose, D / "proxy.mp4"):
+            delete(D / "versions.txt")  # the old record describes the pose about to be replaced; if writing the new one fails the page says 未記錄
             py("pose_full.py", D / "proxy.mp4", R / "models" / "pose_heavy.task", pose, N, V, log=D / "pose.log")
             try: write_text(D / "versions.txt", pose_versions(R / "models" / "pose_heavy.task", pose, V))
             except (Exception, SystemExit) as e:  # a side record must never cost the pose run that just finished (ffprobe or package metadata failing)

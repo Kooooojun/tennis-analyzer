@@ -56,6 +56,8 @@ def test_versions_failure_keeps_pose():
     """Recording versions is a side effect: when it fails, the pose run that just finished is kept (no pose_method.txt-less redo) and prep goes on."""
     with tempfile.TemporaryDirectory() as d:
         root = Path(d); (root / "videos" / "v").mkdir(parents=True); (root / "videos" / "v" / "clip.mp4").touch(); err = io.StringIO()
+        (root / "work" / "v" / "clip").mkdir(parents=True)  # an earlier run's record describes the OLD pose: it must not outlive the rerun
+        (root / "work" / "v" / "clip" / "versions.txt").write_text("mediapipe=0.0.1\n", encoding="utf-8")
         with patch.object(prep_module, "R", root), patch.object(prep_module, "need_ffmpeg"), \
              patch.object(prep_module, "probe", return_value=(1920, 1080, 60)), patch.object(prep_module, "h264_args", return_value=[]), \
              patch.object(prep_module, "stale", side_effect=lambda p, *a: p.name == "pose.npy"), patch.object(prep_module, "py"), \
