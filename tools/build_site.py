@@ -1,15 +1,32 @@
 # build_site.py — bundle every finished session for web/index.html (works from file://, no server needed).
 # Reads web/sessions/<s>/strokes.json + notes.json (+ scores.json, reel.mp4 if present) and web/sessions/trend.json,
 # writes web/sessions/<s>/data.js (per-stroke summary), web/sessions/<s>/pose/<id>.js (one stroke's frames/world, loaded on demand),
-# web/sessions/manifest.js and web/sessions/trend.js.
+# web/sessions/manifest.js and web/sessions/trend.js. data.js also carries methodVer: prep's work/<s>/<video>/versions.txt (package, model, skeleton
+# frame counts) folded for the page's method note; null for work dirs made before versions.txt existed (the page says 未記錄).
 import hashlib, json, re, sys
 from check_findings import check
-from common import ROOT, load, src_fps
+from common import ROOT, load, src_fps, work
 from platform_util import read_text, unlink, write_text
 from trend import _score_set
 
 S = ROOT / "web" / "sessions"
 POSE = ("frames", "world")  # per-frame arrays: ~99% of the bytes, only needed for the stroke on screen
+
+
+def method_ver(s):
+    """prep's work/<s>/<video>/versions.txt of every video, folded into one dict for the page's method note.
+    None when no video has a readable one (old work dirs: the page says 未記錄); `recorded` of `videos` folders had it."""
+    names = load(work(s) / "videos.json", False)  # the session's own videos; a folder left behind by a removed video does not count
+    dirs = [work(s) / n for n in names if (work(s) / n).is_dir()] if isinstance(names, list) else [p for p in work(s).glob("*") if p.is_dir()]; recs = []
+    for p in dirs:
+        f = p / "versions.txt"
+        kv = dict(l.split("=", 1) for l in f.read_text(encoding="utf-8", errors="replace").splitlines() if "=" in l) if f.is_file() else {}  # never exits: a bad file is just "not recorded"
+        if kv.get("mediapipe") and all(kv.get(k, "").isdigit() for k in ("pose_frames", "pose_detected", "pose_interpolated")): recs.append(kv)
+    if not recs: return None
+    same = lambda k: " / ".join(sorted({r[k] for r in recs if r.get(k)}))  # videos made with different versions list every one
+    total = lambda k: sum(int(r[k]) for r in recs)
+    return dict(mediapipe=same("mediapipe"), model=same("pose_model"), sha256=same("pose_model_sha256"), url=same("pose_model_url"), method=same("pose_method"),
+                frames=total("pose_frames"), detected=total("pose_detected"), interpolated=total("pose_interpolated"), videos=len(dirs), recorded=len(recs))
 
 
 ids, ver, built, bad = [], {}, [], []
@@ -25,7 +42,7 @@ for d in sorted(p for p in S.iterdir() if p.is_dir()):  # pass 1: build and chec
     errs = check(notes, strokes, sc, runs=runs) if sc is not None else []  # {} still checks: cites that need scores fail
     bad += [f"{s}: {e}" for e in errs]
     sess = dict(id=s, label=notes.get("label", s[5:].replace("-", "/") if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s) else s),
-                checked=sc is not None, srcFps=src_fps(s),
+                checked=sc is not None, srcFps=src_fps(s), methodVer=method_ver(s),
                 sub=notes.get("sub", f"{len(vids)} 支影片"), camera=notes.get("camera", ""), showOpen=notes.get("showOpen", False),
                 date=notes.get("date", s), players=sorted({x.get("player") or "me" for x in strokes}), scores=sc,
                 caveat=notes.get("caveat", ""), findings=notes.get("findings", []), presets=notes.get("presets", []),

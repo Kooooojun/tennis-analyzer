@@ -86,6 +86,35 @@ def finite_seconds(value):
         return None
 
 
+def pose_frame_counts(P, fps):
+    """(rows, rows with a skeleton, of those made by interpolating a low-fps source onto the 60 fps grid) for one track P (n60, 33, k).
+    Same grid as pose_full.to60: row j is source frame j * fps / 60, a source frame when that is whole. fps unknown or >= 50: nothing is interpolated."""
+    import numpy as np
+    seen = ~np.isnan(P[:, 0, 0]); n = len(P)
+    if not fps or fps >= 50: return n, int(seen.sum()), 0
+    x = np.arange(n) * fps / 60
+    return n, int(seen.sum()), int((seen & (x != np.floor(x))).sum())
+
+
+def pose_versions(model, pose, video):
+    """work/<video>/versions.txt: what made this video's pose, as key=value lines. Public facts only (no paths, no host names).
+    Written only when pose really ran, so an old work dir stays 'not recorded' instead of getting today's versions."""
+    import hashlib, importlib.metadata, importlib.util
+    from pose_full import METHOD
+    h = hashlib.sha256()
+    with open(model, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""): h.update(b)
+    kv = {"mediapipe": importlib.metadata.version("mediapipe"), "pose_model": Path(model).name, "pose_model_sha256": h.hexdigest()}
+    try:  # setup.py holds the download URL next to the checksum; a copy of tools/ without it just leaves the URL out
+        spec = importlib.util.spec_from_file_location("setup_models", R / "setup.py"); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        kv["pose_model_url"] = m.MODELS[Path(model).name][0]
+    except (OSError, AttributeError, KeyError): pass
+    import numpy as np
+    n, seen, interp = pose_frame_counts(np.load(pose, mmap_mode="r"), probe_rate(video)[2])
+    kv.update(pose_method=METHOD, pose_frames=n, pose_detected=seen - interp, pose_interpolated=interp)
+    return "".join(f"{k}={v}\n" for k, v in kv.items())
+
+
 @lru_cache(None)
 def gpu():
     import torch  # ball.py picks mps > cuda > cpu the same way
@@ -173,7 +202,12 @@ def main(argv):
         for t in D.glob("pose*_t*.npy"):  # extra tracks from an earlier, larger run
             k = t.stem.rsplit("_t", 1)[1]
             if k.isdigit() and int(k) >= N: delete(t)
-        if stale(pose, D / "proxy.mp4"): py("pose_full.py", D / "proxy.mp4", R / "models" / "pose_heavy.task", pose, N, V, log=D / "pose.log")
+        if stale(pose, D / "proxy.mp4"):
+            delete(D / "versions.txt")  # the old record describes the pose about to be replaced; if writing the new one fails the page says 未記錄
+            py("pose_full.py", D / "proxy.mp4", R / "models" / "pose_heavy.task", pose, N, V, log=D / "pose.log")
+            try: write_text(D / "versions.txt", pose_versions(R / "models" / "pose_heavy.task", pose, V))
+            except (Exception, SystemExit) as e:  # a side record must never cost the pose run that just finished (ffprobe or package metadata failing)
+                print(f"警告：{n} 沒寫 versions.txt（{e}）；頁面會寫「未記錄」", file=sys.stderr)
         elif not pt.is_file(): print("舊 work 目錄沒有人數紀錄，沿用現有姿態；要重跑請刪 pose.npy", file=sys.stderr)
         write_text(pt, f"{N}\n"); write_text(pm, f"{POSE_METHOD}\n")
         missing_world = [p.name for p in sorted(D.glob("pose*.npy"))
