@@ -1,12 +1,15 @@
 // PR #159 後續：建議分頁的引用小標籤遇到 drill_diff 引用（docs/scoring.md §8）要顯示白話，不能出現 undefined。
 // 合成場次（預設，不讀使用者資料）；SITE_REF=origin/main 預期紅（main 的 citeText 沒有 drill_diff 分支）。SITE_E2E_URL（真實副本）時跳過：真實 notes.json 沒有這種引用。
-// PLAYWRIGHT_MODULE 指向本機 playwright-core。多支網頁 E2E 一起跑時用 lockf＋nice 排隊。
+// tests/test_site_smoke.py 在 SITE_E2E_URL 的區塊裡註冊（只跑合成場次；SITE_REF 時跳過）。PLAYWRIGHT_MODULE 指向本機 playwright-core。多支網頁 E2E 一起跑時用 lockf＋nice 排隊。
 import assert from 'node:assert/strict';
 import {pathToFileURL} from 'node:url';
 import {fixture} from './site_i93_fixture.mjs';
 if(process.env.SITE_E2E_URL){console.log('SITE_E2E_URL：跳過（真實副本沒有 drill_diff 引用）');process.exit(0);}
-const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE));
-const f=await fixture(),browser=await chromium.launch({headless:true});
+const {chromium,webkit}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE));
+const f=await fixture();
+try{
+for(const engine of [chromium,webkit]){
+const browser=await engine.launch({headless:true});
 try{
  const page=await (await browser.newContext({viewport:{width:1280,height:800}})).newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(f.url);await page.waitForSelector('body.ready');
@@ -34,5 +37,7 @@ try{
  assert.equal(t[7],'zed・正拍 自拋−對打 擊球前後 中位數差 -0.1（區間 -0.2 到 0.1）');  // 球員要對到那一組
  assert.equal(t[8],'正拍 膝蓋 中位數 132');  // 舊引用格式不變
  assert.deepEqual(errors,[]);
- console.log('chromium：drill_diff 引用的小標籤通過');
-}finally{await browser.close();await f.close();}
+ console.log(`${engine.name()}：drill_diff 引用的小標籤通過`);
+}finally{await browser.close();}
+}
+}finally{await f.close();}
