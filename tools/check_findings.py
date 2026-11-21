@@ -35,12 +35,42 @@ def _usable(s, field, show_open=False):
     return v if _num(v) else None  # this _num rejects bool, score's does not
 
 
-STR_KEYS = ("metric", "stat", "field", "kind", "player", "drill", "change")
+STR_KEYS = ("metric", "stat", "field", "kind", "player", "drill", "change", "drill_diff")
 
 
 def _bad_keys(c):
     """Cite keys that must be strings (None allowed) but are not: a list or dict would raise TypeError in the lookups below."""
     return [k for k in STR_KEYS if c.get(k) is not None and not isinstance(c[k], str)]
+
+
+DD_STATS = ("diff", "ci_lo", "ci_hi", "feed", "rally")  # drill_diff cite stats: feed / rally are the two medians (docs/scoring.md §7.2, §8)
+UNSURE = r"不確定|暫定|不能確定|無法判定|不能當成確定|區間含 0"  # wording that lets a text mention a drill_diff whose interval contains 0
+
+
+def _dd(c, groups):
+    """(drill_diff entry, None) for a cite with `drill_diff`, or (None, reason). diff / ci_lo / ci_hi need both diff and ci (score.py leaves them None with a `reason` when a side has < 10 strokes)."""
+    g = next((g for g in groups if g["kind"] == c.get("kind") and g["player"] == (c.get("player") or "me")), None)
+    if g is None: return None, f"scores.json 沒有 {c.get('player') or 'me'} {c.get('kind')} 這組"
+    dd = g.get("drill_diff")
+    if not isinstance(dd, dict): return None, f"{c.get('kind')} 這組的 scores.json 沒有 drill_diff（舊檔，重跑 score.py）"
+    if dd.get("metrics") is None: return None, f"{c.get('kind')} 沒有 drill_diff：{dd.get('reason')}"
+    m, st = c["drill_diff"], c.get("stat")
+    if not isinstance(m, str) or m not in dd["metrics"]: return None, f"drill_diff 沒有 metric {m}"
+    if st not in DD_STATS: return None, f"drill_diff 不認得 stat {st}（要 {'／'.join(DD_STATS)}）"
+    e = dd["metrics"][m]
+    if st in ("feed", "rally"):
+        return (e, None) if _num(e[st].get("median")) else (None, f"{c.get('kind')} {m} {st} 沒有中位數（{st} {e[st].get('n')} 拍）")
+    if not _num(e.get("diff")) or not isinstance(e.get("ci"), list): return None, f"{c.get('kind')} {m} 的 diff／ci 是 null，不能引用：{e.get('reason')}"
+    return e, None
+
+
+def _dd_value(e, st): return e[st]["median"] if st in ("feed", "rally") else e["diff"] if st == "diff" else e["ci"][st == "ci_hi"]
+
+
+def _dd_unsure(c, groups):
+    """True when the cite's interval contains 0, so a text citing it must not state the difference as certain."""
+    e = _dd(c, groups)[0]
+    return e is not None and c.get("stat") in ("diff", "ci_lo", "ci_hi") and e["ci"][0] <= 0 <= e["ci"][1]
 
 
 def _cite(c, strokes, groups, show_open=False):
@@ -58,6 +88,11 @@ def _cite(c, strokes, groups, show_open=False):
         v = _usable(s, f, show_open)
         if v is None: return f"#{n} 的 {f} 被品質閘門排除或是空值，不能引用"
         return None if _match(v, c.get("value")) else f"#{n} {f} 實際 {v}，引用 {c.get('value')}"
+    if "drill_diff" in c:  # self-feed minus rally, from scores.json
+        e, why = _dd(c, groups)
+        if why: return why
+        v = _dd_value(e, c["stat"])
+        return None if _match(v, c.get("value")) else f"{c['kind']} drill_diff {c['drill_diff']} {c['stat']} 實際 {v}，引用 {c.get('value')}"
     if "metric" in c:  # a number from scores.json
         g = next((g for g in groups if g["kind"] == c.get("kind") and g["player"] == (c.get("player") or "me")), None)
         if g is None: return f"scores.json 沒有 {c.get('player') or 'me'} {c.get('kind')} 這組"
@@ -89,7 +124,9 @@ def _evidenced(cites, strokes, groups, show_open):
     if len({c["stroke"] for c in cites if "stroke" in c}) >= 2: return True
     for c in cites:
         if "stroke" in c: continue
-        if "metric" in c:
+        if "drill_diff" in c:
+            if c.get("stat") in ("diff", "ci_lo", "ci_hi"): return True  # diff needs >= 10 strokes per drill (score.MIN_N_DRILL); _cite already checked it exists
+        elif "metric" in c:
             g = next((g for g in groups if g["kind"] == c.get("kind") and g["player"] == (c.get("player") or "me")), None)
             if c["metric"] in GROUP_KEYS or c.get("stat", "score") != "n": return True
             if g is not None and (g["metrics"].get(c["metric"]) or {}).get("n", 0) >= MIN_N: return True  # the value _cite just matched, from scores.json
@@ -111,6 +148,7 @@ def _main_evidenced(cites, player, strokes, groups, show_open):
     or on a comparison: median/mean cites of one field and kind in two different drills, each with >= MAIN_MIN_N usable strokes."""
     mine = [c for c in cites if isinstance(c, dict) and "stroke" not in c and (c.get("player") or "me") == player]
     if any("metric" in c and (c["metric"] in GROUP_KEYS or c.get("stat", "score") != "n") for c in mine): return True
+    if any("drill_diff" in c and c.get("stat") in ("diff", "ci_lo", "ci_hi") for c in mine): return True  # a self-feed vs rally diff is itself the comparison
     drills = {}
     for c in mine:
         if "metric" in c or c.get("stat") not in ("median", "mean") or c.get("field") not in EVIDENCE_FIELDS or not isinstance(c.get("drill"), str): continue
@@ -231,6 +269,8 @@ def _finding_errs(f, strokes, scores, runs=()):
     errs += [r for r in (_cite(c, strokes, scores.get("groups", []), scores.get("show_open") is True) for c in cites) if r]
     if not errs and not f.get("good") and not f.get("info") and not _evidenced(cites, strokes, scores.get("groups", []), scores.get("show_open") is True):
         errs.append(f"問題型 finding 至少要有：一個 metric 引用（stat 不是 n，或 n ≥ {MIN_N}）、一個 median／mean 的群組統計引用（量測欄位、可用拍數 ≥ {MIN_N}），或兩個以上不同拍號的單拍引用（單拍、計數、min／max 不能撐起一條問題）")
+    if any(isinstance(c, dict) and "drill_diff" in c and not _bad_keys(c) and _dd_unsure(c, scores.get("groups", [])) for c in cites) and not re.search(UNSURE, f.get("title", "") + f.get("text", "")):
+        errs.append("drill_diff 的區間含 0，文字不能寫成確定的差：要寫「不確定」或「暫定」（docs/advice.md）")
     if "look" in f: errs += _look_errs(f["look"], strokes)
     elif not f.get("good") and not f.get("info") and any(isinstance(c, dict) and "prep" in (c.get("field"), c.get("metric")) for c in cites):
         errs.append("問題型 finding 引用 prep 要有 look（看過圖的拍號，≥ 3）：prep 量的是手腕最後方到擊球，不是轉身時機")
