@@ -180,6 +180,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
 .trend thead th{color:var(--muted);font-size:12px;font-weight:600;border-top:0}
 .trend td.cur{font-weight:700}
 .trend-wrap{overflow-x:auto;margin:6px 0 4px}
+.trend-block+.trend-block{margin-top:16px}
 .touch-hint{display:none}
 @media (max-width:820px) and (max-height:500px), (pointer:coarse) and (max-height:500px) and (orientation:landscape){  /* phone held sideways: clip and controls side by side, nothing sticky */
   .player,.player.wide{position:static;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:12px;align-items:start;border-bottom:0;grid-template-rows:repeat(7,auto) 1fr}  /* spare height goes to the last row, so the controls stay packed at the top */
@@ -316,8 +317,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
     </div>
 
     <div class="card" data-tab="charts">
-      <h2 id="trendTitle">各場比較</h2>
-      <div class="trend-wrap"><table class="trend" id="trend"></table></div>
+      <div id="trend"></div>
       <p class="caveat">鏡頭位置會改變膝蓋角度的讀數（手機越低、越近，膝蓋看起來越直），所以只有「鏡頭」那一列相同的場次能直接比絕對數字。不同機位的場次，看自拋跟對打之間的差距有沒有縮小。自己把球拋高再打的「高拋」另外分一類，不算進自拋或對打的中位數。「3D估」為 3D 估計（單鏡頭，僅供參考），是模型估出的人體相對座標，不是多機校正的實測角度。</p>
     </div>
 
@@ -766,20 +766,25 @@ function drawOverview(){
 function flagList(flags,g){
   return flags.length?`<ul class="flags">`+flags.map(f=>{const note=f.item==="total"?formNote(g):"";return `<li class="${f.flag==="在誤差內"?"":f.diff>0?"up":"down"}"><span class="${note?"single-metric":""}">${esc(f.flag)}：${ITEM[f.item]||esc(f.item)} ${f.base} → ${f.now}</span>${note?`<span class="metric-note">${esc(note)}</span>`:""}</li>`;}).join("")+`</ul>`:"";
 }
-function drawTrend(){
-  const keys=DAY_KEYS, st=Object.fromEntries(keys.map(k=>[k,dayStats(DAYS[k].data)])), r=x=>x==null?"–":Math.round(x), dg=x=>x==null?"–":Math.round(x)+"°", dk=kTxt;
-  $("trendTitle").textContent=keys.length>1?`${keys.length} 場比較`:"這場數字";
-  const rows=[
-    ["鏡頭",k=>esc(DAYS[k].camera||"–")],
-    ["自拋正拍・準備時膝蓋",k=>dk(st[k].feed)],
-    ["對打正拍・準備時膝蓋",k=>dk(st[k].rally)],
-    ["<b>膝蓋差距（自拋 − 對打）</b>",k=>{ const a=st[k].feed, b=st[k].rally; return `<b>${a.knee==null||b.knee==null?"–":(a.kSrc===b.kSrc?KNAME[a.kSrc]:KNAME[a.kSrc]+"／"+KNAME[b.kSrc])+" "+dg(a.knee-b.knee)}</b>`; }],
-    ["自拋正拍・擊球時手腕高度（2D）",k=>r(st[k].feed.h)],
-    ["對打正拍・擊球時手腕高度（2D）",k=>r(st[k].rally.h)],
-    ["拍數（自拋 / 對打）",k=>`${DAYS[k].data.filter(s=>s.kind==="FH"&&s.drill==="feed").length} / ${DAYS[k].data.filter(s=>s.kind==="FH"&&s.drill==="rally").length}`],
-  ];
-  $("trend").innerHTML=`<thead><tr><th></th>${keys.map(k=>`<th>${esc(DAYS[k].label)}</th>`).join("")}</tr></thead><tbody>`+
-    rows.map(([lab,f])=>`<tr><td>${lab}</td>${keys.map(k=>`<td class="${k===DAY?"cur":""}">${f(k)}</td>`).join("")}</tr>`).join("")+"</tbody>";
+function drawTrend(){  // one table per player: a column is that player's own strokes in one session, and only sessions they appear in
+  const r=x=>x==null?"–":Math.round(x), dg=x=>x==null?"–":Math.round(x)+"°", dk=kTxt;
+  const ps=[...new Set(ALL.map(who))].sort((a,b)=>ALL.filter(s=>who(s)===b).length-ALL.filter(s=>who(s)===a).length);  // most strokes first (stable on ties)
+  const shown=pfilter==="ALL"?ps:ps.filter(p=>p===pfilter);
+  $("trend").innerHTML=shown.map(p=>{
+    const mineIn=k=>DAYS[k].data.filter(s=>who(s)===p), keys=DAY_KEYS.filter(k=>mineIn(k).length), st=Object.fromEntries(keys.map(k=>[k,dayStats(mineIn(k))]));
+    const nFH=(k,drill)=>mineIn(k).filter(s=>s.kind==="FH"&&s.drill===drill).length;
+    const rows=[
+      ["鏡頭",k=>esc(DAYS[k].camera||"–")],
+      ["自拋正拍・準備時膝蓋",k=>dk(st[k].feed)],
+      ["對打正拍・準備時膝蓋",k=>dk(st[k].rally)],
+      ["<b>膝蓋差距（自拋 − 對打）</b>",k=>{ const a=st[k].feed, b=st[k].rally; return `<b>${a.knee==null||b.knee==null?"–":(a.kSrc===b.kSrc?KNAME[a.kSrc]:KNAME[a.kSrc]+"／"+KNAME[b.kSrc])+" "+dg(a.knee-b.knee)}</b>`; }],
+      ["自拋正拍・擊球時手腕高度（2D）",k=>r(st[k].feed.h)],
+      ["對打正拍・擊球時手腕高度（2D）",k=>r(st[k].rally.h)],
+      ["拍數（自拋 / 對打）",k=>`${nFH(k,"feed")} / ${nFH(k,"rally")}`],
+    ];
+    return `<div class="trend-block"><h2 class="trend-title">${ps.length>1?esc(PN(p))+"・":""}${keys.length>1?`${keys.length} 場比較`:"這場數字"}</h2><div class="trend-wrap"><table class="trend"><thead><tr><th></th>${keys.map(k=>`<th>${esc(DAYS[k].label)}</th>`).join("")}</tr></thead><tbody>`+
+      rows.map(([lab,f])=>`<tr><td>${lab}</td>${keys.map(k=>`<td class="${k===DAY?"cur":""}">${f(k)}</td>`).join("")}</tr>`).join("")+"</tbody></table></div></div>";
+  }).join("");
 }
 const prepLow=s=>s.prep_trunc===true||s.prep_trunc==null&&s.prep>=0.999;  // lower bound only: truncated, or an old session (no prep_trunc) at the old 1.0 s window edge; same rule as score.py
 function strip(id,title,hint,get,lo,hi,unit,ticks,fmt=Math.round){  // one metric across the session: x = stroke number, y = value
