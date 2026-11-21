@@ -177,11 +177,19 @@ def check_session(strokes):
 
 
 if __name__ == "__main__":
-    from common import session, web, load, save
+    from common import session, web, work, load, save
     s = session(); D = web(s); notes = load(D / "notes.json", {})
     G = score_session(load(D / "strokes.json"), notes.get("showOpen") is True, with_uncertainty=True)
     save(D / "scores.json", dict(score_version=SCORE_VERSION, session=s, date=notes.get("date", s), camera=notes.get("camera") or "", show_open=notes.get("showOpen") is True, groups=G, checks=check_session(load(D / "strokes.json"))))
     for g in G:
         ms = "  ".join(f"{m} {x['score']}（中位 {x['median']}，{x['n']} 拍，一致 {x['cons']}）" for m, x in g["metrics"].items())
         print(f"{g['player']} {g['kind']} {g['n']} 拍  總分 {g['total']}  技術 {g['form']}  一致性 {g['consistency']}  | {ms}")
+    strokes = load(D / "strokes.json")  # inputs for the 「下次拍攝建議」 in SKILL.md §4
+    fps = [int(t) for p in work(s).glob("*/src_fps.txt") if (t := p.read_text().strip()).isdigit() and int(t) > 0]
+    for g in G:
+        gs = [x for x in strokes if (x.get("player") or "me") == g["player"] and x["kind"] == g["kind"]]
+        view = sum(x.get("knee_warn_why") == "view" for x in gs)
+        low = [m for m, x in g["metrics"].items() if x["status"] == "資料不足"]
+        print(f"拍攝依據 {g['player']} {g['kind']}：視角擋掉膝角 {view}/{len(gs)}（{view / max(len(gs), 1):.0%}）；資料不足：{'、'.join(low) or '無'}")
+    print(f"拍攝依據：來源 fps {min(fps) if fps else '未知'}；showOpen {notes.get('showOpen') is True}")
     print("->", D / "scores.json")

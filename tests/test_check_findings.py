@@ -12,7 +12,8 @@ def st(knee=130, h=0.5, **kw):
 
 S = [st(knee=120), st(knee=130, drill="rally"), st(knee=140), st(knee=150, knee_warn=True), st(knee=125, vis=0.2)]
 G = score_session(S, False)
-f = lambda cite, text="", **kw: dict(title="t", text=text, cite=cite, **kw)
+f = lambda cite, text="", **kw: dict(title="t", text=text, cite=cite, **{"info": True, **kw})  # info: these cases test cites, not the evidence rule
+pf = lambda cite, **kw: dict(title="t", text="", cite=cite, **kw)  # problem finding
 errs = lambda *fs: check(dict(findings=list(fs)), S, dict(groups=G))
 
 assert errs(f([dict(stroke=1, field="knee", value=120)])) == []
@@ -107,4 +108,19 @@ c7 = [dict(stroke=1, field="contact_h", value=0.5), dict(stroke=1, field="contac
 assert e7(f(c7, "高度 0.5 -0.20")) == []
 assert e7(f(c7[:1], "高度 0.5 -0.20"))  # -0.20 needs its cite
 assert errs(f(c1, "手速 7.6,9.0"))  # 9.0 is checked
+# problem findings (not good/info) need a metric cite, a stat cite with usable n >= score.MIN_N, or 2+ different strokes (docs/scoring.md §8)
+SE = [st(knee=120), st(knee=130), st(knee=140, knee_warn=True), st(knee=125, knee_warn=True)]  # usable knee: #1, #2
+ee = lambda *fs: check(dict(findings=list(fs)), SE, dict(groups=score_session(SE, False)))
+s1, s2 = dict(stroke=1, field="knee", value=120), dict(stroke=2, field="knee", value=130)
+assert ee(pf([s1]))                                                          # one stroke only
+assert ee(pf([s1, dict(stroke=1, field="contact_h", value=0.5)]))            # same stroke twice is one stroke
+assert ee(pf([s1, s2])) == []                                                # two different strokes
+assert ee(pf([s1], good=True)) == [] and ee(pf([s1], info=True)) == []       # good / info unchanged
+assert ee(pf([dict(kind="FH", field="knee", stat="median", value=125)]))     # group stat, usable n = 2 (gated strokes do not count)
+assert ee(pf([dict(kind="FH", field="knee", stat="n", value=2)]))
+assert errs(pf([dict(kind="FH", metric="knee", stat="score", value=sc)])) == []  # metric cite (scores.json already applied MIN_N)
+S10 = [st(knee=120), st(knee=130), st(knee=140)]                             # usable n = 3 passes
+e10 = lambda *fs: check(dict(findings=list(fs)), S10, dict(groups=score_session(S10, False)))
+assert e10(pf([dict(kind="FH", field="knee", stat="median", value=130)])) == []
+assert "至少" in ee(pf([s1]))[0]                                             # message says what is missing
 print("ok")

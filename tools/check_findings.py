@@ -6,7 +6,7 @@ import re
 import numpy as np
 from platform_util import utf8_stdout
 from trend import NAMES, _entry, compare
-from score import METRICS, _value
+from score import METRICS, MIN_N, _value
 
 utf8_stdout()
 
@@ -66,6 +66,18 @@ def _cite(c, strokes, groups, show_open=False):
         v = float(STATS[st](vals)) if st != "n" else len(vals)
         return None if _match(v, c.get("value")) else f"{c['kind']} {c.get('drill', '')} {f} {st} 實際 {round(v, 2)}，引用 {c.get('value')}"
     return "cite 要有 stroke、metric 或 stat"
+
+
+def _evidenced(cites, strokes, show_open):
+    """True when a problem finding rests on more than one stroke (docs/scoring.md §8): a metric cite, a stat cite whose usable n >= score.MIN_N, or cites of 2+ different strokes."""
+    who = lambda s: s.get("player") or "me"
+    strokes_cited = {c["stroke"] for c in cites if "stroke" in c}
+    if len(strokes_cited) >= 2 or any("metric" in c for c in cites): return True
+    for c in cites:
+        if "stat" in c and "stroke" not in c:
+            n = sum(_usable(s, c.get("field"), show_open) is not None for s in strokes if s["kind"] == c.get("kind") and who(s) == (c.get("player") or "me") and c.get("drill", s.get("drill")) == s.get("drill"))
+            if n >= MIN_N: return True
+    return False
 
 
 def _change_errors(finding, scores, runs):
@@ -160,6 +172,8 @@ def check(notes, strokes, scores, runs=()):
         if not isinstance(cites, list): cites = []
         if not cites: errs.append("沒有引用（cite）")
         errs += [r for r in (_cite(c, strokes, scores.get("groups", []), scores.get("show_open") is True) for c in cites) if r]
+        if not errs and not f.get("good") and not f.get("info") and not _evidenced(cites, strokes, scores.get("show_open") is True):
+            errs.append(f"問題型 finding 至少要有一個 metric 引用、一個可用拍數 ≥ {MIN_N} 的群組統計引用，或兩個以上不同拍號的單拍引用（單拍不能撐起一條問題）")
         errs += _change_errors({**f, "cite": cites}, scores, runs)
         vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
         text = f.get("text", "")

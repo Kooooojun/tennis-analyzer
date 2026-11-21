@@ -121,7 +121,7 @@ Write `web/sessions/<s>/notes.json`:
  "showOpen": false,
  "caveat": "數字的限制：鏡頭位置、被排除的片段、骨架抓錯的拍號。",
  "findings": [
-  {"title": "自拋還是比對打站得直", "text": "自拋 33 拍膝蓋中位數 155°，對打 135°。", "cite": [{"kind": "FH", "drill": "feed", "field": "knee3d", "stat": "median", "value": 155}, {"kind": "FH", "drill": "rally", "field": "knee3d", "stat": "median", "value": 135}], "jump": [[5, "好球：#05"], [41, "問題：#41"]]},
+  {"title": "自拋還是比對打站得直", "text": "自拋 33 拍膝蓋中位數 155°，對打 135°。練習：自拋時蹲到對打那個程度（135°）再出手；下次同一機位拍，看 knee3d 自拋中位數有沒有往 135° 靠。", "cite": [{"kind": "FH", "drill": "feed", "field": "knee3d", "stat": "median", "value": 155}, {"kind": "FH", "drill": "rally", "field": "knee3d", "stat": "median", "value": 135}], "jump": [[5, "好球：#05"], [41, "問題：#41"]]},
   {"good": true, "title": "#17 蹲得最低", "text": "#17 膝蓋 118°。", "cite": [{"stroke": 17, "field": "knee3d", "value": 118}], "jump": [[17, "看 #17"]]},
   {"info": true, "title": "這場正拍拍數", "text": "可用的正拍有 40 拍。", "cite": [{"kind": "FH", "field": "knee3d", "stat": "n", "value": 40}]}
  ],
@@ -133,7 +133,10 @@ Write `web/sessions/<s>/notes.json`:
 - Filming advice for the user: put the camera at the player's side (about 90° to the direction they face), still, whole body in frame. Straight behind or in front gives the worst knee angles (CalTennis: back 2D 34°, 3D 22° median error) and those strokes get no knee number.
 - Set `showOpen` to true only when the camera is roughly behind the player at hip height or higher (shoulder turn needs that view; knees will then mostly be gated).
 - Every finding needs `cite`: the numbers it states (single stroke, group stat or score), checked by the script below. Formats: `docs/scoring.md` §8.
-- Keep 3–5 findings, each tied to stroke numbers the user can click. Mark the good ones `good: true`. Use `info: true` for neutral notes. Good and info findings need `cite` too: every finding is checked, with no exemption.
+- At most 5 findings, each tied to stroke numbers the user can click; with thin evidence write fewer, never add a problem to fill the count. Mark the good ones `good: true`. Use `info: true` for neutral notes. Good and info findings need `cite` too: every finding is checked, with no exemption.
+- A problem finding (neither `good` nor `info`) cannot rest on one stroke. It needs a `metric` cite, a group `stat` cite with usable n ≥ 3, or cites of two or more different strokes (`check_findings.py` enforces it; docs/scoring.md §8).
+- End each problem finding's `text` with one concrete practice action plus how to verify it next time: same camera position, which field to look at. A target number may only be the user's own good strokes or rally median, and it needs its `cite` (as in the first example). No target range without a source. Give no reps or sets: nothing in this repo supports a number. No new notes.json field.
+- Next-shoot advice: after the analysis, give the user 1–3 lines on how to film next time, in the reply (not notes.json). `score.py` prints the inputs (「拍攝依據」: share of strokes with `knee_warn_why == "view"`, metrics with 資料不足, source fps, `showOpen`). Give advice only for a trigger that fired: many view-gated strokes → film from the side, about 90°, still, whole body in frame; source fps below 50 → film at 60 fps; `showOpen` true but the camera is not behind at hip height or higher, or a metric is 資料不足 → say which one lacks strokes and ask for more; mark anything beyond these inputs as 推論. Nothing fired → say 「這場機位可以，照舊」. Do not invent advice.
 
 Then score the session and update the long-term trend:
 
