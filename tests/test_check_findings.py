@@ -122,5 +122,7 @@ assert errs(pf([dict(kind="FH", metric="knee", stat="score", value=sc)])) == [] 
 S10 = [st(knee=120), st(knee=130), st(knee=140)]                             # usable n = 3 passes
 e10 = lambda *fs: check(dict(findings=list(fs)), S10, dict(groups=score_session(S10, False)))
 assert e10(pf([dict(kind="FH", field="knee", stat="median", value=130)])) == []
+assert "至少" in errs(pf([dict(kind="FH", metric="knee", stat="n", value=G[0]["metrics"]["knee"]["n"])]))[0]  # metric stat n has no MIN_N gate: not evidence
+assert errs(pf([dict(stroke=1, field="knee", value=120, metric="knee")]))  # a stroke cite stays a single stroke even with a stray metric key
 assert "至少" in ee(pf([s1]))[0]                                             # message says what is missing
 print("ok")

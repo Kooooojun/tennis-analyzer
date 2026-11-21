@@ -72,7 +72,8 @@ def _evidenced(cites, strokes, show_open):
     """True when a problem finding rests on more than one stroke (docs/scoring.md §8): a metric cite, a stat cite whose usable n >= score.MIN_N, or cites of 2+ different strokes."""
     who = lambda s: s.get("player") or "me"
     strokes_cited = {c["stroke"] for c in cites if "stroke" in c}
-    if len(strokes_cited) >= 2 or any("metric" in c for c in cites): return True
+    # a metric cite counts unless it only states the group's stroke count (stat n: no MIN_N gate, 1 stroke would pass); a cite with `stroke` is a single stroke whatever else it carries
+    if len(strokes_cited) >= 2 or any("metric" in c and "stroke" not in c and (c["metric"] in GROUP_KEYS or c.get("stat", "score") != "n") for c in cites): return True
     for c in cites:
         if "stat" in c and "stroke" not in c:
             n = sum(_usable(s, c.get("field"), show_open) is not None for s in strokes if s["kind"] == c.get("kind") and who(s) == (c.get("player") or "me") and c.get("drill", s.get("drill")) == s.get("drill"))
