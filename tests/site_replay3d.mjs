@@ -181,6 +181,12 @@ try{
      const arc=await page.evaluate(()=>({cur,kf:kneeFrameOf(S),paused:!v._want,labels:R3D.labels,card:$('mKnee').textContent,knee:S.knee}));
      check(arc.cur===arc.kf&&arc.paused,`${tag}：停在膝蓋最彎跳錯格 ${JSON.stringify(arc)}`);
      check(arc.labels.some(t=>t.includes(Math.round(arc.knee)+'°'))&&arc.card.startsWith(String(Math.round(arc.knee))),`${tag}：弧線數字要等於卡片 ${JSON.stringify(arc)}`);
+     // 朋友 skill「網頁檢查」：標註不重疊、留在畫面內、不蓋住關節，指示線連到正確關節（較彎那隻膝／髖中心）
+     const MARKS=()=>{const c=$('r3dCv').getBoundingClientRect(),P=S.world[cur],bent=(angle3(P,24,26,28)??180)<=(angle3(P,23,25,27)??180)?26:25;
+      const hip=P[K[23]].map((x,i)=>(x+P[K[24]][i])/2),want={knee:R3D.proj(P[K[bent]]),lean:R3D.proj(hip)};
+      return R3D.marks.map(m=>{const [x,y,w,h]=m.box,J=want[m.kind];return {text:m.text,inside:x>=0&&y>=0&&x+w<=c.width&&y+h<=c.height,covers:m.joint[0]>=x&&m.joint[0]<=x+w&&m.joint[1]>=y&&m.joint[1]<=y+h,joint:Math.hypot(m.joint[0]-J[0],m.joint[1]-J[1]),line:Math.hypot(m.line[2]-J[0],m.line[3]-J[1])};}).concat(R3D.marks.flatMap((a,i)=>R3D.marks.slice(i+1).map(b=>({overlap:!(a.box[0]+a.box[2]<=b.box[0]||b.box[0]+b.box[2]<=a.box[0]||a.box[1]+a.box[3]<=b.box[1]||b.box[1]+b.box[3]<=a.box[1])}))));};
+     const km=await page.evaluate(MARKS);
+     check(km.length>0&&km.every(m=>m.overlap===false||m.inside&&!m.covers&&m.joint<.5&&m.line<.5),`${tag}：膝角標註位置 ${JSON.stringify(km)}`);
      const warnId=await page.evaluate(()=>ALL.find(s=>s.knee_warn&&s.knee!=null&&s.world!==null)?.id);
      if(warnId!=null){
       await page.evaluate(id=>load(id,false),warnId);await page.waitForFunction(()=>S?.frames?.length);
@@ -192,6 +198,24 @@ try{
      const lean=await page.evaluate(()=>({labels:R3D.labels,lean:S.lean,card:$('mLean').textContent,cur,c:S.contact}));
      check(lean.cur===lean.c&&lean.labels.some(t=>t.includes('前傾')&&(lean.lean==null?t.includes('看不準'):t.includes(lean.lean.toFixed(1)+'°'))),`${tag}：擊球格前傾弧線 ${JSON.stringify(lean)}`);
      check(!(await page.evaluate(()=>R3D.labels.join(''))).includes('肘'),`${tag}：不能畫肘角`);
+     const lm=await page.evaluate(MARKS);
+     check(lm.length>0&&lm.every(m=>m.overlap===false||m.inside&&!m.covers&&m.joint<.5&&m.line<.5),`${tag}：前傾標註位置 ${JSON.stringify(lm)}`);
+     // 方法說明：偵測與插值影格數、拍攝角度限制、示意調整了什麼
+     const method=await page.evaluate(()=>({text:$('r3dMethod').textContent,n:S.frames.length,ok:S.frames.filter(Boolean).length,w:S.world?S.world.filter(Boolean).length:0}));
+     check(method.text.includes(`這拍 ${method.n} 格`)&&method.text.includes(`骨架 ${method.ok} 格`)&&method.text.includes(`3D ${method.w} 格`)&&method.text.includes('插值 0 格')&&/正前、正後方/.test(method.text),`${tag}：方法說明 ${method.text}`);
+     // 鍵盤：聚焦 canvas 後方向鍵旋轉、不換格；Home 重設
+     await page.locator('#r3dCv').focus();const f0=await page.evaluate(()=>cur);
+     await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowUp');
+     check(await page.evaluate(f0=>R3D.yaw!==0&&R3D.pitch!==0&&cur===f0,f0),`${tag}：鍵盤要能旋轉且不換格`);
+     await page.keyboard.press('Home');
+     check(await page.evaluate(()=>R3D.yaw===0&&R3D.pitch===0),`${tag}：Home 重設視角`);
+     await page.evaluate(()=>$('r3dCv').blur());
+     // prefers-reduced-motion：暫停時不會自己動（沒有動畫迴圈）
+     await page.emulateMedia({reducedMotion:'reduce'});
+     const pix=()=>page.evaluate(()=>{const c=$('r3dCv'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let h=0;for(let i=0;i<d.length;i+=7)h=(h*31+d[i])|0;return [h,cur,R3D.yaw,R3D.pitch].join();});
+     const p0=await pix();await page.waitForTimeout(400);
+     check(await pix()===p0,`${tag}：減少動態時面板不能自己動`);
+     await page.emulateMedia({reducedMotion:null});
 
      // 拖曳旋轉、重設視角，不動播放狀態；觸控不捲頁
      const ps=await playState(page),box=await page.locator('#r3dCv').boundingBox();
