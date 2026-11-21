@@ -46,7 +46,7 @@ for d in sorted(p for p in S.iterdir() if p.is_dir()):  # pass 1: build and chec
                 checked=sc is not None, srcFps=src_fps(s), methodVer=method_ver(s),
                 sub=notes.get("sub", f"{len(vids)} 支影片"), camera=notes.get("camera", ""), showOpen=notes.get("showOpen", False),
                 date=notes.get("date", s), players=sorted({x.get("player") or "me" for x in strokes}), scores=sc,
-                caveat=notes.get("caveat", ""), findings=notes.get("findings", []), presets=notes.get("presets", []),
+                caveat=notes.get("caveat", ""), findings=notes.get("findings", []), overall=notes.get("overall", []), presets=notes.get("presets", []),
                 reel=f"sessions/{s}/reel.mp4" if (d / "reel.mp4").exists() else None,
                 strokes=[{**{k: v for k, v in x.items() if k not in POSE}, "n": len(x["frames"]), "src": f"sessions/{s}/{x['src']}"} for x in strokes])
     n = len(strokes)

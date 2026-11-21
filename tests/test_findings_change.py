@@ -123,12 +123,12 @@ expect_claim('多筆引用不改查整組一致性', '一致性改善', scoped,
              [dict(kind='FH', metric='knee', stat='cons', value=7.1), dict(kind='FH', metric='total', value=8)], True)
 scoped = copy.deepcopy(up)
 for r, value in zip(scoped, (7, 7.1)):
-    r['groups'][0]['metrics']['prep'] = copy.deepcopy(r['groups'][0]['metrics']['knee'])
-    r['groups'][0]['metrics']['prep'].update(score=4, cons=value)
+    r['groups'][0]['metrics']['contact_fwd'] = copy.deepcopy(r['groups'][0]['metrics']['knee'])
+    r['groups'][0]['metrics']['contact_fwd'].update(score=4, cons=value)
 expect_claim('更穩只查引用的 cons', '更穩', scoped,
-             [dict(kind='FH', metric='knee', stat='cons', value=8), dict(kind='FH', metric='prep', value=4)], False)
+             [dict(kind='FH', metric='knee', stat='cons', value=8), dict(kind='FH', metric='contact_fwd', value=4)], False)
 expect_claim('每筆 cons 都須通過', '一致性改善', scoped,
-             [dict(kind='FH', metric='knee', stat='cons', value=8), dict(kind='FH', metric='prep', stat='cons', value=7.1)], True)
+             [dict(kind='FH', metric='knee', stat='cons', value=8), dict(kind='FH', metric='contact_fwd', stat='cons', value=7.1)], True)
 expect_claim('未有評分組不能跳過', '總分進步', up,
              [dict(stroke=1, kind='OH', field='knee', value=130)], True, [dict(kind='OH', knee=130)], missing=True)
 for where in ('missing', 'group', 'metric', 'history'):
