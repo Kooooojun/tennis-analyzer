@@ -159,7 +159,7 @@ a{color:var(--accent)}
 .ov-second .ov-tag{font-size:11px;font-weight:600;border:1px solid var(--line);border-radius:4px;padding:0 6px;color:var(--muted);margin-right:6px;white-space:nowrap}
 .ov-card .ov-second .ov-title{display:inline;font-size:15px;margin:0}
 .ov-disclaimer{display:flex;flex-wrap:wrap;align-items:center;gap:0 10px}
-.ov-limits-btn{background:none;border:0;padding:0 2px;color:var(--accent);font-size:12px;text-decoration:underline}
+.ov-limits-btn{background:none;border:0;padding:6px 2px;color:var(--accent);font-size:12px;text-decoration:underline}
 kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--panel)}
 @media (max-width:820px), (pointer:coarse) and (max-height:500px) and (orientation:landscape){
   header{padding-block:12px 4px} h1{font-size:18px}
@@ -809,7 +809,7 @@ function drawOverview(){
 // ---------- 這場先練一件事: notes.json overall (docs/advice.md) → 每位球員一張卡 ----------
 const overallEntries = d => (Array.isArray(d.overall)?d.overall:[]).filter(o=>o&&(o.main||o.insufficient));  // 沒有 main 也沒有 insufficient 的壞項目略過（check_findings 已擋）；舊 data.js 沒有欄位
 function ovBody(p){  // main／second／insufficient 共用：標題、為什麼、練法、口訣、jump（jump 的拍號是最終拍號，1 起算）
-  const js=(p.jump||[]).filter(([n])=>byNo(n)).map(([n,l])=>`<button type="button" data-n="${n}">${esc(l)}</button>`).join("");
+  const js=(Array.isArray(p.jump)?p.jump:[]).filter(j=>Array.isArray(j)&&byNo(j[0])).map(([n,l])=>`<button type="button" data-n="${n}">${esc(l)}</button>`).join("");
   return (p.why?`<p class="ov-why"><b>為什麼：</b>${esc(p.why)}</p>`:"")+(p.practice?`<p class="ov-practice"><b>練法：</b>${esc(p.practice)}</p>`:"")+(p.cue?`<p class="ov-cue"><b>口訣：</b>${esc(p.cue)}</p>`:"")+(js?`<div class="ov-jump">${js}</div>`:"");
 }
 function drawOverall(){
