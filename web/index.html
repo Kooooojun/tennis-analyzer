@@ -1405,9 +1405,8 @@ function demoPlan(s){  // demoTarget plus the hip drop (d3 metres, d2 pixels) th
   }
   PLAN.set(s,{key,plan}); return plan;
 }
-function demoPts(s,f,three){ const p=demoPlan(s), d=p&&(three?p.d3:p.d2), w=demoWeight(f,s.contact), P=(three?pts3:pts2)(s,f); if(d==null||!w||!P) return null;
-  const m=three?p.dirs3:p.dirs2, r=rawBends(P);  // the bend direction eases with the weight from this frame's own (weight 0: the raw pose) to the stroke's (weight 1: one steady side through the window)
-  return kneeIK(P,d*w,m.map((x,j)=>x.map((y,i)=>r[j][i]*(1-w)+y*w))); }
+function demoPts(s,f,three){  // every drawn frame (weight > 0) bends along the stroke's one direction: easing from the frame's own would let a near-straight leg's ~1 px noise pick the side while the drop is already several px
+  const p=demoPlan(s), d=p&&(three?p.d3:p.d2), w=demoWeight(f,s.contact), P=(three?pts3:pts2)(s,f); return d==null||!w||!P?null:kneeIK(P,d*w,three?p.dirs3:p.dirs2); }
 function demo2(s,f){ const Q=demoPts(s,f,false), [w,h]=sizeOf(s); return Q&&Q.map((q,i)=>[q[0]/w,q[1]/h,s.frames[f][i][2]]); }
 function leanDir(s){  // image-plane torso tilt from vertical (radians, + = toward image right): the landmarks, visibility cut and 5 frames form_checks measures lean on
   const [w,h]=sizeOf(s), a=[];
