@@ -104,6 +104,13 @@ bad(dict(overall=[dict(player="wide", main=dict(MAIN, why=f"自拋比對打前�
 PROB = lambda *cites, text="": dict(findings=[dict(title="t", text=text, cite=list(cites))])
 assert ok(PROB(dd("diff", d)))                                         # 問題型 finding：diff 是多拍統計，不被「單拍」規則擋
 assert ok(PROB(dd("ci_lo", lo)))
+# Codex 審查：prep 量的是手腕最後方到擊球，不是轉身時機；drill_diff prep 的問題型 finding 也要有 look（≥ 3），good／info 照舊免
+PREP = DD("me", "prep")
+pc = dd("diff", PREP["diff"], "prep")
+bad(PROB(pc, text="暫定"), "look")
+assert ok(dict(findings=[dict(title="t", text="暫定", cite=[pc], look=[2, 5, 13])]))
+assert ok(dict(findings=[dict(info=True, title="t", text="暫定", cite=[pc])]))
+assert ok(dict(findings=[dict(good=True, title="t", text="暫定", cite=[pc])]))
 bad(PROB(dd("feed", ME["feed"]["median"])), "問題型")                  # 只有一邊的中位數：沿用舊規則
 
 print("ok")

@@ -272,7 +272,7 @@ def _finding_errs(f, strokes, scores, runs=()):
     if any(isinstance(c, dict) and "drill_diff" in c and not _bad_keys(c) and _dd_unsure(c, scores.get("groups", [])) for c in cites) and not re.search(UNSURE, f.get("title", "") + f.get("text", "")):
         errs.append("drill_diff 的區間含 0，文字不能寫成確定的差：要寫「不確定」或「暫定」（docs/advice.md）")
     if "look" in f: errs += _look_errs(f["look"], strokes)
-    elif not f.get("good") and not f.get("info") and any(isinstance(c, dict) and "prep" in (c.get("field"), c.get("metric")) for c in cites):
+    elif not f.get("good") and not f.get("info") and any(isinstance(c, dict) and "prep" in (c.get("field"), c.get("metric"), c.get("drill_diff")) for c in cites):
         errs.append("問題型 finding 引用 prep 要有 look（看過圖的拍號，≥ 3）：prep 量的是手腕最後方到擊球，不是轉身時機")
     errs += _change_errors({**f, "cite": [c for c in cites if isinstance(c, dict) and not _bad_keys(c)]}, scores, runs)  # a malformed cite is already reported
     vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
