@@ -82,9 +82,48 @@ const GEOM=()=>{
    if(Math.abs(demoWeight(f,S.contact)-1)>1e-9)r.windowWeight=false;
   }
  }
+ // 彎曲側（只看權重 1 的窗口）：換邊＝相鄰兩格示意膝離「示意髖→踝線」的偏移反向；往腳跟＝偏移和這條腿窗口內踝→腳尖中位數（扣掉沿腿分量）反向。
+ // 腳尖用中位數：單格的腳尖點在腳投影很短時會自己換邊，示意不該跟著它跳。
+ const sub=(a,b)=>a.map((x,i)=>x-b[i]),dot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0),perp=(w,u)=>sub(w,u.map(x=>x*dot(w,u)));
+ const vmed=ws=>[0,1,2].map(i=>{const s=ws.map(w=>w[i]).sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;});
+ const px=a=>a&&a.map(q=>[q[0]*(S.size||[540,960])[0],q[1]*(S.size||[540,960])[1],0]);
+ const side=three=>{
+  const raw=f=>three?S.world?.[f]:px(S.frames[f]),demo=f=>three?demoPts(S,f,true):px(demo2(S,f)),o={flips:0,heel:0,legs:0};
+  if(three&&!S.world)return o;
+  LEGS.forEach(([h,k,a])=>{
+   const T=vmed(Array.from({length:43},(_,j)=>raw(S.contact-48+j)).filter(Boolean).map(P=>sub(P[K[a+4]],P[K[a]])));let prev=null;
+   for(let f=S.contact-48;f<=S.contact-6;f++){const Q=demo(f);if(!Q){prev=null;continue;}
+    const A=Q[K[a]],d=sub(Q[K[h]],A),u=d.map(x=>x/Math.hypot(...d)),off=perp(sub(Q[K[k]],A),u);
+    o.legs++;if(dot(off,perp(T,u))<0)o.heel++;if(prev&&dot(off,prev)<0)o.flips++;prev=off;}
+  });
+  return o;
+ };
+ r.side2=side(false);r.side3=side(true);
  const P0=get(S.contact-20),same=P0&&kneeIK(P0,0).every((q,i)=>q.every((x,j)=>Math.abs(x-P0[i][j])<1e-9));
  const orig=[];for(let f=S.contact-48;f<=S.contact-6;f++){const P=get(f);if(P)orig.push(Math.min(ang(P,23,25,27),ang(P,24,26,28)));}
  return {...r,foot,foot2,bone,bone2,jump,moved,demoKnee:p10(win),origKnee:p10(orig),card:three?S.knee3d:S.knee,same,windowWeight:r.windowWeight!==false};
+};
+
+// kneeIK 單元測試（修正輪）：腿接近伸直時彎曲方向要穩定、朝腳尖；三點重合不出 NaN。
+// 呼叫頁面的 kneeIK；bendDirs 是新的「整拍一個方向」，舊頁面沒有它就照舊頁面的行為跑（先紅）。
+// JITTER_EXTRA 3 px：腿 70+70 px、drop 8 時，原始膝抖動讓骨長變 ±0.02 px、膝離線 0–3 px；固定方向下 IK 解析解讓示意膝多動的量在 1.5 px 內，留一倍餘裕；換邊會多跳 40 px 以上。
+const JITTER_EXTRA=3;
+const UNIT=JITTER_EXTRA=>{
+ const leg=(P,id,hip,kn,an)=>{const [h,k,a]=LEGS[id];P[K[h]]=hip;P[K[k]]=kn;P[K[a]]=an;P[K[a+2]]=[an[0]-8,an[1]+8,0];P[K[a+4]]=[an[0]+30,an[1]+10,0];};  // 腳尖在 +x
+ const mk=kx=>{const P=Array.from({length:17},()=>[470,200,0]);for(const id of [0,1])leg(P,id,[470,300,0],[kx,370,0],[470,440,0]);return P;};
+ const dirs=Ps=>typeof bendDirs==='function'?bendDirs(Ps):undefined;
+ const out={straight:[],jitter:null,degenerate:null};
+ for(const drop of [8,15]){const Ps=[mk(470.5),mk(469.5)],d=dirs(Ps);out.straight.push({drop,x:Ps.map(P=>kneeIK(P,drop,d)).map(Q=>[Q[K[25]][0],Q[K[26]][0]])});}
+ // 膝角 175–180° 抖動、膝隨機在線的兩側（座標雜訊）；固定種子
+ let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647,deg=Math.PI/180;
+ const Ps=Array.from({length:60},()=>{const th=175+5*rnd(),h=70*Math.tan((180-th)/2*deg);return mk(470+(rnd()<.5?-h:h));}),d=dirs(Ps),Qs=Ps.map(P=>kneeIK(P,8,d));
+ let sides=new Set(),extra=0;
+ for(let i=0;i<Ps.length;i++)for(const k of [25,26]){sides.add(Math.sign(Qs[i][K[k]][0]-470));if(i){const m=(A,B)=>Math.hypot(A[K[k]][0]-B[K[k]][0],A[K[k]][1]-B[K[k]][1]);extra=Math.max(extra,m(Qs[i],Qs[i-1])-m(Ps[i],Ps[i-1]));}}
+ out.jitter={sides:[...sides],extra};
+ // 三點重合的退化腿：不畫示意（null），不能有 NaN
+ const D=mk(480);leg(D,0,[470,300,0],[470,300,0],[470,300,0]);const r=kneeIK(D,8,dirs([D]));
+ out.degenerate={isNull:r===null,nan:!!r&&r.some(q=>q&&q.some(x=>!Number.isFinite(x)))};
+ return out;
 };
 
 const players=async(page)=>page.evaluate(()=>{for(const vid of document.querySelectorAll('video'))vid.muted=true;});
@@ -104,6 +143,12 @@ try{
      await page.evaluate(day=>go(day,'stroke'),day);
      await page.waitForFunction(()=>S?.frames?.length&&v.readyState>=2&&!v._fetching);
      if(!real)await page.evaluate(SYNTH);
+     if(!real&&di===0){
+      const u=await page.evaluate(UNIT,JITTER_EXTRA);
+      for(const {drop,x} of u.straight)check(x.every(([l,r])=>l>470&&r>470),`${tag}：直腿 ±0.5 px（drop ${drop}）示意膝要都在腳尖那側 ${JSON.stringify(x)}`);
+      check(u.jitter.sides.length===1&&u.jitter.sides[0]===1&&u.jitter.extra<=JITTER_EXTRA,`${tag}：膝角 175–180° 抖動時示意膝換邊或多跳 ${JSON.stringify(u.jitter)}`);
+      check(u.degenerate.isNull&&!u.degenerate.nan,`${tag}：髖膝踝重合要不畫示意 ${JSON.stringify(u.degenerate)}`);
+     }
      // 面板預設關著：沒有面板、列表沒有示意記號
      check(await page.evaluate(()=>!$('r3d')||$('r3d').hidden),`${tag}：面板預設要關著`);
      check(!(await page.locator('#strokes').textContent()).includes('示意'),`${tag}：關著時列表不能有示意記號`);
@@ -135,6 +180,7 @@ try{
      if(di===0)console.log(`${tag}：${day} 示意拍 ${eligible.length}（${eligible.join('、')}）`);
 
      // 每一拍有示意的拍：幾何不變式
+     const sideSum={side2:{flips:0,heel:0,legs:0},side3:{flips:0,heel:0,legs:0}};
      for(const id of eligible){
       await page.evaluate(id=>load(id,false),id);await page.waitForFunction(()=>S?.frames?.length);
       const r=await page.evaluate(GEOM);
@@ -146,14 +192,30 @@ try{
       check(r.jump<=.05+1e-9&&r.windowWeight,`${tag}：#${id} 權重跳動 ${r.jump}`);
       check(r.same,`${tag}：#${id} 權重 0 時示意要等於原始`);
       check(r.moved>0,`${tag}：#${id} 示意沒有往下移`);
+      check(r.side2.flips===0&&r.side3.flips===0&&r.side2.heel===0,`${tag}：#${id} 示意膝換邊或往腳跟彎 2D ${JSON.stringify(r.side2)} 3D ${JSON.stringify(r.side3)}`);
+      for(const k of ['side2','side3'])for(const x of ['flips','heel','legs'])sideSum[k][x]+=r[k][x];
+      const whose=await page.evaluate(()=>(who(S)==='me'?'你':who(S))+'對打時的中位數');
+      check((await page.locator('#r3dInfo').textContent()).includes(whose),`${tag}：#${id} 示意說明要寫是誰的中位數（${whose}）`);
       if(real&&di===0&&id===eligible[0])console.log(`${tag}：#${id} 卡片 ${r.card}° 重算 ${r.origKnee.toFixed(1)}° 示意 ${r.demoKnee.toFixed(1)}° 目標 ${r.target}° 骨長 ${(r.bone*100).toFixed(4)}% 權重最大步 ${r.jump.toFixed(3)}`);
      }
+     if(eligible.length)console.log(`${tag}：${day} 示意拍窗口內 2D 換邊 ${sideSum.side2.flips}、往腳跟 ${sideSum.side2.heel}/${sideSum.side2.legs} 腿格；3D 換邊 ${sideSum.side3.flips}、對腳尖中位數反向 ${sideSum.side3.heel}/${sideSum.side3.legs} 腿格（3D 只報不擋，見 pred2.md）`);
      // 不符合的拍：完全不畫示意
      const others=await page.evaluate(()=>ALL.filter(s=>!demoTarget(s)).slice(0,6).map(s=>s.id));
      for(const id of others){
       await page.evaluate(id=>load(id,false),id);await page.waitForFunction(()=>S?.frames?.length);
       check(await page.evaluate(()=>{goto(S.contact-20);return !R3D.demoDrawn&&!demoPlan(S)&&demo2(S,S.contact-20)==null;}),`${tag}：#${id} 不符合卻畫了示意`);
      }
+
+     // 撞色：面板開著時 2D 原始骨架一律橘色，藍色只給示意（不符合的拍、示意關掉時都不能有藍）
+     const BLUE=()=>{const proto=CanvasRenderingContext2D.prototype,d=Object.getOwnPropertyDescriptor(proto,'strokeStyle'),seen=[];
+      Object.defineProperty(proto,'strokeStyle',{configurable:true,get(){return d.get.call(this);},set(x){if(this.canvas===cv)seen.push(x);d.set.call(this,x);}});
+      try{goto(S.contact-20);}finally{Object.defineProperty(proto,'strokeStyle',d);}
+      return seen.filter(x=>/90,\s*180,\s*255/.test(x)).length;};
+     if(others.length){await page.evaluate(id=>load(id,false),others[0]);await page.waitForFunction(()=>S?.frames?.length);
+      check(await page.evaluate(BLUE)===0,`${tag}：沒有示意的拍，面板開著時 2D 骨架不能有藍色`);}
+     if(eligible.length){await page.evaluate(id=>load(id,false),eligible[0]);await page.waitForFunction(()=>S?.frames?.length);
+      await page.locator('#r3dDemo').click();check(await page.evaluate(BLUE)===0,`${tag}：示意關掉時 2D 骨架不能有藍色`);await page.locator('#r3dDemo').click();
+      check(await page.evaluate(BLUE)>0,`${tag}：示意打開時 2D 要畫藍色示意`);}
 
      // 同步：播放中、seek 後、逐格，3D 的格＝2D 疊圖的格
      const syncId=eligible[0]??others[0];
@@ -215,7 +277,9 @@ try{
       const low=await page.evaluate(()=>{const d=DAYS[DAY],keep=d.srcFps;d.srcFps=30;R3D.s=null;render(cur);const t=$('r3dMethod').textContent;d.srcFps=keep;R3D.s=null;render(cur);return t;});
       check(low.includes('30 fps')&&low.includes('插值')&&!low.includes('插值 0 格'),`${tag}：低 fps 方法說明 ${low}`);
      }
-     check(method.text.includes(`這拍 ${method.n} 格`)&&method.text.includes(`骨架 ${method.ok} 格`)&&method.text.includes(`3D ${method.w} 格`)&&method.text.includes('插值 0 格')&&/正前、正後方/.test(method.text),`${tag}：方法說明 ${method.text}`);
+     // 格數只在 #148 的「這拍有效骨架 N／M 格」出現一次；3D 方法說明不重複列，也不重複「轉到沒拍到的那一面」
+     check(!/這拍 \d+ 格|偵測到骨架|插值格數不另計|轉到影片沒拍到的那一面/.test(method.text)&&method.text.includes(`3D 骨架 ${method.w} 格`)&&method.text.includes('插值 0 格')&&/正前、正後方/.test(method.text),`${tag}：方法說明 ${method.text}`);
+     check(await page.evaluate(()=>document.body.innerText.split('有效骨架').length-1)===1,`${tag}：畫面上「有效骨架」格數要只出現一次`);
      // 鍵盤：聚焦 canvas 後方向鍵旋轉、不換格；Home 重設
      await page.locator('#r3dCv').focus();const f0=await page.evaluate(()=>cur);
      await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowUp');
@@ -241,6 +305,20 @@ try{
       await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+80,box.y+box.height/2+40,{steps:5});await page.mouse.up();
      }
      check(await page.evaluate(()=>R3D.yaw!==0&&R3D.pitch!==0),`${tag}：拖曳沒有旋轉`);
+     if(!mobile){  // 滑鼠拖過 3D 之後，方向鍵還是頁面的：→ 逐格、↓ 換拍（canvas 不能偷偷留著焦點）
+      const k0=await page.evaluate(()=>({f:cur,id:S.id,yaw:R3D.yaw}));
+      await page.keyboard.press('ArrowRight');
+      const k1=await page.evaluate(()=>({f:cur,yaw:R3D.yaw}));
+      check(k1.f===k0.f+1&&k1.yaw===k0.yaw,`${tag}：拖過 3D 後按 → 要逐格 ${JSON.stringify([k0,k1])}`);
+      await page.keyboard.press('ArrowDown');await page.waitForTimeout(700);
+      check(await page.evaluate(id=>S.id!==id,k0.id),`${tag}：拖過 3D 後按 ↓ 要換拍`);
+      await page.keyboard.press('ArrowUp');await page.waitForTimeout(700);await page.waitForFunction(()=>S?.frames?.length);
+     }
+     // 俯視到上限：每一格的骨架（原始＋示意）都留在 canvas 內
+     const over=await page.evaluate(()=>{R3D.pitch=Infinity;$('r3dCv').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));const c=$('r3dCv').getBoundingClientRect();let out=0,n=0;
+      for(const yaw of [0,1.57,3.14]){R3D.yaw=yaw;for(let f=0;f<S.frames.length;f++){if(!S.world?.[f])continue;draw3d(f);n++;const pts=[S.world[f],R3D.demo&&demoPts(S,f,true)].filter(Boolean).flat().map(R3D.proj);if(pts.some(([x,y])=>!(x>=0&&x<=c.width&&y>=0&&y<=c.height)))out++;}}
+      const pitch=R3D.pitch;R3D.yaw=R3D.pitch=0;draw3d(cur);return {out,n,pitch};});
+     check(over.out===0&&Number.isFinite(over.pitch),`${tag}：俯視時骨架超出 canvas ${JSON.stringify(over)}`);
      await page.locator('#r3dReset').click();
      check(await page.evaluate(()=>R3D.yaw===0&&R3D.pitch===0),`${tag}：重設視角`);
      check(JSON.stringify(await playState(page))===JSON.stringify(ps),`${tag}：拖曳／重設改了播放狀態`);
@@ -256,6 +334,25 @@ try{
      check((await page.locator('#r3dMsg').textContent()).includes('這拍沒有 3D 資料'),`${tag}：沒有 world 要提示`);
      if(noWorld==null)await page.evaluate(()=>{S.world=_keepWorld;render(cur);});
 
+     // 列表「示意」小字：深淺主題對它的背景對比 ≥ 4.5（一般文字）
+     const RATIO=()=>{const rgb=s=>s.match(/[\d.]+/g).slice(0,4).map(Number);const lum=c=>{const [r,g,b]=c.slice(0,3).map(x=>{x/=255;return x<=.03928?x/12.92:((x+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;};
+      const m=document.querySelector('.r3d-mark');if(!m)return null;let e=m,bg;while(e){bg=rgb(getComputedStyle(e).backgroundColor);if(bg[3]!==0)break;e=e.parentElement;}
+      const [h,l]=[lum(rgb(getComputedStyle(m).color)),lum(bg)].sort((x,y)=>y-x);return (h+.05)/(l+.05);};
+     for(const scheme of ['light','dark']){await page.emulateMedia({colorScheme:scheme});const r=await page.evaluate(RATIO);if(r!=null)check(r>=4.5,`${tag}：${scheme} 列表示意字對比 ${r}`);}
+     // 暫停中系統切換深淺色：面板開著要重畫 canvas，播放狀態不動
+     await page.evaluate(()=>document.documentElement.removeAttribute('data-theme'));await page.emulateMedia({colorScheme:'light'});await page.waitForTimeout(400);await page.evaluate(()=>render(cur));  // baseline drawn in light (a removed data-theme attribute fires no media change)
+     const sch0=await pix(),ps0=await playState(page);await page.emulateMedia({colorScheme:'dark'});
+     const redrawn=await page.waitForFunction(h=>{const c=$('r3dCv'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let x=0;for(let i=0;i<d.length;i+=7)x=(x*31+d[i])|0;return [x,cur,R3D.yaw,R3D.pitch].join()!==h;},sch0,{timeout:2000}).then(()=>true,()=>false);  // the change event can land a frame late
+     const ps1=await playState(page);check(redrawn&&JSON.stringify(ps1)===JSON.stringify(ps0),`${tag}：系統切換深淺色後 3D 要重畫、播放狀態不變 ${JSON.stringify({day,redrawn,ps0,ps1})}`);
+     await page.emulateMedia({colorScheme:null});await page.waitForTimeout(50);
+     // 停用的按鈕看起來不能按
+     check(await page.evaluate(()=>{const b=$('r3dKnee'),was=b.disabled;b.disabled=true;const o=+getComputedStyle(b).opacity;b.disabled=was;return o<1;}),`${tag}：停用的按鈕要變淡`);
+     if(mobile){  // 矮手機：canvas 不能吃掉黏頂影片下方大部分的可捲動區
+      await page.setViewportSize({width:375,height:667});await page.waitForTimeout(100);
+      const ch=await page.evaluate(()=>$('r3dCv').getBoundingClientRect().height);
+      check(ch<=.3*667+1,`${tag}：375×667 canvas 高 ${ch}`);
+      await page.setViewportSize({width:400,height:860});await page.waitForTimeout(100);
+     }
      // 深淺主題都看得清楚：原始、示意兩色對面板背景對比 ≥ 3
      for(let t=0;t<2;t++){
       const c=await page.evaluate(()=>{const rgb=s=>s.startsWith('#')?[1,3,5].map(i=>parseInt(s.slice(i,i+2),16)):s.match(/[\d.]+/g).slice(0,3).map(Number);const lum=c=>{const [r,g,b]=c.map(x=>{x/=255;return x<=.03928?x/12.92:((x+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;};const ratio=(a,b)=>{const [h,l]=[lum(a),lum(b)].sort((x,y)=>y-x);return (h+.05)/(l+.05);};const bg=rgb(getComputedStyle($('r3dCv')).backgroundColor);return [ratio(rgb(css('--s1')),bg),ratio(rgb(css('--s2')),bg)];});

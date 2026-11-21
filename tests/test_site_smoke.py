@@ -225,6 +225,7 @@ if os.environ.get("SITE_E2E_URL"):
         subprocess.run(["node", str(R / "tests" / (name + ".mjs"))], check=True,
                        env={**{k: v for k, v in os.environ.items() if k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-" + name))} if os.environ.get("SITE_RESULTS") else {})})
     # 3D replay (#145): synthetic skeletons first, then the real session copy at SITE_E2E_URL; like site_card_medians, not on SITE_REF (the page before it).
+    if os.environ.get("SITE_REF"): print("skipped site_replay3d.mjs: it checks new behaviour, SITE_REF runs the old page")
     for real in () if os.environ.get("SITE_REF") else (False, True):
         subprocess.run(["node", str(R / "tests" / "site_replay3d.mjs")], check=True,
                        env={**{k: v for k, v in os.environ.items() if real or k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + ("-replay3d-real" if real else "-replay3d")))} if os.environ.get("SITE_RESULTS") else {})})

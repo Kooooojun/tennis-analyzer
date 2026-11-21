@@ -10,21 +10,21 @@
 :root{
   --bg:#f6f5f1; --panel:#ffffff; --ink:#1c1c1a; --muted:#6b6a64; --line:#e2e0d8;
   --accent:#2f7d4f; --accent-ink:#ffffff; --warn:#a64a14; --good:#287045; --chip:#efeee8;
-  --s1:#d9480f; --s2:#1971c2; --s3:#7048e8;
+  --s1:#d9480f; --s2:#1971c2; --s3:#7048e8; --s2-ink:#1864ab;  /* s2-ink: --s2 as small text on --chip needs 4.5:1, #1971c2 gives 4.3 */
   --fh:#c2410c; --bh:#1d4ed8; --tag-ink:#ffffff;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#121311; --panel:#1c1d1a; --ink:#ecebe4; --muted:#9c9b93; --line:#2e2f2b;
     --accent:#5cc28a; --accent-ink:#0d1a12; --warn:#f0965a; --good:#5cc28a; --chip:#262723;
-    --s1:#ff8a4c; --s2:#5aa9ff; --s3:#a98bff;
+    --s1:#ff8a4c; --s2:#5aa9ff; --s3:#a98bff; --s2-ink:#5aa9ff;
     --fh:#fb923c; --bh:#60a5fa; --tag-ink:#121311; color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
   --bg:#121311; --panel:#1c1d1a; --ink:#ecebe4; --muted:#9c9b93; --line:#2e2f2b;
   --accent:#5cc28a; --accent-ink:#0d1a12; --warn:#f0965a; --good:#5cc28a; --chip:#262723;
-  --s1:#ff8a4c; --s2:#5aa9ff; --s3:#a98bff;
+  --s1:#ff8a4c; --s2:#5aa9ff; --s3:#a98bff; --s2-ink:#5aa9ff;
   --fh:#fb923c; --bh:#60a5fa; --tag-ink:#121311; color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -248,6 +248,7 @@ main.noplayer>.col{max-width:820px}
 #r3d h2{margin:0}
 #r3dCv{display:block;width:100%;height:min(46vh,360px);margin:8px 0 4px;border-radius:8px;background:var(--chip);touch-action:none;cursor:grab}  /* touch-action: a finger drag rotates the skeleton, never scrolls the page */
 #r3dCv:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#r3d button:disabled{opacity:.45;cursor:default}
 #r3d .legend i.o{background:var(--s1)} #r3d .legend i.d{background:var(--s2)}
 main.noplayer #r3d{display:none}
 /* panel open (main.r3d): beside the clip on wide screens — portrait clip: player spans both rows, panel then cards on the right; landscape clip: player | panel, cards full width */
@@ -258,8 +259,8 @@ main.r3d.wideplayer:not(.noplayer){grid-template-columns:minmax(0,3fr) minmax(0,
 main.r3d.wideplayer:not(.noplayer)>.player{grid-row:1}
 main.r3d.wideplayer:not(.noplayer)>.col{grid-column:1 / -1}
 @media (max-width:820px), (pointer:coarse) and (max-height:500px) and (orientation:landscape){main.r3d{grid-template-columns:minmax(0,1fr)!important} main.r3d>*{grid-column:1!important;grid-row:auto!important}}  /* phones: one column, panel right under the sticky clip; !important beats the wide-screen placement above */
-.r3d-mark{color:var(--s2);font-weight:700}
-@media (max-width:820px){#r3dCv{height:min(36vh,300px)}}
+.r3d-mark{color:var(--s2-ink);font-weight:700}
+@media (max-width:820px){#r3dCv{height:min(30vh,300px);height:min(30svh,300px)}}  /* a short phone (375×667) keeps most of the scroll area under the sticky clip */
 body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{padding:24px;color:var(--muted)}  /* data.js is MBs: hide the half-built page until it has run */
 </style>
 <header>
@@ -673,10 +674,10 @@ function paint(cv, vid, s, f, opt){
   const fr=s.frames[f]; if(!fr) return;
   if(opt.skel){
     g.lineCap="round";
-    for(const [a,c] of EDGES){ g.strokeStyle=(opt.demo||a%2===0&&c%2===0)?"rgba(255,120,60,.95)":"rgba(90,180,255,.95)"; g.lineWidth=(a===HE||c===HE)?4:3;
+    for(const [a,c] of EDGES){ g.strokeStyle=(opt.mono||a%2===0&&c%2===0)?"rgba(255,120,60,.95)":"rgba(90,180,255,.95)"; g.lineWidth=(a===HE||c===HE)?4:3;
       const A=fr[K[a]], C=fr[K[c]]; g.beginPath(); g.moveTo(X(A),Y(A)); g.lineTo(X(C),Y(C)); g.stroke(); }
     for(const id of [0,11,12,13,14,15,16,23,24,25,26,27,28]){ const q=fr[K[id]]; g.fillStyle=q[2]<0.4?"rgba(255,255,255,.35)":"#fff"; g.beginPath(); g.arc(X(q),Y(q),id===HW?5:3.2,0,7); g.fill(); }
-    const dm=opt.demo?.(f);  // 3D replay's knee demo: blue over the (then all-orange) original, no numbers
+    const dm=opt.demo?.(f);  // 3D replay's knee demo: blue over the original, which is all orange while the panel is open (mono), so blue only ever means the demo; no numbers
     if(dm){ g.strokeStyle="rgba(90,180,255,.95)"; g.lineWidth=2.5; for(const [a,c] of EDGES){ const A=dm[K[a]], C=dm[K[c]]; g.beginPath(); g.moveTo(X(A),Y(A)); g.lineTo(X(C),Y(C)); g.stroke(); } }
   }
   const label=(t,x,y,col)=>{ g.font=`600 ${small?11:13}px ui-monospace,Menlo,monospace`; g.lineWidth=3; g.strokeStyle="rgba(0,0,0,.75)"; g.fillStyle=col||"#fff"; g.strokeText(t,x,y); g.fillText(t,x,y); };
@@ -1295,7 +1296,7 @@ function drawChart(f){
 function render(f){
   const arm=armCheck(S);  // Pose arrival can reveal the missing-data reason (docs/scoring.md §9).
   $("mElbow").textContent=arm?arm[0]:"–"; $("mElbow").style.color=arm?"var(--muted)":""; $("cElbow").textContent=arm?arm[1]:"正手與雙手反拍不評手肘；手肘角度太不準，不顯示數字";
-  cur=f; paint(cv,v,S,f,R3D.on&&R3D.demo&&demoPlan(S)?{...OPT,demo:f=>demo2(S,f)}:OPT); drawChart(f); seek.value=f; $("badge").textContent=v._blocked&&!v.readyState?TAP:relLabel(f);
+  cur=f; paint(cv,v,S,f,R3D.on?{...OPT,mono:true,demo:R3D.demo&&demoPlan(S)?f=>demo2(S,f):null}:OPT); drawChart(f); seek.value=f; $("badge").textContent=v._blocked&&!v.readyState?TAP:relLabel(f);
   let ph=null; for(const p of S.phases) if(f>=p.f) ph=p;
   const pb=$("phaseBadge"); pb.style.display=ph?"block":"none"; if(ph) pb.textContent=ph.name;
   if(R3D.on) draw3d(f);  // same frame as the 2D overlay: the 3D panel has no clock of its own
@@ -1353,24 +1354,35 @@ const pts3=(s,f)=>s.world?.[f]||null;
 const pts2=(s,f)=>{ const fr=s.frames?.[f], [w,h]=sizeOf(s); return fr?fr.map(p=>[p[0]*w,p[1]*h,0]):null; };  // pixels: equal x/y units, like metrics.py _scale
 const minKnee=P=>Math.min(angle3(P,24,26,28)??180,angle3(P,23,25,27)??180);
 const IK_MIN=60*Math.PI/180;  // tightest knee the demo draws; real targets are 100–130°, so only a foreshortened 2D leg ever reaches it
-function kneeIK(P,drop){  // P: 17 [x,y,z] points, y down. Feet stay, everything above the knees moves down by drop, each knee is re-solved with its thigh and shin lengths kept
-  const sub=(a,b)=>a.map((x,i)=>x-b[i]), dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2], len=a=>Math.sqrt(dot(a,a));
+const V={sub:(a,b)=>a.map((x,i)=>x-b[i]), dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2]}; V.len=a=>Math.sqrt(V.dot(a,a)); V.perp=(w,u)=>V.sub(w,u.map(x=>x*V.dot(w,u)));  // perp: w minus its part along the unit vector u
+const rawBends=P=>LEGS.map(([h,k,a])=>{ const A=P[K[a]], o=V.sub(P[K[h]],A), ol=V.len(o); return ol?V.perp(V.sub(P[K[k]],A),o.map(x=>x/ol)):[0,0,0]; });  // where each knee sits off its ankle→hip line, per leg
+function bendDirs(Ps){  // one bend direction per leg for a whole stroke: the per-axis median knee offset, flipped to the toe side (median ankle→toe); all straight → the toe direction
+  // why a stroke median: near straight (178–180°) one frame's offset is only coordinate rounding (~1 px) and its sign flips frame to frame, and one frame's toe point can flip too; the median follows neither
+  return LEGS.map(([h,k,a])=>{ const ns=[], ts=[];
+    for(const P of Ps){ const A=P[K[a]], o=V.sub(P[K[h]],A), ol=V.len(o); if(!ol) continue; const u=o.map(x=>x/ol); ns.push(V.perp(V.sub(P[K[k]],A),u)); ts.push(V.perp(V.sub(P[K[a+4]],A),u)); }
+    if(!ns.length) return [0,0,0];
+    const med3=ws=>[0,1,2].map(i=>median(ws.map(w=>w[i]))), m=med3(ns), t=med3(ts);
+    return V.dot(m,t)<0?m.map(x=>-x):V.len(m)?m:t; });
+}
+function kneeIK(P,drop,dirs=rawBends(P)){  // P: 17 [x,y,z] points, y down. Feet stay, everything above the knees moves down by drop, each knee is re-solved with its thigh and shin lengths kept, bent along dirs (per leg; default: where it already bends)
+  const {sub,len}=V;
+  if(LEGS.some(([h,k,a])=>!(len(sub(P[K[h]],P[K[k]]))>0&&len(sub(P[K[k]],P[K[a]]))>0))) return null;  // a zero-length thigh or shin (hip, knee, ankle on one point): no demo, never NaN
   for(const [h,k,a] of LEGS){  // cap the drop so neither knee folds past IK_MIN: past |thigh−shin| the leg cannot reach and would stretch (2D thighs can look very short)
     const H=P[K[h]], A=P[K[a]], L1=len(sub(H,P[K[k]])), L2=len(sub(P[K[k]],A)), D2=L1*L1+L2*L2-2*L1*L2*Math.cos(IK_MIN), hz=(H[0]-A[0])**2+(H[2]-A[2])**2, vy=A[1]-H[1];
     drop=Math.max(0,Math.min(drop,hz>=D2?vy:vy-Math.sqrt(D2-hz)));
   }
   const Q=P.map((p,i)=>i>=K[27]?p.slice():i===K[25]||i===K[26]?null:[p[0],p[1]+drop,p[2]]);
-  for(const [h,k,a] of LEGS){
+  LEGS.forEach(([h,k,a],j)=>{
     const H0=P[K[h]], Kn=P[K[k]], A=P[K[a]], L1=len(sub(H0,Kn)), L2=len(sub(Kn,A)), d=sub(Q[K[h]],A), dl=len(d)||1, u=d.map(x=>x/dl);
-    const D=Math.max(Math.abs(L1-L2),Math.min(L1+L2,dl)), o=sub(H0,A);
-    let n=sub(sub(Kn,A),o.map(x=>x*dot(sub(Kn,A),o)/(dot(o,o)||1)));  // where the knee sits off the original ankle→hip line: it bends the same way, in that plane
-    if(len(n)<1e-9) n=[Math.sign(P[K[a+4]][0]-A[0])||1,0,0];  // shortcut: a dead-straight leg (e.g. a pose clamped at the frame edge) has no bend direction; bend it toward the toes along image x (2D points have it too), never backwards
-    n=sub(n,u.map(x=>x*dot(n,u))); const nl=len(n)||1, along=(L2*L2-L1*L1+D*D)/(2*D), off=Math.sqrt(Math.max(0,L2*L2-along*along));
+    const D=Math.max(Math.abs(L1-L2),Math.min(L1+L2,dl));
+    // bend in dirs[j] (its part off the new hip→ankle line); if that part is ~0, toward this frame's toes, then image x, then y (u is a unit vector, so one of them always has a part off it)
+    const n=[dirs[j],sub(P[K[a+4]],A),[1,0,0],[0,1,0]].map(w=>V.perp(w,u)).find(w=>len(w)>1e-6*(L1+L2)), nl=len(n), along=(L2*L2-L1*L1+D*D)/(2*D), off=Math.sqrt(Math.max(0,L2*L2-along*along));
     Q[K[k]]=A.map((x,i)=>x+u[i]*along+n[i]/nl*off);
-  }
+  });
   return Q;
 }
-const kneeP10=(s,pts,drop=0)=>{ const a=[]; for(let f=s.contact-KWIN[0];f<=s.contact-KWIN[1];f++){ const P=pts(s,f); if(P) a.push(minKnee(drop?kneeIK(P,drop):P)); } return pctLin(a,.1); };
+const kneeP10=(s,pts,drop=0,dirs)=>{ const a=[]; for(let f=s.contact-KWIN[0];f<=s.contact-KWIN[1];f++){ const P=pts(s,f); if(P) a.push(minKnee(drop&&kneeIK(P,drop,dirs)||P)); } return pctLin(a,.1); };
+const dirsOf=(s,pts)=>bendDirs(Array.from({length:KWIN[0]-KWIN[1]+2*RAMP+1},(_,i)=>pts(s,s.contact-KWIN[0]-RAMP+i)).filter(Boolean));  // every frame the demo touches (weight > 0)
 const legLen=(s,pts)=>median(s.frames.map((_,f)=>{ const P=pts(s,f); if(!P) return null; const d=(a,b)=>Math.hypot(...P[K[a]].map((x,i)=>x-P[K[b]][i])); return (d(23,25)+d(25,27)+d(24,26)+d(26,28))/2; }));
 function demoTarget(s){  // {target, src} when the stroke gets a demo: a forehand, knee not gated, DEMO_MIN° straighter than its player's rally median (the advice tab's number)
   if(s.kind!=="FH"||s.knee_warn) return null;
@@ -1386,14 +1398,16 @@ function demoPlan(s){  // demoTarget plus the hip drop (d3 metres, d2 pixels) th
   let plan=null;
   if(L){
     let lo=0, hi=.5*L;  // more drop = more bend, so bisect; never past half a leg
-    const goal=Math.max(t.target,kneeP10(s,pts,hi)+.01);  // IK_MIN can stop the bend short of the target: aim at the reachable floor, not past it
-    for(let i=0;i<40;i++){ const m=(lo+hi)/2; if(kneeP10(s,pts,m)>goal) lo=m; else hi=m; }
+    const dirs=dirsOf(s,pts), goal=Math.max(t.target,kneeP10(s,pts,hi,dirs)+.01);  // IK_MIN can stop the bend short of the target: aim at the reachable floor, not past it
+    for(let i=0;i<40;i++){ const m=(lo+hi)/2; if(kneeP10(s,pts,m,dirs)>goal) lo=m; else hi=m; }
     const d=(lo+hi)/2, Lo=three?legLen(s,pts2):s.world?legLen(s,pts3):null;
-    plan={...t, reached:goal, d3:three?d:Lo&&d*Lo/L, d2:three?Lo&&d*Lo/L:d};  // the other view drops by the same share of the leg: there it only has to look the same
+    plan={...t, reached:goal, d3:three?d:Lo&&d*Lo/L, d2:three?Lo&&d*Lo/L:d, dirs3:three?dirs:s.world&&dirsOf(s,pts3), dirs2:three?dirsOf(s,pts2):dirs};  // the other view drops by the same share of the leg: there it only has to look the same
   }
   PLAN.set(s,{key,plan}); return plan;
 }
-function demoPts(s,f,three){ const p=demoPlan(s), d=p&&(three?p.d3:p.d2), w=demoWeight(f,s.contact), P=(three?pts3:pts2)(s,f); return d==null||!w||!P?null:kneeIK(P,d*w); }
+function demoPts(s,f,three){ const p=demoPlan(s), d=p&&(three?p.d3:p.d2), w=demoWeight(f,s.contact), P=(three?pts3:pts2)(s,f); if(d==null||!w||!P) return null;
+  const m=three?p.dirs3:p.dirs2, r=rawBends(P);  // the bend direction eases with the weight from this frame's own (weight 0: the raw pose) to the stroke's (weight 1: one steady side through the window)
+  return kneeIK(P,d*w,m.map((x,j)=>x.map((y,i)=>r[j][i]*(1-w)+y*w))); }
 function demo2(s,f){ const Q=demoPts(s,f,false), [w,h]=sizeOf(s); return Q&&Q.map((q,i)=>[q[0]/w,q[1]/h,s.frames[f][i][2]]); }
 function leanDir(s){  // image-plane torso tilt from vertical (radians, + = toward image right): the landmarks, visibility cut and 5 frames form_checks measures lean on
   const [w,h]=sizeOf(s), a=[];
@@ -1416,7 +1430,7 @@ function buildR3D(){
     <div class="controls"><button type="button" id="r3dKnee">停在膝蓋最彎</button><button type="button" id="r3dHit">停在擊球</button><button type="button" id="r3dDemo" class="on" aria-pressed="true">示意</button><button type="button" id="r3dReset">重設視角</button></div>
     <p class="hint" id="r3dInfo"></p>
     <p class="caveat" id="r3dMethod"></p>
-    <p class="caveat">單鏡頭估計的 3D，轉到影片沒拍到的角度會更不準。拖曳可旋轉；暫停在膝蓋最彎那一格會畫膝角弧線，在擊球格畫上身前傾弧線，數字和這一拍的卡片相同。</p>
+    <p class="caveat">單鏡頭估計的 3D，轉到影片沒拍到的角度會更不準。拖曳可旋轉。用下面的按鈕、逐格或拖時間軸停下來才畫弧線（用播放鍵暫停不畫）：「停在膝蓋最彎」停在卡片膝角那一格（窗口內膝角最接近卡片數字、第 10 百分位的那格），畫膝角弧線；「停在擊球」畫上身前傾弧線；數字和這一拍的卡片相同。</p>
     <p class="caveat">藍色是照你自己對打時的膝蓋彎曲畫的示意，只調整膝蓋，不是驗證過的正確動作。示意只出現在膝蓋比你對打時的中位數直 ${DEMO_MIN}° 以上的正拍（列表標「示意」），影片上的骨架也會畫。</p>`;
   document.querySelector("main>.col").before(c);
   const c3=$("r3dCv"); $("r3dBtn").setAttribute("aria-controls","r3d");
@@ -1426,7 +1440,7 @@ function buildR3D(){
   $("r3dReset").onclick=()=>{ R3D.yaw=R3D.pitch=0; draw3d(cur); };
   c3.addEventListener("pointerdown",e=>{ R3D.drag={x:e.clientX,y:e.clientY,yaw:R3D.yaw,pitch:R3D.pitch}; try{ c3.setPointerCapture(e.pointerId); }catch{} });
   c3.addEventListener("pointermove",e=>{ const d=R3D.drag; if(!d) return; R3D.yaw=d.yaw+(e.clientX-d.x)*.01; R3D.pitch=Math.max(-.3,Math.min(1.5,d.pitch+(e.clientY-d.y)*.01)); draw3d(cur); });
-  for(const t of ["pointerup","pointercancel"]) c3.addEventListener(t,()=>{ R3D.drag=null; });
+  for(const t of ["pointerup","pointercancel"]) c3.addEventListener(t,()=>{ R3D.drag=null; c3.blur(); });  // a mouse press focuses the canvas with no ring; let go of it so the page's arrows step frames / strokes again (Tab focus still rotates)
   c3.addEventListener("keydown",e=>{  // focused canvas: arrows rotate instead of stepping frames (stopPropagation keeps the page's arrow keys off)
     const k={ArrowLeft:[-.15,0],ArrowRight:[.15,0],ArrowUp:[0,-.15],ArrowDown:[0,.15]}[e.key];
     if(k&&!(e.altKey||e.ctrlKey||e.metaKey)){ R3D.yaw+=k[0]; R3D.pitch=Math.max(-.3,Math.min(1.5,R3D.pitch+k[1])); } else if(e.key==="Home") R3D.yaw=R3D.pitch=0; else return;
@@ -1434,14 +1448,14 @@ function buildR3D(){
   });
 }
 function r3dInfo(){  // per-stroke text: why there is or is not a demo
-  R3D.s=S; const t=demoTarget(S), p=demoPlan(S), r=Math.round;
+  R3D.s=S; const t=demoTarget(S), p=demoPlan(S), r=Math.round, you=who(S)==="me"?"你":who(S);  // whose median: the player's own, even when the advice tab shows everyone (#146 wording)
   $("r3dKnee").disabled=kneeFrameOf(S)==null; $("r3dDemo").hidden=$("r3dLegD").hidden=!p;
-  $("r3dInfo").textContent=p?`這拍有示意：把膝蓋彎到你對打時的中位數 ${KNAME[t.src==="knee3d"?"3D":"2D"]} ${r(t.target)}°${p.reached>t.target+1?`（這拍的腿只彎得到約 ${r(p.reached)}°）`:""}。`:
+  $("r3dInfo").textContent=p?`這拍有示意：把膝蓋彎到${you}對打時的中位數 ${KNAME[t.src==="knee3d"?"3D":"2D"]} ${r(t.target)}°${p.reached>t.target+1?`（這拍的腿只彎得到約 ${r(p.reached)}°）`:""}。`:
     S.kind!=="FH"?"示意只做正拍。":S.knee_warn?"這拍膝角看不準，不做示意。":t?"這拍沒有骨架可以做示意。":
-    `這拍不做示意：膝蓋和你對打時的中位數差不到 ${DEMO_MIN}°，或沒有對打正拍可比。`;
-  const n=S.frames?.length, az=S.cam_az;  // pose/<id>.js keeps undetected frames as null (not filled); a source under 50 fps is interpolated up to 60 fps before export (pose_full.to60)
-  $("r3dMethod").textContent=!S.frames?"":`方法：這拍 ${n} 格，偵測到骨架 ${S.frames.filter(Boolean).length} 格、3D ${S.world?S.world.filter(Boolean).length:0} 格；${fpsLow(DAYS[S.day])?`來源只有 ${DAYS[S.day].srcFps} fps，骨架是在來源影格之間線性插值補成 60 fps（插值格數不另計）；沒偵測到的格不補，那幾格不畫。`:"沒偵測到的格不補（插值 0 格），那幾格不畫。"}`+
-    (az==null?"":`鏡頭在球員${az<30?"正前方":az>150?"正後方":"側面"}約 ${Math.round(az)}°（0°＝正前、90°＝正側面）。`)+"正前、正後方拍的膝角看不準；3D 轉到影片沒拍到的那一面也更不準。"+
+    `這拍不做示意：膝蓋和${you}對打時的中位數差不到 ${DEMO_MIN}°，或沒有對打正拍可比。`;
+  const az=S.cam_az;  // pose/<id>.js keeps undetected frames as null (not filled); a source under 50 fps is interpolated up to 60 fps before export (pose_full.to60). The 2D frame counts are #148's poseCount, not repeated here
+  $("r3dMethod").textContent=!S.frames?"":`方法：這拍 3D 骨架 ${S.world?S.world.filter(Boolean).length:0} 格；${fpsLow(DAYS[S.day])?`來源只有 ${DAYS[S.day].srcFps} fps，骨架是在來源影格之間線性插值補成 60 fps；沒偵測到的格不補，那幾格不畫。`:"沒偵測到的格不補（插值 0 格），那幾格不畫。"}`+
+    (az==null?"":`鏡頭在球員${az<30?"正前方":az>150?"正後方":"側面"}約 ${Math.round(az)}°（0°＝正前、90°＝正側面）。`)+"正前、正後方拍的膝角看不準。"+
     (p?`示意只調整膝蓋：髖以上整體往下移${p.d3!=null?`最多 ${Math.round(p.d3*100)} 公分`:""}、腳不動、大腿小腿長度不變；其他部位和時間都沒改。`:"");
 }
 function draw3d(f){
@@ -1452,7 +1466,8 @@ function draw3d(f){
   const floor=P?Math.max(...FOOT.map(i=>P[K[i]][1])):0;  // the lowest foot point stands on the floor every frame, so the body never floats
   const cy=Math.cos(R3D.yaw), sy=Math.sin(R3D.yaw), cp=Math.cos(R3D.pitch), sp=Math.sin(R3D.pitch), sc=H/2.4, ox=W/2, oy=H*.9;
   // orthographic; yaw = pitch = 0 is the clip's own view (world x right, y down, z away from the camera)
-  const proj=q=>{ const x=q[0], y=q[1]-floor, z=q[2], x1=x*cy-z*sy, z1=x*sy+z*cy; return [ox+x1*sc, oy+(y*cp-z1*sp)*sc]; };
+  // pitch turns about the hips (the world origin), not the floor: looking down from above keeps the whole body inside the canvas; at pitch 0 this is the floor-anchored view
+  const proj=q=>{ const x=q[0], z=q[2], x1=x*cy-z*sy, z1=x*sy+z*cy; return [ox+x1*sc, oy+(q[1]*cp-z1*sp-floor)*sc]; };
   R3D.proj=proj;
   g.strokeStyle=css("--line"); g.lineWidth=1;
   for(let i=-4;i<=4;i++){ for(const [a,b] of [[[i/4,floor,-1],[i/4,floor,1]],[[-1,floor,i/4],[1,floor,i/4]]]){ const A=proj(a), B=proj(b); g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke(); } }
@@ -1497,6 +1512,7 @@ $("r3dBtn").onclick=()=>{
   $("r3d").hidden=!R3D.on; document.querySelector("main").classList.toggle("r3d",R3D.on); $("r3dBtn").classList.toggle("on",R3D.on); $("r3dBtn").setAttribute("aria-pressed",R3D.on);
   R3D.s=null; markDemo(); if(S) render(cur);
 };
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change",()=>{ if(R3D.on&&S) render(cur); });  // the 3D canvas reads theme colours when it draws: a system switch while paused must redraw it; playback is not touched
 
 // ---------- side-by-side compare, both clips aligned on contact ----------
 const vA=$("vA"), vB=$("vB"), cvA=$("cvA"), cvB=$("cvB"), cmpSeek=$("cmpSeek");
