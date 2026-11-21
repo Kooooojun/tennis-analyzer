@@ -139,6 +139,8 @@ a{color:var(--accent)}
 .note-row{display:flex;gap:6px}
 .note-row input{flex:1;min-width:0;font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
 .caveat{font-size:12px;color:var(--muted);margin-top:8px}
+.disclaimer{color:var(--ink)}
+#methodNote{overflow-wrap:anywhere}
 kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--panel)}
 @media (max-width:820px), (pointer:coarse) and (max-height:500px) and (orientation:landscape){
   header{padding-block:12px 4px} h1{font-size:18px}
@@ -306,6 +308,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
 
     <div class="card" data-tab="advice">
       <h2>這場的建議</h2>
+      <p class="caveat disclaimer" id="disclaimerAdvice"></p>
       <div id="findings"></div>
       <p class="caveat">分數括號為 95% 區間，是同一場內抽樣的誤差，不是跨日重測。區間不足表示尚未估計，或重抽未全數通過閘門。</p>
       <p class="caveat" id="caveatAdvice"></p>
@@ -379,6 +382,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
     <div class="card" data-tab="advice">
       <h2>怎麼練正確姿勢</h2>
       <p class="caveat">「3D估」為 3D 估計（單鏡頭，僅供參考），是模型從單一鏡頭估出的人體相對座標，不是多機校正的實測角度。</p>
+      <p class="caveat">下面綠色提示的門檻（轉肩 ≤35%、膝蓋 ≤140°）和「每 5 球錄一次」都是暫定參考線：沒有文獻或驗證出處（docs/scoring.md 的評分錨點是另一組數字），不是通過／不通過的標準。</p>
       <p style="margin:0 0 8px">最好的參考是你自己的好球：同樣的身高、球拍和鏡頭角度，最容易對照。下面每一點都附上你這場的實際數字。</p>
       <h3>正拍</h3>
       <ul class="check" id="checkFH"></ul>
@@ -388,7 +392,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
       <ul class="check">
         <li><b>拋之前</b><span>先把膝蓋彎下去、拍子拉到後面，再拋球。不要站直拋球、等球彈起來才開始動。</span></li>
         <li><b>讓球彈高</b><span>把球拋高一點、往前一點，讓它彈到腰的高度。拋太低的球會逼你用手撈。</span></li>
-        <li><b>每 5 球錄一次</b><span>用同一個位置錄影，看準備時膝蓋能不能接近你對打時的角度。</span></li>
+        <!-- 暫定：這句和下面的門檻都來自第一版，git log 與 docs 找不到出處（#143） --><li><b>每 5 球錄一次（暫定）</b><span>用同一個位置錄影，看準備時膝蓋能不能接近你對打時的角度。</span></li>
       </ul>
       <h3>參考教學</h3>
       <ul class="links">
@@ -429,6 +433,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
         <span><i style="background:var(--s3)"></i>肩膀轉開度</span>
         <span>點圖表可跳轉</span>
       </div>
+      <p class="caveat" id="poseCount"></p>
       <p class="caveat">膝蓋越小越蹲。轉肩 0% = 完全側身，100% = 胸口正對球網。擊球時手腕高度（2D）是接觸格附近五格中位數，以肩髖長為尺：髖＝0、肩＝100（肩髖線傾斜時，肩的垂直投影略低）；只評一致性，不判高低好壞。下方小字是同類擊球整場的中位數。膝蓋優先用 3D 骨架算，沒有 3D 才用 2D，短標「3D估」表示「3D 估計（單鏡頭，僅供參考）」。這是模型從單一鏡頭估出的人體相對座標，不是多機校正的實測角度。既有多機位公開資料比對的膝角 3D 絕對誤差中位約 8°、p90 約 23°；正式模式研究仍未通過精度門檻，保留場次尚未完成驗證；這些誤差不是每拍的保證。顯示到 1° 不代表準到 1°；小於誤差範圍的差別屬於「在誤差內」，無法判定進退步。2D 側面拍誤差約 ±2°、正前或正後方約 ±20–34°，所以側面拍最準，鏡頭在正前、正後方的拍會標「膝角看不準」；3D 也一樣受拍攝角度影響。兩種來源的數字不要直接互比。若 3D 與 2D 差太多會標「這拍角度不準」。手肘不管 2D、3D 都不可靠，所以不顯示數字。</p>
     </div>
 
@@ -551,9 +556,16 @@ function series(s){
 }
 
 // ---------- skeletons: data.js has each stroke's summary, sessions/<s>/pose/<id>.js its frames/world, fetched when the stroke is on screen ----------
+const DISCLAIMER="這是練習參考，不能代替教練或醫療判斷。";
+$("disclaimerAdvice").textContent=DISCLAIMER;
+function drawPoseCount(){  // 這拍有效骨架 N／M 格：pose 檔的 frames 裡不是 null 的格數（null＝沒偵測到人；全 0 的骨架仍算有）
+  const el=$("poseCount"); if(!S||!el) return;
+  if(S.frames){ const n=S.frames.filter(x=>x!=null).length, m=S.frames.length; el.textContent=`這拍有效骨架 ${n}／${m} 格`+(n<m?`（其餘 ${m-n} 格沒偵測到人）`:""); }
+  else el.textContent=S._poseFails>=4?"這拍骨架檔讀不到":"這拍骨架載入中…";
+}
 const POSE_WAIT=new Map();  // stroke → redraws waiting for its pose file
 const POSE_ACTIVE=new Map();  // visible player → stroke; redraws keep the same retry budget
-window.POSE=(day,id,p)=>{ const s=DAYS[day]?.data[id]; if(s) Object.assign(s,p); };
+window.POSE=(day,id,p)=>{ const s=DAYS[day]?.data[id]; if(s){ Object.assign(s,p); if(s===S) drawPoseCount(); } };
 function cancelPose(s){ const p=POSE_WAIT.get(s); if(p){ POSE_WAIT.delete(s); p.controller?.abort(); p.el.onload=p.el.onerror=null; p.el.remove(); } }
 function poseShown(s){ return shown(v)&&S===s||shown(vA)&&A===s||shown(vB)&&B===s; }
 function visiblePoses(){
@@ -582,6 +594,7 @@ function needPose(s,background=false){  // <script> keeps file:// support; late 
     cancelPose(s);
     if(!s.frames){ s._poseErrAt=Date.now(); s._poseFails=(s._poseFails||0)+1; }
     else { s._poseErrAt=0; s._poseFails=0; }
+    if(s===S) drawPoseCount();
     if(S) render(cur); cmpRender(cmpCur);  // redraw only the current selection, never the file that just arrived
   };
   el.onload=el.onerror=p.done;
@@ -728,12 +741,21 @@ function citeText(c){  // one cite from notes.json (docs/scoring.md §8) in plai
 }
 
 // ---------- 總覽: scores.json per player and kind, top findings, trend flags ----------
+function methodNote(d){  // 方法說明：套件／模型版本與骨架格數（build_site.py 的 methodVer，來自 prep 的 versions.txt）；舊場次沒有 → 未記錄
+  const m=d.methodVer, lim="拍攝角度：鏡頭在正前或正後方時膝角看不準（各拍會標警示）；單鏡頭的 3D 是估計值，不是量測。";
+  if(!m) return `方法說明：套件與模型版本未記錄（這場在版本紀錄功能出現前處理，沒有為此重跑）。${lim}`;
+  const model=[m.model,m.sha256&&`sha256 ${m.sha256.split(" / ").map(x=>x.slice(0,12)).join(" / ")}`,m.url&&`來源 ${m.url}`].filter(Boolean).join("，");
+  const seen=m.detected+m.interpolated;
+  return `方法說明：MediaPipe ${m.mediapipe}${model?`，姿勢模型 ${model}`:""}${m.recorded<m.videos?`（${m.videos} 支中 ${m.recorded} 支有紀錄）`:""}。主要追蹤的人共 ${m.frames} 格（60 fps），有骨架 ${seen} 格${m.interpolated?`（其中 ${m.interpolated} 格是低 fps 換成 60 fps 時內插的）`:""}，其餘 ${m.frames-seen} 格沒偵測到人。${lim}`;
+}
 const fpsLow = d => d.srcFps!=null && d.srcFps<50;  // build_site.py srcFps: lowest source fps from prep.sh; missing = old session, not shown
 function drawOverview(){
   const d=DAYS[DAY], sc=d.scores, r1=x=>x==null?"–":x.toFixed(1), multi=d.players.length>1;
   const counts=["FH","BH","SV","OH"].map(k=>[k,ALL.filter(s=>s.kind===k).length]).filter(([,n])=>n).map(([k,n])=>`${esc(NAMES[k]||k)} ${n}`).join("、");
   let h=`<h2>${esc(d.label)} 總覽</h2><p class="hint" style="margin:0 0 10px">${esc(d.camera||"沒寫鏡頭位置")} · 共 ${ALL.length} 拍（${counts}）${multi?` · ${d.players.length} 位玩家`:""}</p>`;
+  h+=`<p class="caveat disclaimer">${DISCLAIMER}</p>`;
   h+=`<p class="caveat">「3D估」為 3D 估計（單鏡頭，僅供參考），是模型從單一鏡頭估出的人體相對座標，不是多機校正的實測角度。</p>`;
+  h+=`<p class="caveat" id="methodNote">${esc(methodNote(d))}</p>`;
   if(fpsLow(d)) h+=`<p class="caveat" style="margin:0 0 10px">來源 ${d.srcFps} fps：proxy 補成 60 fps（重複影格），速度類數字（手速、準備時間）沒驗證過。下次用 60 fps 拍。</p>`;
   const hn=handNote(ALL); if(hn) h+=`<p class="caveat" style="margin:0 0 10px">${esc(hn)}</p>`;
   if(!sc) h+=`<p class="caveat" style="margin:0 0 10px">這場還沒評分。在電腦上跑 <code>tools/score.py ${esc(d.id)}</code>，再跑 <code>tools/build_site.py</code>。</p>`;
@@ -834,6 +856,8 @@ function markStrips(){
 // ---------- how-to checklist with the user's own numbers ----------
 const one = (list,f) => { const v=[...new Set(list.map(s=>s[f]??null))]; return v.length===1?v[0]:null; };  // null when unknown or players differ
 const handNote = list => list.some(s=>s.hand_guess) ? `慣用手是程式猜的（${[...new Set(list.filter(s=>s.hand_guess).map(s=>PN(who(s))))].join("、")}），可能猜錯；猜錯時正反拍和手臂數字都會反。要改就在電腦上的 work/profiles.json 寫每個人的 hand（R／L）和 backhand（one／two），再重跑分析。` : "";
+// 綠色提示的門檻（轉肩 ≤35%、膝 ≤140°）和「每 5 球錄一次」：git log -S 只找到第一版（f2fd985，上游作者）與 eff114b（只改 null 處理，沒動數值）；
+// docs/ 沒有出處（docs/scoring.md 的錨點是膝 ≤125°、轉肩 ≤15%，另一組數字）。所以畫面標「暫定」，數值不動（#143）。
 function drawChecks(){
   const r=Math.round, you=(txt,v,ok)=>v.some(x=>x==null)?"":`<span class="you ${ok?"ok":""}">${txt}</span>`;  // a missing number gets no line and no colour
   const n=(x,u="")=>x==null?"—":r(x)+u, na=t=>`<span class="you na">${t}</span>`, F=MED.FH, fd=MED.feed, ry=MED.rally;
@@ -1215,7 +1239,7 @@ function load(id, scroll, defer=false){
   S.phases=[{f:S.contact-48,name:"準備"},...(S.prep!=null?[{f:S.contact-Math.round(S.prep*FPS),name:"引拍完成"}]:[]),{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}].sort((a,b)=>a.f-b.f);  // 引拍完成 can fall before 準備 or after 向前揮拍
   $("phases").innerHTML=""; for(const p of S.phases){ const b=document.createElement("button"); b.textContent=p.name; b.onclick=()=>goto(p.f); $("phases").append(b); }
   const dn=drillName(S);
-  updateTitle();
+  updateTitle(); drawPoseCount();
   // one comparison group for every median on this card: same player (so switching the list filter never leaves it stale) + same stroke type + same drill;
   // a drill with fewer than MIN_N_CONS strokes falls back to the player's whole stroke type, and the label says so
   const own=ALL.filter(s=>who(s)===who(S)&&s.kind===S.kind), drilled=S.kind==="FH"&&dn, inDrill=drilled?own.filter(s=>s.drill===S.drill):own, thin=inDrill.length<MIN_N_CONS,
