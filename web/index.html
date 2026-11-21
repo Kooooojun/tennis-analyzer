@@ -502,6 +502,7 @@ const kneeOk = (s,src="knee") => !(s.knee_warn||(src==="knee"&&s.knee2d_ok===fal
 // knee: s.knee is already 3D when there is one (see DAYS), so the 2D source reads knee2d
 const kneeOf = (s,src) => src==="knee3d"?s.knee3d:s.knee3d!=null?s.knee2d:s.knee;
 const stats = g => ({knee:(src=>median(g.map(s=>kneeOk(s,src)?kneeOf(s,src):null)))(kneeSrc(g)), kSrc:kneeSrc(g)==="knee3d"?"3D":"2D", open:median(g.map(s=>s.open_min)), h:median(g.map(s=>s.vis>=0.5?hPct(s):null))  /* score.py vis gate */, openC:median(g.map(s=>s.open_contact))});
+const MIN_N_CONS = 5;  // same value as score.MIN_N_CONS (a page cannot import it): fewer strokes than this is too thin to call a median
 const dayStats = data => { const k=(kind,drill)=>data.filter(s=>s.kind===kind&&(!drill||s.drill===drill)); return {FH:stats(k("FH")), BH:stats(k("BH")), SV:stats(k("SV")), feed:stats(k("FH","feed")), rally:stats(k("FH","rally"))}; };
 let filter="ALL", pfilter="ALL";
 let MED = dayStats(ALL);
@@ -1215,22 +1216,24 @@ function load(id, scroll, defer=false){
   $("phases").innerHTML=""; for(const p of S.phases){ const b=document.createElement("button"); b.textContent=p.name; b.onclick=()=>goto(p.f); $("phases").append(b); }
   const dn=drillName(S);
   updateTitle();
-  const M=dayStats(ALL.filter(s=>who(s)===who(S))),  // the stroke's own player, so switching the list filter never leaves this card stale
-  m=S.kind==="FH"?(S.drill==="feed"?M.feed:S.drill==="rally"?M.rally:M.FH):M[S.kind], grp=S.kind==="FH"&&dn?dn+"正拍":NAMES[S.kind];
+  // one comparison group for every median on this card: same player (so switching the list filter never leaves it stale) + same stroke type + same drill;
+  // a drill with fewer than MIN_N_CONS strokes falls back to the player's whole stroke type, and the label says so
+  const own=ALL.filter(s=>who(s)===who(S)&&s.kind===S.kind), drilled=S.kind==="FH"&&dn, inDrill=drilled?own.filter(s=>s.drill===S.drill):own, thin=inDrill.length<MIN_N_CONS,
+  grpList=thin?own:inDrill, m=stats(grpList), grp=`${who(S)==="me"?"你":who(S)}的${drilled&&!thin?dn:""}${NAMES[S.kind]||S.kind}中位數${drilled&&thin?`（${dn}不到 ${MIN_N_CONS} 拍）`:""}`;
   const fmt=(x,u)=>x==null?"–":`${Math.round(x)}<small>${u}</small>`;
   const ks=kSrcOf(S); $("mKnee").innerHTML=fmt(S.knee,"°")+(S.knee==null?"":`<small> ${KNAME[ks]}</small>`); $("mKnee").title=$("cKnee").title=KERR[ks]+"。兩種來源不要直接互比"; $("legKnee").textContent=`較彎的膝蓋（${KNAME[ks]}）`;
-  $("cKnee").textContent=`${S.knee==null||S.knee_warn_why==="view"?"":KERR[ks]+" · "}${grp}中位數 ${m.knee==null?"–":KNAME[m.kSrc]+" "+Math.round(m.knee)+"°"}`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");
+  $("cKnee").textContent=`${S.knee==null||S.knee_warn_why==="view"?"":KERR[ks]+" · "}${grp} ${m.knee==null?"–":KNAME[m.kSrc]+" "+Math.round(m.knee)+"°"}`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");
   // body-kinematics (docs/scoring.md §11): trunk share, turn and leg load read the same from any horizontal camera angle
   $("bodyCard").hidden=S.trunk_share==null&&S.turn==null&&S.leg_load==null;  // sessions before body-kinematics have none
   const pc=x=>x==null?"–":Math.round(x*100)+"%";
   $("mBody").innerHTML=S.trunk_share==null?"–":`${Math.round(S.trunk_share*100)}<small>%</small>`;
   $("cBody").textContent=`肩膀速度占手腕 ${pc(S.trunk_share)} · 轉肩 ${S.turn==null?"–":Math.round(S.turn)+"°"} · 重心降低 ${pc(S.leg_load)} · 手速 ${S.wrist_speed==null?"–":S.wrist_speed.toFixed(1)}；只用手臂打時這幾個都偏低。重心降低＝髖部降低的比例，不是膝角`;
-  $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`中位數 ${m.open==null?"–":Math.round(m.open)+"%"}`:"這場鏡頭角度不適合看轉肩，參考就好";
-  $("mHeight").innerHTML=fmt(hPct(S),""); $("cHeight").textContent=`中位數 ${m.h==null?"–":Math.round(m.h)}`;
-  $("mPrep").innerHTML=S.prep==null?"–":`${prepLow(S)?"≥ ":""}${S.prep.toFixed(2)}<small>s</small>`; $("mPrep").title=prepLow(S)?"引拍在片段開頭前就拉好了，實際更早":""; $("cPrep").textContent=S.prep==null?"":`${grp}中位數 ${median(ALL.filter(x=>x.kind===S.kind&&(!(S.kind==="FH"&&dn)||x.drill===S.drill)).filter(x=>!prepLow(x)).map(x=>x.prep))?.toFixed(2)??"–"}s`;  // same group as the cards beside it
+  $("mOpen").innerHTML=fmt(S.open_min,"%"); $("cOpen").textContent=DAYS[S.day].showOpen?`${grp} ${m.open==null?"–":Math.round(m.open)+"%"}`:"這場鏡頭角度不適合看轉肩，參考就好";
+  $("mHeight").innerHTML=fmt(hPct(S),""); $("cHeight").textContent=`${grp} ${m.h==null?"–":Math.round(m.h)}`;
+  $("mPrep").innerHTML=S.prep==null?"–":`${prepLow(S)?"≥ ":""}${S.prep.toFixed(2)}<small>s</small>`; $("mPrep").title=prepLow(S)?"引拍在片段開頭前就拉好了，實際更早":""; $("cPrep").textContent=S.prep==null?"":`${grp} ${median(grpList.filter(x=>!prepLow(x)).map(x=>x.prep))?.toFixed(2)??"–"}s`;
   const sv=S.kind==="SV", f1=sv?S.reach:S.finish, num=(x,u,d=1)=>x==null?"–":`${x.toFixed(d)}<small>${u}</small>`;  // form_checks fields (docs/scoring.md §10); null = gate failed
-  const med=(f,g=S.kind)=>median(ALL.filter(x=>x.kind===g).map(x=>x[f]));
-  $("kForm1").parentElement.hidden=S.kind==="OH"; $("kForm1").textContent=sv?"擊球伸展":"收拍"; $("mForm1").innerHTML=num(f1,"軀幹長",2); $("cForm1").textContent=sv?"擊球瞬間較高的手高於肩膀多少；中位數 "+(med("reach")?.toFixed(2)??"–"):"擊球後 0.5 秒手最高點高於肩膀多少；中位數 "+(med("finish")?.toFixed(2)??"–");
+  const med=f=>median(grpList.map(x=>x[f]));
+  $("kForm1").parentElement.hidden=S.kind==="OH"; $("kForm1").textContent=sv?"擊球伸展":"收拍"; $("mForm1").innerHTML=num(f1,"軀幹長",2); $("cForm1").textContent=sv?"擊球瞬間較高的手高於肩膀多少；"+grp+" "+(med("reach")?.toFixed(2)??"–"):"擊球後 0.5 秒手最高點高於肩膀多少；"+grp+" "+(med("finish")?.toFixed(2)??"–");
   $("boxTilt").hidden=!sv; $("mTilt").innerHTML=num(S.tilt,"°")+(S.tilt==null?"":"<small> 3D估</small>"); $("mTilt").title="3D 估計（單鏡頭，僅供參考）"; $("cTilt").textContent="擊球前持拍側肩比另一側低幾度（負＝較高）";
   $("mLean").innerHTML=num(S.lean,"°"); $("cLean").textContent="往揮拍前進方向傾為正；單機位只看得到側面那一半，換視角不能比";
   $("mStance").innerHTML=num(S.stance,"×",2); $("cStance").textContent=S.stance==null?"看不出來（髖寬被視角壓縮或腳被擋）":"兩踝距離 ÷ 兩髖距離";
