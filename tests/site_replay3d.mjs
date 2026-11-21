@@ -127,6 +127,9 @@ const UNIT=JITTER_EXTRA=>{
  {const Qr=[],Pr=[];for(let f=F0;f<=c-49;f++){Qr.push(demoPts(fake,f,false));Pr.push(Ps[f-F0]);}
   let sd=new Set(),ex=0;for(let i=0;i<Qr.length;i++)for(const k of [25,26]){sd.add(Math.sign(Qr[i][K[k]][0]-470));if(i){const m=(A,B)=>Math.hypot(A[K[k]][0]-B[K[k]][0],A[K[k]][1]-B[K[k]][1]);ex=Math.max(ex,m(Qr[i],Qr[i-1])-m(Pr[i],Pr[i-1]));}}
   out.ramp={sides:[...sd],extra:ex};PLAN.delete(fake);}
+ // 發球前傾（Codex P2）：卡片照 metrics.py form_checks 先取 |水平位移| 再取中位數；五格 −10…+10° 時卡片 5°，弧線也要 5°
+ const sv=a=>{const fr=Array.from({length:17},()=>[.5,.5,.99]),r=a*Math.PI/180;fr[7]=[.45,.6,.99];fr[8]=[.55,.6,.99];fr[1]=[.45+.2*Math.sin(r),.6-.2*Math.cos(r),.99];fr[2]=[.55+.2*Math.sin(r),.6-.2*Math.cos(r),.99];return fr;};
+ out.svLean=Math.abs(leanDir({kind:'SV',contact:2,size:[100,100],frames:[-10,-5,0,5,10].map(sv)})*180/Math.PI);
  // 三點重合的退化腿：不畫示意（null），不能有 NaN
  const D=mk(480);leg(D,0,[470,300,0],[470,300,0],[470,300,0]);const r=kneeIK(D,8,dirs([D]));
  out.degenerate={isNull:r===null,nan:!!r&&r.some(q=>q&&q.some(x=>!Number.isFinite(x)))};
@@ -155,6 +158,7 @@ try{
       for(const {drop,x} of u.straight)check(x.every(([l,r])=>l>470&&r>470),`${tag}：直腿 ±0.5 px（drop ${drop}）示意膝要都在腳尖那側 ${JSON.stringify(x)}`);
       check(u.jitter.sides.length===1&&u.jitter.sides[0]===1&&u.jitter.extra<=JITTER_EXTRA,`${tag}：膝角 175–180° 抖動時示意膝換邊或多跳 ${JSON.stringify(u.jitter)}`);
       check(u.ramp.sides.length===1&&u.ramp.sides[0]===1&&u.ramp.extra<=JITTER_EXTRA,`${tag}：漸入（權重 < 1）時示意膝換邊或多跳 ${JSON.stringify(u.ramp)}`);
+      check(Math.abs(u.svLean-5)<.01,`${tag}：發球前傾弧線 ${u.svLean}° 要和卡片的 5° 一樣（先取絕對值再取中位數）`);
       check(u.degenerate.isNull&&!u.degenerate.nan,`${tag}：髖膝踝重合要不畫示意 ${JSON.stringify(u.degenerate)}`);
      }
      // 面板預設關著：沒有面板、列表沒有示意記號
