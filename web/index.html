@@ -294,6 +294,7 @@ main.r3d.wideplayer:not(.noplayer)>.col{grid-column:1 / -1}
 .r3d-switch{display:none;position:absolute;top:8px;right:8px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .r3d-switch button{border:0;border-radius:0;padding:4px 12px;font-size:13px}
 .stage>#r3dCv{position:absolute;inset:0;width:100%;height:100%;margin:0;border-radius:0}
+.stage>#r3dCv:focus-visible{outline-offset:-3px}  /* the stage clips overflow: an outline outside the canvas would be cut off */
 @media (max-width:820px), (pointer:coarse) and (max-height:500px) and (orientation:landscape){.r3d-switch{display:flex}}
 @media (max-width:820px) and (orientation:portrait){.player .stage.r3d:not(.wide){width:100%}}  /* portrait clip on an upright phone: the 3D gets the full width at the same height, so the sticky player does not grow */
 @media (max-width:820px){#r3dCv{height:min(30vh,300px);height:min(30svh,300px)}}  /* a short phone (375×667) keeps most of the scroll area under the sticky clip */
