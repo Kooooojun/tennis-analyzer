@@ -1346,8 +1346,9 @@ function demoTarget(s){  // {target, src} when the stroke gets a demo: a forehan
 }
 const PLAN=new Map();
 function demoPlan(s){  // demoTarget plus the hip drop (d3 metres, d2 pixels) that brings the window's knee angle to the target; null without a demo or a skeleton
-  const t=demoTarget(s); if(!t||!s.frames) return null;
-  const key=!!s.world, hit=PLAN.get(s); if(hit?.key===key) return hit.plan;
+  if(!s.frames) return null;
+  const key=!!s.world, hit=PLAN.get(s); if(hit?.key===key) return hit.plan;  // before demoTarget: render() asks every frame and demoTarget re-runs dayStats
+  const t=demoTarget(s); if(!t){ PLAN.set(s,{key,plan:null}); return null; }
   const three=t.src==="knee3d", pts=three?pts3:pts2, L=three&&!s.world?null:legLen(s,pts);
   let plan=null;
   if(L){
@@ -1410,7 +1411,8 @@ function draw3d(f){
   const D=R3D.demo&&demoPts(S,f,true); if(D){ bones(D,css("--s2"),2.5); R3D.demoDrawn=true; }
   if(v._want) return;  // arcs only on a paused frame
   const label=(t,[x,y])=>{ R3D.labels.push(t); g.font="600 13px -apple-system,'PingFang TC',sans-serif"; g.lineWidth=3; g.strokeStyle=css("--panel"); g.fillStyle=css("--ink"); g.strokeText(t,x,y); g.fillText(t,x,y); };
-  const arc=(C,A,B,r)=>{ const a1=Math.atan2(A[1]-C[1],A[0]-C[0]), a2=Math.atan2(B[1]-C[1],B[0]-C[0]); let d=a2-a1; while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI; g.strokeStyle=css("--accent"); g.lineWidth=3; g.beginPath(); g.arc(...C,r,a1,a1+d,d<0); g.stroke(); };
+  const arc=(C,A,B,r)=>{ if(R3D.yaw||R3D.pitch) return;  // a projected angle only matches the number in the clip's own view; rotated, the label stays and the arc goes
+    const a1=Math.atan2(A[1]-C[1],A[0]-C[0]), a2=Math.atan2(B[1]-C[1],B[0]-C[0]); let d=a2-a1; while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI; g.strokeStyle=css("--accent"); g.lineWidth=3; g.beginPath(); g.arc(...C,r,a1,a1+d,d<0); g.stroke(); };
   if(f===kneeFrameOf(S)){  // the card's knee number (10th percentile of the window) at the window frame closest to it; a gated stroke shows no number
     const [h,k,a]=(angle3(P,24,26,28)??180)<=(angle3(P,23,25,27)??180)?LEGS[1]:LEGS[0], Kp=proj(P[K[k]]);
     if(S.knee_warn) label("看不準",[Kp[0]+12,Kp[1]+4]);
