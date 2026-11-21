@@ -118,7 +118,7 @@ function tableMatches(tb,ex,tag){
 // ---- 真實副本模式：期望值由 data.js 另外算（不經過網頁的 who／dayStats） ----
 async function real(page,tag,errors,shot){
  const ids=await page.evaluate(()=>DAY_KEYS),raw={};
- for(const id of ids){const t=await (await fetch(`${f.url}sessions/${encodeURIComponent(id)}/data.js`)).text();raw[id]=JSON.parse(t.slice(t.indexOf('push(')+5,t.lastIndexOf(')')));}
+ for(const id of ids){const t=await (await fetch(new URL(`sessions/${encodeURIComponent(id)}/data.js`,f.url))).text();raw[id]=JSON.parse(t.slice(t.indexOf('push(')+5,t.lastIndexOf(')')));}
  const cnt=(id,p)=>{const a=raw[id].strokes.filter(s=>(s.player||'me')===p);return [a.filter(s=>s.kind==='FH'&&s.drill==='feed').length,a.filter(s=>s.kind==='FH'&&s.drill==='rally').length,a.length];};
  const PN=p=>p==='me'?'我':p;
  for(const day of ids){
@@ -135,7 +135,7 @@ async function real(page,tag,errors,shot){
   }
   if(shot&&process.env.SITE_RESULTS)await page.locator('#trend').screenshot({path:path.join(process.env.SITE_RESULTS,`compare-${day.replace(/[^\w-]/g,'_')}-${shot}.png`)});
   if(players.length>1)for(const p of players){  // 選單一球員：只有那位
-   await page.evaluate(d=>go(d,'stroke'),day);await pick(page,PN(p));await goCharts(page,day);
+   await page.evaluate(d=>go(d,'stroke'),day);await pick(page,PN(p)+' ');await goCharts(page,day);
    t=await readTables(page);
    check(t.length===1&&JSON.stringify(t[0].rows['拍數（自拋 / 對打）'])===JSON.stringify(ids.filter(k=>cnt(k,p)[2]>0).map(k=>`${cnt(k,p)[0]} / ${cnt(k,p)[1]}`)),`${tag} ${day} 選 ${players.indexOf(p)+1} 號球員：只有他的表，拍數對得上，得到 ${JSON.stringify(t.map(x=>x.rows['拍數（自拋 / 對打）']))}`);
    await page.evaluate(d=>go(d,'stroke'),day);await pick(page,'所有人');
