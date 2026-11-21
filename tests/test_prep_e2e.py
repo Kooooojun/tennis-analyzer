@@ -40,6 +40,18 @@ with tempfile.TemporaryDirectory() as d:
                 prep_module.main(["ratios", "1"])
             assert not calls and not py.called, "近16:9的既有快取不得重建proxy或重跑下游"
 
+def test_pose_frame_counts():
+    """(60 fps rows, rows with a skeleton, of those made by 60 fps interpolation). Same grid as pose_full.to60: exact rows are j * fps / 60 whole."""
+    import numpy as np
+    P = lambda rows, n: np.where(np.isin(np.arange(n), rows)[:, None, None], 1.0, np.nan) * np.ones((n, 33, 4))
+    assert prep_module.pose_frame_counts(P([0, 1, 2, 5], 10), 60.0) == (10, 4, 0)  # 60 fps source: nothing is interpolated
+    assert prep_module.pose_frame_counts(P([0, 1, 2, 5], 10), None) == (10, 4, 0)  # unreadable fps: do not guess
+    assert prep_module.pose_frame_counts(P([0, 1, 2, 5], 10), 30.0) == (10, 4, 2)  # 4 rows have a skeleton: 0 and 2 are source frames, 1 and 5 lie between them (interpolated)
+    assert prep_module.pose_frame_counts(P([0, 2, 4], 10), 29.97) == (10, 3, 2)  # 29.97 is not 30: only row 0 lands on a source frame
+    assert prep_module.pose_frame_counts(P([], 10), 30.0) == (10, 0, 0)  # all NaN is not "all zero" and not "all interpolated"
+    assert prep_module.pose_frame_counts(np.zeros((6, 33, 4)), 30.0) == (6, 6, 3)  # a skeleton of zeros is still a skeleton
+
+
 def audio_commands(streams):
     with tempfile.TemporaryDirectory() as d:
         root = Path(d); (root / "videos" / "audio").mkdir(parents=True)
@@ -72,10 +84,12 @@ def test_duration_fallback():
 
 test_empty_audio()
 test_duration_fallback()
+test_pose_frame_counts()
 
 tmp = Path(tempfile.mkdtemp(prefix="prep_e2e_")); R = tmp / "repo"
 shutil.copytree(REPO / "tools", R / "tools", ignore=shutil.ignore_patterns("__pycache__"))
 (R / "models").mkdir(parents=True)
+shutil.copy(REPO / "setup.py", R / "setup.py")  # prep reads the model's download URL from it
 for m in ("pose_heavy.task", "balltrack_best.pth"):
     try: os.link(REPO / "models" / m, R / "models" / m)
     except OSError: shutil.copy(REPO / "models" / m, R / "models" / m)
@@ -110,11 +124,25 @@ r = prep("synth", "2"); assert r.returncode == 0
 assert "來源比例" not in r.stderr and "沒有 3D 姿態" not in r.stderr and "舊 work" not in r.stderr
 assert r.stdout.splitlines()[-1] == "ready: 2 videos -> work/synth", r.stdout
 assert (W / "videos.json").read_text(encoding="utf-8") == '["A x", "b"]\n'  # case-insensitive name order; a space stays inside one name
-want = {"proxy.mp4", "audio.f32", "audio_hp.f32", "pose.npy", "pose_world.npy", "people.txt", "sounds.npy", "ball.npy", "events.npy", "src_fps.txt", "pose_method.txt", "pose.log", "ball.log", "lag.txt", "events.log"}
+want = {"proxy.mp4", "audio.f32", "audio_hp.f32", "pose.npy", "pose_world.npy", "people.txt", "sounds.npy", "ball.npy", "events.npy", "src_fps.txt", "pose_method.txt", "pose.log", "ball.log", "lag.txt", "events.log", "versions.txt"}
 for d in ("A x", "b"):
     got = {p.name for p in (W / d).iterdir()}
     assert got == want, (d, got ^ want)
     assert (W / d / "people.txt").read_bytes() == b"2\n"
+
+# versions.txt: what made this video's pose (key=value, UTF-8, no paths or host names), written when pose actually ran
+import importlib.metadata, importlib.util, numpy as np
+spec = importlib.util.spec_from_file_location("setup_models", REPO / "setup.py"); setup_models = importlib.util.module_from_spec(spec); spec.loader.exec_module(setup_models)
+model_url, model_sha = setup_models.MODELS["pose_heavy.task"]
+def versions(d): return dict(l.split("=", 1) for l in (W / d / "versions.txt").read_text(encoding="utf-8").splitlines())
+for d in ("A x", "b"):
+    v = versions(d); n60 = np.load(W / d / "pose.npy").shape[0]
+    assert v["mediapipe"] == importlib.metadata.version("mediapipe"), v
+    assert (v["pose_model"], v["pose_model_sha256"], v["pose_model_url"]) == ("pose_heavy.task", model_sha, model_url), v
+    assert v["pose_method"] == (W / d / "pose_method.txt").read_text(encoding="utf-8").strip(), v
+    assert (v["pose_frames"], v["pose_detected"], v["pose_interpolated"]) == (str(n60), "0", "0"), v  # synthetic: nobody in the picture, 60 fps source
+    assert set(v) == {"mediapipe", "pose_model", "pose_model_sha256", "pose_model_url", "pose_method", "pose_frames", "pose_detected", "pose_interpolated"}, v
+    assert not any(x in (W / d / "versions.txt").read_text(encoding="utf-8") for x in (Path.home().as_posix(), str(Path.home()), str(tmp)))
 import cv2, numpy as np
 for d in ("A x", "b"):
     assert np.load(W / d / "sounds.npy").shape == (1, 4), d
@@ -149,8 +177,10 @@ assert mt() == before, "second run must do no work"
 # Missing legacy metadata never invalidates a current-method pose, and warnings appear only once.
 pose = W / "b" / "pose.npy"; t = pose.stat().st_mtime_ns; data = pose.read_bytes()
 (W / "b" / "people.txt").unlink()
+(W / "b" / "versions.txt").unlink()  # an old work dir made before versions.txt existed
 r = prep("synth", "2")
 assert r.returncode == 0 and r.stderr.count("舊 work 目錄沒有人數紀錄") == 1, r.stderr
+assert not (W / "b" / "versions.txt").exists(), "pose was not re-run, so today's package version must not be written as the one that made it"
 assert pose.stat().st_mtime_ns == t and pose.read_bytes() == data
 assert "舊 work" not in prep("synth", "2").stderr
 world = W / "b" / "pose_world.npy"; saved_world = world.read_bytes(); world.unlink()
@@ -176,6 +206,7 @@ for stale_method in ("1\n", None):
     assert r.returncode == 0 and pose.stat().st_mtime_ns != t and "重算" in r.stdout, stale_method
     assert "沒有 3D 姿態" not in r.stderr and "舊 work" not in r.stderr, r.stderr
     assert (W / "b" / "pose_world.npy").is_file() and (W / "b" / "people.txt").read_bytes() == b"2\n"
+    assert versions("b")["mediapipe"] == importlib.metadata.version("mediapipe"), "pose re-ran: versions.txt is written again"
     t = pose.stat().st_mtime_ns
     assert prep("synth", "2").returncode == 0 and pose.stat().st_mtime_ns == t
 
