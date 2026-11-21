@@ -54,6 +54,21 @@ const EXPECT=()=>{
  return out;
 };
 
+// 彎曲側（頁面裡共用，GEOM 和合成重現都用）：換邊＝相鄰兩格示意膝離「示意髖→踝線」的偏移反向，算所有權重 > 0 的格（含漸入漸出各 30 格）；
+// 往腳跟＝窗口內偏移和這條腿窗口內踝→腳尖中位數（扣掉沿腿分量）反向。腳尖用中位數：單格的腳尖點在腳投影很短時會自己換邊，示意不該跟著它跳。
+const SIDE_DEF=()=>{
+ const sub=(a,b)=>a.map((x,i)=>x-b[i]),dot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0),perp=(w,u)=>sub(w,u.map(x=>x*dot(w,u))),len=a=>Math.hypot(...a);
+ const vmed=ws=>[0,1,2].map(i=>{const s=ws.map(w=>w[i]).sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;});
+ window.sideCount=(raw,demo,f0,f1,w0,w1)=>{const o={flips:0,heel:0,legs:0};
+  LEGS.forEach(([h,k,a])=>{
+   const T=vmed(Array.from({length:w1-w0+1},(_,j)=>raw(w0+j)).filter(Boolean).map(P=>sub(P[K[a+4]],P[K[a]])));let prev=null;
+   for(let f=f0;f<=f1;f++){const Q=demo(f);if(!Q){prev=null;continue;}
+    const A=Q[K[a]],d=sub(Q[K[h]],A),u=d.map(x=>x/len(d)),off=perp(sub(Q[K[k]],A),u),win=f>=w0&&f<=w1;
+    if(win){o.legs++;if(dot(off,perp(T,u))<0)o.heel++;}if(prev&&dot(off,prev)<0)o.flips++;prev=off;}
+  });
+  return o;};
+};
+
 // 一拍的幾何不變式：腳不動、骨長不變、示意膝角到目標、權重平順
 const GEOM=()=>{
  const p=demoPlan(S),r={target:p?.target,ok:!!p};if(!p)return r;
@@ -82,22 +97,8 @@ const GEOM=()=>{
    if(Math.abs(demoWeight(f,S.contact)-1)>1e-9)r.windowWeight=false;
   }
  }
- // 彎曲側：換邊＝相鄰兩格示意膝離「示意髖→踝線」的偏移反向，算所有權重 > 0 的格（含漸入漸出各 30 格）；往腳跟＝窗口內（權重 1）偏移和這條腿窗口內踝→腳尖中位數（扣掉沿腿分量）反向。
- // 腳尖用中位數：單格的腳尖點在腳投影很短時會自己換邊，示意不該跟著它跳。
- const sub=(a,b)=>a.map((x,i)=>x-b[i]),dot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0),perp=(w,u)=>sub(w,u.map(x=>x*dot(w,u)));
- const vmed=ws=>[0,1,2].map(i=>{const s=ws.map(w=>w[i]).sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;});
  const px=a=>a&&a.map(q=>[q[0]*(S.size||[540,960])[0],q[1]*(S.size||[540,960])[1],0]);
- const side=three=>{
-  const raw=f=>three?S.world?.[f]:px(S.frames[f]),demo=f=>three?demoPts(S,f,true):px(demo2(S,f)),o={flips:0,heel:0,legs:0};
-  if(three&&!S.world)return o;
-  LEGS.forEach(([h,k,a])=>{
-   const T=vmed(Array.from({length:43},(_,j)=>raw(S.contact-48+j)).filter(Boolean).map(P=>sub(P[K[a+4]],P[K[a]])));let prev=null;
-   for(let f=S.contact-48-30;f<=S.contact-6+30;f++){const Q=demo(f);if(!Q){prev=null;continue;}
-    const A=Q[K[a]],d=sub(Q[K[h]],A),u=d.map(x=>x/Math.hypot(...d)),off=perp(sub(Q[K[k]],A),u),win=f>=S.contact-48&&f<=S.contact-6;
-    if(win){o.legs++;if(dot(off,perp(T,u))<0)o.heel++;}if(prev&&dot(off,prev)<0)o.flips++;prev=off;}
-  });
-  return o;
- };
+ const side=three=>three&&!S.world?{flips:0,heel:0,legs:0}:sideCount(f=>three?S.world?.[f]:px(S.frames[f]),f=>three?demoPts(S,f,true):px(demo2(S,f)),S.contact-48-30,S.contact-6+30,S.contact-48,S.contact-6);
  r.side2=side(false);r.side3=side(true);
  const P0=get(S.contact-20),same=P0&&kneeIK(P0,0).every((q,i)=>q.every((x,j)=>Math.abs(x-P0[i][j])<1e-9));
  const orig=[];for(let f=S.contact-48;f<=S.contact-6;f++){const P=get(f);if(P)orig.push(Math.min(ang(P,23,25,27),ang(P,24,26,28)));}
@@ -127,6 +128,21 @@ const UNIT=JITTER_EXTRA=>{
  {const Qr=[],Pr=[];for(let f=F0;f<=c-49;f++){Qr.push(demoPts(fake,f,false));Pr.push(Ps[f-F0]);}
   let sd=new Set(),ex=0;for(let i=0;i<Qr.length;i++)for(const k of [25,26]){sd.add(Math.sign(Qr[i][K[k]][0]-470));if(i){const m=(A,B)=>Math.hypot(A[K[k]][0]-B[K[k]][0],A[K[k]][1]-B[K[k]][1]);ex=Math.max(ex,m(Qr[i],Qr[i-1])-m(Pr[i],Pr[i-1]));}}
   out.ramp={sides:[...sd],extra:ex};PLAN.delete(fake);}
+ // 腳抬到髖的高度（#147 後續）：漸入段一格右踝抬到髖高，髖→踝線轉到幾乎和整拍方向平行，直接投影只剩幾 px 的殘量、落在腿線另一邊。
+ // 假形狀（整數）：其他格膝都在髖→踝線右側（+x）；f=c−64 右踝抬到髖高、腿線接近水平。same：原始膝在殘量那側（下方）；mirror：在另一側。
+ // 兩種示意膝都要留在整拍同一側（換邊 0、往腳跟 0）；gap＝這格示意離原始膝多遠，只印出。
+ out.fold={};
+ for(const variant of ['same','mirror']){
+  const c=120,fake={frames:Array(200).fill(null),contact:c,size:[960,540]},fold=c-64;
+  for(let f=c-78;f<=c+24;f++){const P=Array.from({length:17},()=>[470,200,0]);leg(P,0,[340,300,0],[370,360,0],[350,420,0]);
+   if(f===fold){const [h,k,a]=LEGS[1];P[K[h]]=[400,300,0];P[K[k]]=[430,variant==='same'?316:284,0];P[K[a]]=[460,296,0];P[K[a+2]]=[452,304,0];P[K[a+4]]=[490,306,0];}
+   else leg(P,1,[400,300,0],f<c-48?[440,360,0]:[430,360,0],f<c-48?[420,420,0]:[390,420,0]);
+   fake.frames[f]=P.map(q=>[q[0]/960,q[1]/540,.99]);}
+  const px=fr=>fr&&fr.map(q=>[q[0]*960,q[1]*540,0]);
+  PLAN.set(fake,{key:false,plan:{d2:6,dirs2:dirs(fake.frames.filter(Boolean).map(px))}});
+  const Q=demoPts(fake,fold,false),P=px(fake.frames[fold]);
+  out.fold[variant]={...sideCount(f=>px(fake.frames[f]),f=>demoPts(fake,f,false),c-78,c+24,c-48,c-6),gap:Math.hypot(Q[K[26]][0]-P[K[26]][0],Q[K[26]][1]-P[K[26]][1])};
+  PLAN.delete(fake);}
  // 發球前傾（Codex P2）：卡片照 metrics.py form_checks 先取 |水平位移| 再取中位數；五格 −10…+10° 時卡片 5°，弧線也要 5°
  const sv=a=>{const fr=Array.from({length:17},()=>[.5,.5,.99]),r=a*Math.PI/180;fr[7]=[.45,.6,.99];fr[8]=[.55,.6,.99];fr[1]=[.45+.2*Math.sin(r),.6-.2*Math.cos(r),.99];fr[2]=[.55+.2*Math.sin(r),.6-.2*Math.cos(r),.99];return fr;};
  out.svLean=Math.abs(leanDir({kind:'SV',contact:2,size:[100,100],frames:[-10,-5,0,5,10].map(sv)})*180/Math.PI);
@@ -147,7 +163,7 @@ try{
     const context=await browser.newContext(mobile?{viewport:{width:400,height:860},isMobile:true,hasTouch:true,deviceScaleFactor:2}:{viewport:{width:1280,height:800}});
     const page=await context.newPage(),tag=`${engine.name()} ${mobile?'400px':'桌機'}`,errors=[];
     page.on('pageerror',e=>errors.push(e.message));
-    await page.goto(f.url);await page.waitForSelector('body.ready');await players(page);
+    await page.goto(f.url);await page.waitForSelector('body.ready');await players(page);await page.evaluate(SIDE_DEF);
     const days=real?await page.evaluate(()=>DAY_KEYS):[await page.evaluate(()=>DAY_KEYS[0])];
     for(const [di,day] of days.entries()){
      await page.evaluate(day=>go(day,'stroke'),day);
@@ -158,6 +174,7 @@ try{
       for(const {drop,x} of u.straight)check(x.every(([l,r])=>l>470&&r>470),`${tag}：直腿 ±0.5 px（drop ${drop}）示意膝要都在腳尖那側 ${JSON.stringify(x)}`);
       check(u.jitter.sides.length===1&&u.jitter.sides[0]===1&&u.jitter.extra<=JITTER_EXTRA,`${tag}：膝角 175–180° 抖動時示意膝換邊或多跳 ${JSON.stringify(u.jitter)}`);
       check(u.ramp.sides.length===1&&u.ramp.sides[0]===1&&u.ramp.extra<=JITTER_EXTRA,`${tag}：漸入（權重 < 1）時示意膝換邊或多跳 ${JSON.stringify(u.ramp)}`);
+      for(const [k,r] of Object.entries(u.fold))check(r.flips===0&&r.heel===0,`${tag}：腳抬到髖高那格（${k}）示意膝換邊或往腳跟彎 ${JSON.stringify(r)}`);
       check(Math.abs(u.svLean-5)<.01,`${tag}：發球前傾弧線 ${u.svLean}° 要和卡片的 5° 一樣（先取絕對值再取中位數）`);
       check(u.degenerate.isNull&&!u.degenerate.nan,`${tag}：髖膝踝重合要不畫示意 ${JSON.stringify(u.degenerate)}`);
      }

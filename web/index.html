@@ -1360,15 +1360,21 @@ const pts2=(s,f)=>{ const fr=s.frames?.[f], [w,h]=sizeOf(s); return fr?fr.map(p=
 const minKnee=P=>Math.min(angle3(P,24,26,28)??180,angle3(P,23,25,27)??180);
 const IK_MIN=60*Math.PI/180;  // tightest knee the demo draws; real targets are 100–130°, so only a foreshortened 2D leg ever reaches it
 const V={sub:(a,b)=>a.map((x,i)=>x-b[i]), dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2]}; V.len=a=>Math.sqrt(V.dot(a,a)); V.perp=(w,u)=>V.sub(w,u.map(x=>x*V.dot(w,u)));  // perp: w minus its part along the unit vector u
-const rawBends=P=>LEGS.map(([h,k,a])=>{ const A=P[K[a]], o=V.sub(P[K[h]],A), ol=V.len(o); return ol?V.perp(V.sub(P[K[k]],A),o.map(x=>x/ol)):[0,0,0]; });  // where each knee sits off its ankle→hip line, per leg
-function bendDirs(Ps){  // one bend direction per leg for a whole stroke: the per-axis median knee offset, flipped to the toe side (median ankle→toe); all straight → the toe direction
+const legAxis=(P,[h,,a])=>{ const o=V.sub(P[K[h]],P[K[a]]), ol=V.len(o); return ol?o.map(x=>x/ol):null; };  // unit ankle→hip
+const rawBends=P=>LEGS.map(L=>{ const u=legAxis(P,L); return {n:u?V.perp(V.sub(P[K[L[1]]],P[K[L[2]]]),u):[0,0,0], u}; });  // where each knee sits off its ankle→hip line, per leg
+function bendDirs(Ps){  // one bend direction per leg for a whole stroke: the per-axis median knee offset, flipped to the toe side (median ankle→toe); all straight → the toe direction. u: the stroke's median leg axis it is measured against
   // why a stroke median: near straight (178–180°) one frame's offset is only coordinate rounding (~1 px) and its sign flips frame to frame, and one frame's toe point can flip too; the median follows neither
-  return LEGS.map(([h,k,a])=>{ const ns=[], ts=[];
-    for(const P of Ps){ const A=P[K[a]], o=V.sub(P[K[h]],A), ol=V.len(o); if(!ol) continue; const u=o.map(x=>x/ol); ns.push(V.perp(V.sub(P[K[k]],A),u)); ts.push(V.perp(V.sub(P[K[a+4]],A),u)); }
-    if(!ns.length) return [0,0,0];
-    const med3=ws=>[0,1,2].map(i=>median(ws.map(w=>w[i]))), m=med3(ns), t=med3(ts);
-    return V.dot(m,t)<0?m.map(x=>-x):V.len(m)?m:t; });
+  return LEGS.map(L=>{ const [,k,a]=L, ns=[], ts=[], us=[];
+    for(const P of Ps){ const u=legAxis(P,L), A=P[K[a]]; if(!u) continue; us.push(u); ns.push(V.perp(V.sub(P[K[k]],A),u)); ts.push(V.perp(V.sub(P[K[a+4]],A),u)); }
+    if(!ns.length) return {n:[0,0,0], u:null};
+    const med3=ws=>[0,1,2].map(i=>median(ws.map(w=>w[i]))), m=med3(ns), t=med3(ts), mu=med3(us), ml=V.len(mu);
+    return {n:V.dot(m,t)<0?m.map(x=>-x):V.len(m)?m:t, u:ml?mu.map(x=>x/ml):null}; });
 }
+// carry a bend direction n measured against leg axis a to this frame's axis b by the rotation taking a to b, so the knee keeps its side of the leg line:
+// a fixed vector projected onto a line that turned past parallel to it (a foot lifted to hip height) lands on the other side. Near-opposite axes (rotation undefined): plain n
+const carry=(n,a,b)=>{ if(!a||V.len(b)<.5) return n; const c=V.dot(a,b); if(c<=-.9) return n;  // b is [0,0,0] when hip and ankle meet: keep n, as the plain projection did
+  const w=[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]], wn=[w[1]*n[2]-w[2]*n[1],w[2]*n[0]-w[0]*n[2],w[0]*n[1]-w[1]*n[0]], k=V.dot(w,n)/(1+c);
+  return n.map((x,i)=>x*c+wn[i]+w[i]*k); };  // Rodrigues with w = a×b (|w| = sin, c = cos)
 function kneeIK(P,drop,dirs=rawBends(P)){  // P: 17 [x,y,z] points, y down. Feet stay, everything above the knees moves down by drop, each knee is re-solved with its thigh and shin lengths kept, bent along dirs (per leg; default: where it already bends)
   const {sub,len}=V;
   if(LEGS.some(([h,k,a])=>!(len(sub(P[K[h]],P[K[k]]))>0&&len(sub(P[K[k]],P[K[a]]))>0))) return null;  // a zero-length thigh or shin (hip, knee, ankle on one point): no demo, never NaN
@@ -1380,8 +1386,8 @@ function kneeIK(P,drop,dirs=rawBends(P)){  // P: 17 [x,y,z] points, y down. Feet
   LEGS.forEach(([h,k,a],j)=>{
     const H0=P[K[h]], Kn=P[K[k]], A=P[K[a]], L1=len(sub(H0,Kn)), L2=len(sub(Kn,A)), d=sub(Q[K[h]],A), dl=len(d)||1, u=d.map(x=>x/dl);
     const D=Math.max(Math.abs(L1-L2),Math.min(L1+L2,dl));
-    // bend in dirs[j] (its part off the new hip→ankle line); if that part is ~0, toward this frame's toes, then image x, then y (u is a unit vector, so one of them always has a part off it)
-    const n=[dirs[j],sub(P[K[a+4]],A),[1,0,0],[0,1,0]].map(w=>V.perp(w,u)).find(w=>len(w)>1e-6*(L1+L2)), nl=len(n), along=(L2*L2-L1*L1+D*D)/(2*D), off=Math.sqrt(Math.max(0,L2*L2-along*along));
+    // bend in dirs[j] carried to the new hip→ankle line (its part off that line); if that part is ~0, toward this frame's toes, then image x, then y (u is a unit vector, so one of them always has a part off it)
+    const n=[carry(dirs[j].n,dirs[j].u,u),sub(P[K[a+4]],A),[1,0,0],[0,1,0]].map(w=>V.perp(w,u)).find(w=>len(w)>1e-6*(L1+L2)), nl=len(n), along=(L2*L2-L1*L1+D*D)/(2*D), off=Math.sqrt(Math.max(0,L2*L2-along*along));
     Q[K[k]]=A.map((x,i)=>x+u[i]*along+n[i]/nl*off);
   });
   return Q;
