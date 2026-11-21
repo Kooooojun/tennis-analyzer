@@ -13,7 +13,7 @@ const failures=[],check=(ok,msg)=>{if(!ok)failures.push(msg);};
 const sect=async(tag,fn)=>{try{await fn();}catch(e){failures.push(`${tag} 例外：${String(e.message).split('\n')[0]}`);}};
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const NOPREP=3;  // 合成場次裡 prep 為 null 的那拍（id 3）；其餘 prep=.5、contact=90
-const SHOW=['skel','guides','trail','r3dBtn','theme'];
+const SHOW=['skel','guides','trail','theme'];  // 3D 回放不在選單（UI 方案 A 第 4 步：桌機常駐、手機在影片上切換）
 const CONTROLS=['play','prev','next','toPrep','toHit','speed','viewBtn'];
 
 async function open(browser,{viewport,mobile,scheme,storage}={}){
@@ -49,7 +49,7 @@ async function core(browser,engine,label,opts){
   const {page,context,errors}=await open(browser,opts);
   await stroke(page,12);
   check(same(await visibleControls(page),CONTROLS),`${tag} 控制列只留 ${CONTROLS}，得到 ${await visibleControls(page)}`);
-  check(await page.evaluate(ids=>ids.every(i=>{const e=document.getElementById(i);return !e||!e.offsetParent;}),SHOW),`${tag} 骨架／輔助線／軌跡／3D／深淺色不能在控制列上`);
+  check(await page.evaluate(ids=>ids.every(i=>{const e=document.getElementById(i);return !e||!e.offsetParent;}),SHOW),`${tag} 骨架／輔助線／軌跡／深淺色不能在控制列上`);
   check(await page.evaluate(()=>!document.getElementById('speeds')&&!document.getElementById('speedCyc')),`${tag} 舊的 4 顆速度鈕與輪流切換鈕要拿掉`);
   check(await page.evaluate(()=>!!document.getElementById('prevS')?.offsetParent&&!!document.getElementById('nextS')?.offsetParent),`${tag} 上一拍／下一拍要在`);
   // 速度：一顆下拉，4 個值，預設 0.25，換拍後保持
@@ -103,8 +103,8 @@ async function view(browser,engine,label,opts){
   await page.locator('#viewBtn').click();
   const m1=await menu(page);
   check(m1.open&&m1.exp==='true',`${tag} 按下去要開：${JSON.stringify(m1)}`);
-  check(await page.evaluate(ids=>ids.every(i=>document.getElementById(i)?.offsetParent),SHOW),`${tag} 開了以後五項都要看得到`);
-  check(await page.evaluate(()=>[...document.querySelectorAll('#viewPanel button')].map(b=>b.id).join()==='skel,guides,trail,r3dBtn,theme'),`${tag} 選單裡的順序：骨架、輔助線、手腕軌跡、3D 回放、深淺色`);
+  check(await page.evaluate(ids=>ids.every(i=>document.getElementById(i)?.offsetParent),SHOW),`${tag} 開了以後四項都要看得到`);
+  check(await page.evaluate(()=>[...document.querySelectorAll('#viewPanel button')].map(b=>b.id).join()==='skel,guides,trail,theme'),`${tag} 選單裡的順序：骨架、輔助線、手腕軌跡、深淺色`);
   const box=await page.evaluate(()=>{const r=document.getElementById('viewPanel').getBoundingClientRect();return {l:r.left,r:r.right,w:innerWidth,h:innerHeight,t:r.top,b:r.bottom};});
   check(box.l>=0&&box.r<=box.w,`${tag} 選單要在視窗左右之內：${JSON.stringify(box)}`);
   check(box.t>=0&&box.b<=box.h,`${tag} 選單要整個在視窗內（影片下緣放不下就往上開）：${JSON.stringify(box)}`);
@@ -149,12 +149,9 @@ async function view(browser,engine,label,opts){
   check(await page.evaluate(()=>['skel','guides','trail'].every(i=>document.getElementById(i).getAttribute('aria-pressed')==='false'&&!document.getElementById(i).classList.contains('on'))),`${tag} 重新載入後按鈕外觀跟著狀態`);
   await page.locator('#guides').click();
   check(JSON.parse(await page.evaluate(()=>localStorage.getItem('tennis-view-opts-v1'))).guides===true,`${tag} 再開輔助線要存`);
-  // 3D 回放：按了就開，不存
-  await page.locator('#r3dBtn').click();
-  check(await page.evaluate(()=>R3D.on&&!document.getElementById('r3d').hidden&&document.getElementById('r3dBtn').getAttribute('aria-pressed')==='true'),`${tag} 選單裡的 3D 回放要能開面板`);
+  // 3D 回放不在選單裡（UI 方案 A 第 4 步），也不存
+  check(await page.evaluate(()=>!document.getElementById('r3dBtn')),`${tag} 選單裡不該再有 3D 回放`);
   check(!('r3d' in JSON.parse(await page.evaluate(()=>localStorage.getItem('tennis-view-opts-v1')))),`${tag} 3D 回放不存`);
-  await page.locator('#r3dBtn').click();
-  check(await page.evaluate(()=>!R3D.on),`${tag} 3D 回放再按要關`);
   // 深淺色
   const t0=await page.evaluate(()=>document.documentElement.dataset.theme||'');
   await page.locator('#theme').click();
@@ -236,7 +233,7 @@ async function layout(browser,engine,label,opts){
   await page.locator('#viewBtn').click();
   const rs=await contrast(page,'#viewBtn, #speed, #toPrep, #toHit, #viewPanel button, .player details.help summary');
   const bad=rs.filter(x=>x.ratio<4.5);
-  check(rs.length>=9&&bad.length===0,`${tag} ${scheme}：控制項與選單文字對比要 ≥ 4.5：${JSON.stringify(bad)}（共量 ${rs.length}）`);
+  check(rs.length>=8&&bad.length===0,`${tag} ${scheme}：控制項與選單文字對比要 ≥ 4.5：${JSON.stringify(bad)}（共量 ${rs.length}）`);
   await page.locator('#toPrep').evaluate(e=>{e.disabled=true;});  // 停用狀態也要看得到
   const dis=await contrast(page,'#toPrep');check(dis.length===1,`${tag} ${scheme}：停用的 #toPrep 仍要看得到`);
   check(!errors.length,`${tag} ${scheme} 頁面錯誤 ${errors}`);
