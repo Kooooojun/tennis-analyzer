@@ -39,7 +39,7 @@ function contrast(fg, bg) {
     await page.evaluate(k => go(k, "video"), richDay);
     await page.waitForFunction(() => S && v.readyState >= 2);
 
-    // Portrait .controls: all visible buttons fit within viewport without horizontal scroll, and speed cycle button works (4 clicks = back to start)
+    // Portrait .controls: all visible buttons fit within viewport without horizontal scroll, and speed select works (4 selections = back to start)
     const ctlCheck = await page.evaluate(() => {
       const ctl = document.querySelector(".player .controls");
       const btns = [...ctl.querySelectorAll("button")].filter(b => getComputedStyle(b).display !== "none" && b.offsetParent !== null);
@@ -59,19 +59,20 @@ function contrast(fg, bg) {
     assert.equal(ctlCheck.outOfView.length, 0,
       `portrait .controls buttons must all be inside viewport: ${JSON.stringify(ctlCheck.outOfView)}`);
 
-    const speedCyc = page.locator("#speedCyc");
-    assert.equal(await speedCyc.count(), 1, "#speedCyc button must exist");
-    assert(await speedCyc.isVisible(), "#speedCyc must be visible in mobile portrait");
+    // 速度是一顆下拉（UI 方案 A 第 3 步取代 4 顆鈕與輪流切換鈕）：4 個值各選一次，playbackRate 要跟著，最後回到起點
+    const speed = page.locator("#speed");
+    assert.equal(await speed.count(), 1, "#speed select must exist");
+    assert(await speed.isVisible(), "#speed must be visible in mobile portrait");
     const initRate = await page.evaluate(() => v.playbackRate);
-    const initLabel = await speedCyc.textContent();
+    const initVal = await speed.inputValue();
     const seenRates = [];
-    for (let i = 0; i < 4; i++) {
-      await speedCyc.click();
+    for (const val of ["0.1", "0.5", "1", initVal]) {
+      await speed.selectOption(val);
       seenRates.push(await page.evaluate(() => v.playbackRate));
     }
-    assert.equal(new Set(seenRates).size, 4, `4 clicks on #speedCyc must visit 4 distinct rates, got ${JSON.stringify(seenRates)}`);
-    assert.equal(seenRates[3], initRate, `4th click must return playbackRate to ${initRate}, got ${seenRates[3]}`);
-    assert.equal(await speedCyc.textContent(), initLabel, `4th click must return #speedCyc label to ${initLabel}`);
+    assert.equal(new Set(seenRates).size, 4, `4 selections on #speed must give 4 distinct rates, got ${JSON.stringify(seenRates)}`);
+    assert.equal(seenRates[3], initRate, `last selection must return playbackRate to ${initRate}, got ${seenRates[3]}`);
+    assert.equal(await speed.inputValue(), initVal, `#speed must return to ${initVal}`);
 
     // Scroll to compare section (#selA / #vA)
     await page.evaluate(() => document.getElementById("selA").closest(".card").scrollIntoView({ block: "start" }));
@@ -343,7 +344,7 @@ function contrast(fg, bg) {
           const r = b.getBoundingClientRect();
           return { id: b.id || b.textContent, w: r.width, h: r.height };
         }).filter(x => x.w < 43.5 || x.h < 43.5);
-        const cyc = document.getElementById("speedCyc");
+        const cyc = document.getElementById("speed");
         return {
           pH: p.height,
           stW: st.width,
@@ -359,7 +360,7 @@ function contrast(fg, bg) {
           cycVisible: getComputedStyle(cyc).display !== "none" && cyc.offsetParent !== null,
         };
       });
-      assert(layout.cycVisible, `${spec.name}: #speedCyc must be visible`);
+      assert(layout.cycVisible, `${spec.name}: #speed must be visible`);
       assert(layout.ctlScrollW <= layout.ctlClientW,
         `${spec.name}: .controls scrollWidth (${layout.ctlScrollW}) > clientWidth (${layout.ctlClientW})`);
       assert.equal(layout.outOfView.length, 0,

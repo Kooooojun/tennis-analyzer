@@ -51,9 +51,16 @@ main.wideplayer{grid-template-columns:minmax(0,1fr)}  /* landscape clip: player 
 .phase-badge{position:absolute;right:10px;top:10px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:13px;padding:5px 10px;border-radius:999px;display:none}
 .now{display:flex;align-items:center;gap:8px;margin-top:10px}
 .now .title{flex:1;min-width:0;font-weight:600;font-size:14px;overflow-wrap:anywhere;line-height:1.35}
-.controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
-.ctl-break{flex-basis:100%;height:0;margin:-2px 0}
-#speedCyc{display:none}
+.controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;position:relative}
+.view-panel{position:absolute;left:0;top:calc(100% + 4px);z-index:20;width:min(300px,100%);display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:8px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.2)}  /* 顯示 ▾：浮在控制列下面，不推開版面 */
+.view-panel.up{top:auto;bottom:calc(100% + 4px)}  /* 下緣放不下就往上開 */
+.view-panel button{text-align:left}
+.view-panel button[aria-pressed]::before{content:"";display:inline-block;width:1.2em}
+.view-panel button[aria-pressed="true"]::before{content:"✓"}  /* 開關狀態不只靠顏色 */
+details.help{margin-top:6px;font-size:12px;color:var(--muted)}
+details.help summary{cursor:pointer;padding:6px 2px;width:fit-content}
+details.help .hint{margin:4px 0 0}
+@media (pointer:coarse){details.help summary{min-height:44px;display:flex;align-items:center}}
 button,select{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 11px;border-radius:8px;cursor:pointer}
 select{max-width:100%;min-width:0}
 button:hover{border-color:var(--muted)}
@@ -178,14 +185,11 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   input[type=range]{margin:6px 0 0}
   .now{margin-top:6px}
   .controls{gap:4px;margin-top:6px;flex-wrap:wrap}
-  .ctl-break{display:none}
   .controls button,.now button{padding:7px 7px;font-size:12.5px;white-space:nowrap;flex:none}
   .phase-badge{top:auto;bottom:8px;right:8px}
   .controls .sep,.controls .hint{display:none}
-  #speeds{display:none}
-  #speedCyc{display:inline-flex;align-items:center;justify-content:center}
+  .controls select{padding:7px 26px 7px 7px;font-size:12.5px}
   #cmpSpeeds{display:flex;gap:4px;flex:none;margin-left:auto}
-  .player .hint.kbd-hint{display:none}
   .card{padding:12px 14px}
   .badge,.phase-badge{font-size:11px;padding:4px 6px}
   .check li{grid-template-columns:minmax(0,1fr);gap:2px}
@@ -195,7 +199,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   .player .vid-msg{top:34px;transform:none;font-size:12px;line-height:1.25;padding:6px 8px}
   .player input[type=range]{margin:2px 0 0}
   .player .now,.player .controls{margin-top:2px}
-  .player .touch-hint{display:none}
+  details.help{display:none}  /* 直立手機：固定在上方的播放區要留給影片，操作說明（本來這裡就不顯示提示）不佔一排 */
 }
 .days{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .days button{font-size:13px}
@@ -315,19 +319,23 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
       <button id="play">▶ 播放</button>
       <button id="prev" title="上一格 (←)">◀︎ 格</button>
       <button id="next" title="下一格 (→)">格 ▶︎</button>
-      <span class="sep"></span>
-      <span class="hint">速度</span>
-      <span id="speeds"></span>
-      <button type="button" id="speedCyc" title="切換播放速度"></button>
-      <span class="ctl-break"></span>
-      <button id="skel" class="on">骨架</button>
-      <button id="guides" class="on">輔助線</button>
-      <button id="trail" class="on">手腕軌跡</button>
-      <button id="r3dBtn" aria-pressed="false">3D 回放</button>
-      <button id="theme" aria-label="切換深淺色">🌓</button>
+      <button type="button" id="toPrep">停在引拍完成</button>
+      <button type="button" id="toHit" title="跳到擊球那一格">停在擊球</button>
+      <select id="speed" aria-label="播放速度"></select>
+      <button type="button" id="viewBtn" aria-expanded="false" aria-controls="viewPanel">顯示 ▾</button>
+      <div class="view-panel" id="viewPanel" role="group" aria-label="顯示" hidden>
+        <button id="skel" class="on">骨架</button>
+        <button id="guides" class="on">輔助線</button>
+        <button id="trail" class="on">手腕軌跡</button>
+        <button id="r3dBtn" aria-pressed="false">3D 回放</button>
+        <button id="theme" aria-label="切換深淺色">🌓 深淺色</button>
+      </div>
     </div>
-    <p class="hint touch-hint">點影片播放/暫停 · 在影片上左右滑動可逐格</p>
-    <p class="hint kbd-hint"><kbd>空白</kbd> 播放/暫停 · <kbd>←</kbd><kbd>→</kbd> 逐格 · <kbd>↑</kbd><kbd>↓</kbd> 換一拍 · <kbd>N</kbd> 寫筆記</p>
+    <details class="help" id="help">
+      <summary>操作說明</summary>
+      <p class="hint touch-hint">點影片播放/暫停 · 在影片上左右滑動可逐格</p>
+      <p class="hint kbd-hint"><kbd>空白</kbd> 播放/暫停 · <kbd>←</kbd><kbd>→</kbd> 逐格 · <kbd>↑</kbd><kbd>↓</kbd> 換一拍 · <kbd>N</kbd> 寫筆記</p>
+    </details>
   </section>
 
   <section class="col">
@@ -1331,6 +1339,7 @@ function load(id, scroll, defer=false){
   S=ALL[id]; N=S.n??S.frames.length; seek.max=N-1;  // n: frame count in data.js; older builds only have frames
   cancelUnusedPoses();
   S.phases=[{f:S.contact-48,name:"準備"},...(S.prep!=null?[{f:S.contact-Math.round(S.prep*FPS),name:"引拍完成"}]:[]),{f:S.contact-15,name:"向前揮拍"},{f:S.contact,name:"擊球",key:true},{f:S.contact+30,name:"收拍"}].sort((a,b)=>a.f-b.f);  // 引拍完成 can fall before 準備 or after 向前揮拍
+  { const pp=S.phases.find(p=>p.name==="引拍完成"); $("toPrep").disabled=!pp; $("toPrep").title=!pp?"這拍沒有引拍完成的資料":prepLow(S)?"引拍在片段開頭前就拉好了，實際更早":"跳到引拍完成那一格"; }
   $("phases").innerHTML=""; for(const p of S.phases){ const b=document.createElement("button"); b.textContent=p.name; b.onclick=()=>goto(p.f); $("phases").append(b); }
   const dn=drillName(S);
   updateTitle(); drawPoseCount();
@@ -1416,12 +1425,24 @@ function step(d){ const list=visible(); if(!list.length) return; let i=list.find
 $("prevS").onclick=()=>step(-1); $("nextS").onclick=()=>step(1);
 const RATES=[0.1,0.25,0.5,1];
 function speedButtons(box,get,set){ for(const s of RATES){ const b=document.createElement("button"); b.textContent=s+"×"; b.onclick=()=>{ set(s); [...box.children].forEach(x=>x.classList.toggle("on",x===b)); }; if(s===get()) b.classList.add("on"); box.append(b); } }
-function syncSpeedCyc(){ const b=$("speedCyc"); if(!b) return; b.textContent=rate+"×"; b.setAttribute("aria-label",`播放速度 ${rate} 倍，點一下切換`); }
-function setRate(s){ rate=s; v.playbackRate=s; [...$("speeds").children].forEach((x,i)=>x.classList.toggle("on",RATES[i]===s)); syncSpeedCyc(); }
-speedButtons($("speeds"),()=>rate,setRate);
-$("speedCyc").onclick=()=>setRate(RATES[(RATES.indexOf(rate)+1)%RATES.length]);
-syncSpeedCyc();
-const tg=(id,key)=>{ $(id).setAttribute("aria-pressed",OPT[key]); $(id).onclick=()=>{ $(id).classList.toggle("on"); OPT[key]=$(id).classList.contains("on"); $(id).setAttribute("aria-pressed",OPT[key]); render(cur); cmpRender(cmpCur); };};
+function setRate(s){ rate=s; v.playbackRate=s; $("speed").value=String(s); }
+$("speed").innerHTML=RATES.map(r=>`<option value="${r}">速度 ${r}×</option>`).join(""); $("speed").value=String(rate);
+let speedByPointer=false; $("speed").addEventListener("pointerdown",()=>{ speedByPointer=true; }); $("speed").addEventListener("keydown",()=>{ speedByPointer=false; });
+$("speed").onchange=e=>{ setRate(+e.target.value); if(speedByPointer){ e.target.blur(); speedByPointer=false; } };  // 滑鼠選完就放開焦點，空白／方向鍵才不會被下拉吃掉；鍵盤選則焦點留著
+$("toHit").onclick=()=>{ if(S) goto(S.contact); };
+$("toPrep").onclick=()=>{ const p=S?.phases.find(p=>p.name==="引拍完成"); if(p) goto(p.f); };
+const VIEW_KEY="tennis-view-opts-v1";  // 骨架／輔助線／軌跡記在這台裝置（跟筆記一樣放 localStorage），只認布林
+try{ const o=JSON.parse(localStorage.getItem(VIEW_KEY)); for(const k of Object.keys(OPT)) if(typeof o?.[k]==="boolean") OPT[k]=o[k]; }catch{}
+const saveOpt=()=>{ try{ localStorage.setItem(VIEW_KEY,JSON.stringify(OPT)); }catch{} };
+const tg=(id,key)=>{ $(id).classList.toggle("on",OPT[key]); $(id).setAttribute("aria-pressed",OPT[key]); $(id).onclick=()=>{ $(id).classList.toggle("on"); OPT[key]=$(id).classList.contains("on"); $(id).setAttribute("aria-pressed",OPT[key]); saveOpt(); render(cur); cmpRender(cmpCur); };};
+const viewMenu=on=>{ const P=$("viewPanel"); P.hidden=!on; $("viewBtn").setAttribute("aria-expanded",on); if(on){ P.classList.remove("up"); P.classList.toggle("up",P.getBoundingClientRect().bottom>innerHeight); } };
+$("viewBtn").onclick=()=>viewMenu($("viewPanel").hidden);
+addEventListener("pointerdown",e=>{ if(!$("viewPanel").hidden&&!e.target.closest("#viewBtn,#viewPanel")) viewMenu(false); });
+for(const el of [$("viewBtn"),$("viewPanel")]) el.addEventListener("keydown",e=>{
+  const P=$("viewPanel");
+  if(e.key==="Tab"&&(el===P?(e.shiftKey?e.target===P.firstElementChild:e.target===P.lastElementChild):e.shiftKey)) viewMenu(false);  // 走出選單就收起來；不看 focusout，因為 Safari 點按鈕不會給焦點
+});
+addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("viewPanel").hidden){ viewMenu(false); $("viewBtn").focus(); } });  // 掛在 document：Safari 點按鈕不給焦點，焦點在 body 時 Esc 也要能關
 tg("skel","skel"); tg("guides","guides"); tg("trail","trail");
 $("theme").onclick=()=>{ const r=document.documentElement, dark=matchMedia("(prefers-color-scheme: dark)").matches; const now=r.dataset.theme||(dark?"dark":"light"); r.dataset.theme=now==="dark"?"light":"dark"; document.querySelectorAll('meta[name="theme-color"]').forEach(m=>m.content=css("--bg")); render(cur); };
 $("chart").addEventListener("click",e=>{ const r=e.currentTarget.getBoundingClientRect(); goto(e.currentTarget._map(e.clientX-r.left)); });

@@ -127,8 +127,7 @@ for(const engine of [chromium,webkit]){
     assert.equal(await page.evaluate(()=>v._want),false,'a second tap must cancel queued playback');
     await page.evaluate(()=>{toggle();goto(25);});
     assert.equal(await page.locator('#play').textContent(),'▶ 播放','seek must clear the queued-play button before a source exists');
-    if(await page.locator('#speedCyc').isVisible()){for(let k=0;k<4&&await page.evaluate(()=>rate!==1);k++)await page.locator('#speedCyc').click();}
-    else{await page.locator('#speeds button').last().click();}
+    await page.locator('#speed').selectOption('1');
     await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
     assert(await page.evaluate(()=>v.playbackRate===rate&&rate===1&&v.paused),'loading must use the latest speed and cancelled playback intent');
     await page.unroute('**/*.mp4*');
@@ -243,6 +242,11 @@ if os.environ.get("SITE_E2E_URL"):
     for real in () if os.environ.get("SITE_REF") else (False, True):
         subprocess.run(["node", str(R / "tests" / "site_stroke_row.mjs")], check=True,
                        env={**{k: v for k, v in os.environ.items() if real or k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + ("-stroke-row-real" if real else "-stroke-row")))} if os.environ.get("SITE_RESULTS") else {})})
+    # 控制列收斂（UI 方案 A 第 3 步）：同上，合成場次先、真實副本後；舊網頁（SITE_REF）沒有新控制項，必紅，所以跳過。
+    if os.environ.get("SITE_REF"): print("skipped site_controls.mjs: it checks new behaviour, SITE_REF runs the old page")
+    for real in () if os.environ.get("SITE_REF") else (False, True):
+        subprocess.run(["node", str(R / "tests" / "site_controls.mjs")], check=True,
+                       env={**{k: v for k, v in os.environ.items() if real or k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + ("-controls-real" if real else "-controls")))} if os.environ.get("SITE_RESULTS") else {})})
     if not os.environ.get("SITE_REF"):  # 真實副本：每張表每一欄的拍數對 data.js（這支另外用 SITE_E2E_URL 跑一次）
         subprocess.run(["node", str(R / "tests" / "site_trend_per_player.mjs")], check=True,
                        env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-site_trend_per_player-real"))} if os.environ.get("SITE_RESULTS") else {})})
