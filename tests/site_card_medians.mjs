@@ -1,4 +1,4 @@
-// #130：單拍卡片的中位數比較組。合成資料，不讀任何使用者資料；SITE_REF=origin/main 可在修改前的網頁上跑。
+// #130：單拍卡片的中位數比較組。合成資料，不讀任何使用者資料；SITE_REF=origin/main 預期失敗（main 沒有新比較組與標籤），用來證明這支測試抓得到 #130。
 // PLAYWRIGHT_MODULE 指向本機 playwright-core。三個情境：兩人輪流、某 drill 不到 5 拍、單人單 drill。
 import {pathToFileURL} from 'node:url';
 import {fixture} from './site_i93_fixture.mjs';
@@ -12,6 +12,8 @@ const G={
  palFeed:{player:'pal',kind:'FH',drill:'feed',knee:160,open_min:40,contact_h:.40,prep:.4,finish:.50},
  meBH:{player:'me',kind:'BH',drill:'feed',knee:170,open_min:50,contact_h:.50,prep:.5,finish:.60},
  palBH:{player:'pal',kind:'BH',drill:'feed',knee:190,open_min:60,contact_h:.60,prep:.6,finish:.70},
+ meRally:{player:'me',kind:'FH',drill:'rally',knee:130,open_min:70,contact_h:.70,prep:.7,finish:.80},
+ meFeedLow:{player:'me',kind:'FH',drill:'feed',knee:120,open_min:20,contact_h:.20,prep:.9,prep_trunc:true,finish:.20},
  meSV:{player:'me',kind:'SV',drill:'feed',knee:150,open_min:25,contact_h:.25,prep:.3,finish:null,reach:.35},
 };
 const rep=(k,n)=>Array(n).fill(k);
@@ -20,6 +22,8 @@ const SCENARIOS={
  two:{players:['me','pal'],order:[...Array(5).fill(['meHigh','palHigh','meFeed','palFeed']).flat(),'meBH','palBH','meBH','palBH','meBH']},
  // 對手的高拋只有 3 拍（<5），其餘 5 拍或以上。
  short:{players:['me','pal'],order:[...rep('meHigh',5),...rep('meFeed',5),...rep('palHigh',3),...rep('palFeed',5),...rep('meBH',4),...rep('palBH',3)]},
+ // 單人混 drill：對打 5 拍、自拋 5 拍（其中 2 拍準備時間只是下限，不計入）、高拋 3 拍（<5，退回全部正拍）。
+ misc:{players:['me'],order:[...rep('meFeed',3),...rep('meFeedLow',2),...rep('meRally',5),...rep('meHigh',3),...rep('meBH',12)]},
  // 單人、只有一種 drill、拍數夠。
  single:{players:['me'],order:[...rep('meFeed',15),...rep('meBH',5),...rep('meSV',5)]},
 };
@@ -36,6 +40,9 @@ const CASES=[
  ['short',13,'對手的自己拋球（5 拍）','pal的自己拋球正拍中位數',160,40,40,'0.40','0.50'],
  ['short',18,'我的反拍（4 拍）','你的反拍中位數',170,50,50,'0.50','0.60'],
  ['short',22,'對手的反拍（3 拍）','pal的反拍中位數',190,60,60,'0.60','0.70'],
+ ['misc',5,'對打（5 拍）','你的對打正拍中位數',130,70,70,'0.70','0.80'],
+ ['misc',0,'自拋（含 2 拍 prepLow，準備時間不計）','你的自己拋球正拍中位數',120,20,20,'0.20','0.20'],
+ ['misc',10,'單人高拋 3 拍，退回全部正拍','你的正拍中位數（高拋不到 5 拍）',120,20,20,'0.20','0.20'],
  ['single',0,'單人自己拋球','你的自己拋球正拍中位數',120,20,20,'0.20','0.20'],
  ['single',15,'單人反拍','你的反拍中位數',170,50,50,'0.50','0.60'],
  ['single',20,'單人發球','你的發球中位數',150,25,25,'0.30','0.35'],
