@@ -205,6 +205,8 @@ try{
      const lean=await page.evaluate(()=>({labels:R3D.labels,lean:S.lean,card:$('mLean').textContent,cur,c:S.contact}));
      check(lean.cur===lean.c&&lean.labels.some(t=>t.includes('前傾')&&(lean.lean==null?t.includes('看不準'):t.includes(lean.lean.toFixed(1)+'°'))),`${tag}：擊球格前傾弧線 ${JSON.stringify(lean)}`);
      check(!(await page.evaluate(()=>R3D.labels.join(''))).includes('肘'),`${tag}：不能畫肘角`);
+     // 前傾弧線用量 lean 的 2D 點（真實資料：弧線角度＝卡片 |lean|；合成場次的 lean 是假數字，不比）
+     if(real&&lean.lean!=null){const ld=await page.evaluate(()=>R3D.leanDeg);check(ld!=null&&Math.abs(ld-Math.abs(lean.lean))<.6,`${tag}：前傾弧線 ${ld} 和卡片 ${lean.lean} 不符`);}
      const lm=await page.evaluate(MARKS);
      check(lm.length>0&&lm.every(m=>m.overlap===false||m.inside&&!m.covers&&m.joint<.5&&m.line<.5),`${tag}：前傾標註位置 ${JSON.stringify(lm)}`);
      // 方法說明：偵測與插值影格數、拍攝角度限制、示意調整了什麼

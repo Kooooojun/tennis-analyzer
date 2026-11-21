@@ -1371,6 +1371,12 @@ function demoPlan(s){  // demoTarget plus the hip drop (d3 metres, d2 pixels) th
 }
 function demoPts(s,f,three){ const p=demoPlan(s), d=p&&(three?p.d3:p.d2), w=demoWeight(f,s.contact), P=(three?pts3:pts2)(s,f); return d==null||!w||!P?null:kneeIK(P,d*w); }
 function demo2(s,f){ const Q=demoPts(s,f,false), [w,h]=sizeOf(s); return Q&&Q.map((q,i)=>[q[0]/w,q[1]/h,s.frames[f][i][2]]); }
+function leanDir(s){  // image-plane torso tilt from vertical (radians, + = toward image right): the landmarks, visibility cut and 5 frames form_checks measures lean on
+  const [w,h]=sizeOf(s), a=[];
+  for(let f=s.contact-2;f<=s.contact+2;f++){ const fr=s.frames?.[f]; if(!fr||[1,2,7,8].some(i=>fr[i][2]<.5)) continue;
+    a.push(Math.atan2((fr[1][0]+fr[2][0]-fr[7][0]-fr[8][0])/2*w,-(fr[1][1]+fr[2][1]-fr[7][1]-fr[8][1])/2*h)); }
+  return median(a);
+}
 function kneeFrameOf(s){  // the window frame whose knee angle is closest to the card's (a 10th percentile, not one frame's value)
   if(s.knee==null||!s.frames) return null;
   const pts=kSrcOf(s)==="3D"?pts3:pts2; let best=null, bd=Infinity;
@@ -1457,7 +1463,8 @@ function draw3d(f){
   if(f===S.contact){  // lean is measured on the 5 frames centred on contact (metrics.py form_checks), so it belongs to the contact frame
     const mid=(a,b)=>P[K[a]].map((x,i)=>(x+P[K[b]][i])/2), hc=mid(23,24), shc=mid(11,12), Hp=proj(hc), up=proj([hc[0],hc[1]-Math.hypot(...shc.map((x,i)=>x-hc[i])),hc[2]]);
     g.setLineDash([4,3]); g.strokeStyle=css("--muted"); g.lineWidth=1.5; g.beginPath(); g.moveTo(...Hp); g.lineTo(...up); g.stroke(); g.setLineDash([]);
-    if(S.lean!=null) arc(Hp,up,proj(shc),22);
+    const th=leanDir(S); R3D.leanDeg=th==null?null:Math.abs(th)*180/Math.PI;  // lean is a 2D number: its arc follows the 2D torso, not the 3D one
+    if(S.lean!=null&&th!=null){ const L=Math.hypot(up[0]-Hp[0],up[1]-Hp[1]); arc(Hp,up,[Hp[0]+L*Math.sin(th),Hp[1]-L*Math.cos(th)],22); }
     label(S.lean==null?"前傾 看不準":`前傾 ${S.lean.toFixed(1)}°`,Hp,"lean",-30);
   }
 }
