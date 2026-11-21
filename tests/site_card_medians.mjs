@@ -23,22 +23,22 @@ const SCENARIOS={
  // 單人、只有一種 drill、拍數夠。
  single:{players:['me'],order:[...rep('meFeed',15),...rep('meBH',5),...rep('meSV',5)]},
 };
-// 每個情境要看的拍：[情境, 第幾拍（order 的索引）, 期望]。期望的鍵＝卡片 id；cKnee／cForm1 比對結尾，其餘全等。
+// 每格：[情境, 第幾拍, 說明, 標籤, 膝蓋, 轉肩, 手腕高度, 準備時間, 收拍]。標籤＝卡片上寫的比較組，每張卡都要寫。
 const CASES=[
- ['two',0,'我的高拋',{cKnee:'高拋正拍中位數 2D 110°',cOpen:'中位數 15%',cHeight:'中位數 15',cPrep:'高拋正拍中位數 0.20s',cForm1:'中位數 0.25'}],
- ['two',2,'我的自己拋球',{cKnee:'自己拋球正拍中位數 2D 120°',cOpen:'中位數 20%',cHeight:'中位數 20',cPrep:'自己拋球正拍中位數 0.30s',cForm1:'中位數 0.25'}],
- ['two',1,'對手的高拋',{cKnee:'高拋正拍中位數 2D 150°',cOpen:'中位數 35%',cHeight:'中位數 35',cPrep:'高拋正拍中位數 0.20s',cForm1:'中位數 0.25'}],
- ['two',3,'對手的自己拋球',{cKnee:'自己拋球正拍中位數 2D 160°',cOpen:'中位數 40%',cHeight:'中位數 40',cPrep:'自己拋球正拍中位數 0.30s',cForm1:'中位數 0.25'}],
- ['two',20,'我的反拍',{cKnee:'反拍中位數 2D 170°',cOpen:'中位數 50%',cHeight:'中位數 50',cPrep:'反拍中位數 0.50s',cForm1:'中位數 0.60'}],
- ['two',21,'對手的反拍',{cKnee:'反拍中位數 2D 190°',cOpen:'中位數 60%',cHeight:'中位數 60',cPrep:'反拍中位數 0.50s',cForm1:'中位數 0.60'}],
- ['short',0,'我的高拋（5 拍）',{cKnee:'高拋正拍中位數 2D 110°',cOpen:'中位數 15%',cHeight:'中位數 15',cPrep:'高拋正拍中位數 0.10s',cForm1:'中位數 0.20'}],
- ['short',10,'對手的高拋（3 拍）',{cKnee:'高拋正拍中位數 2D 160°',cOpen:'中位數 40%',cHeight:'中位數 40',cPrep:'高拋正拍中位數 0.10s',cForm1:'中位數 0.20'}],
- ['short',13,'對手的自己拋球（5 拍）',{cKnee:'自己拋球正拍中位數 2D 160°',cOpen:'中位數 40%',cHeight:'中位數 40',cPrep:'自己拋球正拍中位數 0.30s',cForm1:'中位數 0.20'}],
- ['short',18,'我的反拍（4 拍）',{cKnee:'反拍中位數 2D 170°',cOpen:'中位數 50%',cHeight:'中位數 50',cPrep:'反拍中位數 0.50s',cForm1:'中位數 0.60'}],
- ['short',22,'對手的反拍（3 拍）',{cKnee:'反拍中位數 2D 190°',cOpen:'中位數 60%',cHeight:'中位數 60',cPrep:'反拍中位數 0.50s',cForm1:'中位數 0.60'}],
- ['single',0,'單人自己拋球',{cKnee:'自己拋球正拍中位數 2D 120°',cOpen:'中位數 20%',cHeight:'中位數 20',cPrep:'自己拋球正拍中位數 0.20s',cForm1:'中位數 0.20'}],
- ['single',15,'單人反拍',{cKnee:'反拍中位數 2D 170°',cOpen:'中位數 50%',cHeight:'中位數 50',cPrep:'反拍中位數 0.50s',cForm1:'中位數 0.60'}],
- ['single',20,'單人發球',{cKnee:'發球中位數 2D 150°',cOpen:'中位數 25%',cHeight:'中位數 25',cPrep:'發球中位數 0.30s',cForm1:'中位數 0.35'}],
+ ['two',0,'我的高拋','你的高拋正拍中位數',100,10,10,'0.10','0.10'],
+ ['two',2,'我的自己拋球','你的自己拋球正拍中位數',120,20,20,'0.20','0.20'],
+ ['two',1,'對手的高拋','pal的高拋正拍中位數',140,30,30,'0.30','0.30'],
+ ['two',3,'對手的自己拋球','pal的自己拋球正拍中位數',160,40,40,'0.40','0.50'],
+ ['two',20,'我的反拍','你的反拍中位數',170,50,50,'0.50','0.60'],
+ ['two',21,'對手的反拍','pal的反拍中位數',190,60,60,'0.60','0.70'],
+ ['short',0,'我的高拋（5 拍，剛好夠）','你的高拋正拍中位數',100,10,10,'0.10','0.10'],
+ ['short',10,'對手的高拋（3 拍，退回對手的正拍）','pal的正拍中位數（高拋不到 5 拍）',160,40,40,'0.40','0.50'],
+ ['short',13,'對手的自己拋球（5 拍）','pal的自己拋球正拍中位數',160,40,40,'0.40','0.50'],
+ ['short',18,'我的反拍（4 拍）','你的反拍中位數',170,50,50,'0.50','0.60'],
+ ['short',22,'對手的反拍（3 拍）','pal的反拍中位數',190,60,60,'0.60','0.70'],
+ ['single',0,'單人自己拋球','你的自己拋球正拍中位數',120,20,20,'0.20','0.20'],
+ ['single',15,'單人反拍','你的反拍中位數',170,50,50,'0.50','0.60'],
+ ['single',20,'單人發球','你的發球中位數',150,25,25,'0.30','0.35'],
 ];
 try{
  for(const engine of [chromium,webkit]){
@@ -56,8 +56,9 @@ try{
      ALL.forEach((s,i)=>{Object.assign(s,{finish:null,reach:null,vis:1,knee_warn:false,prep_trunc:false,knee3d:null,knee2d_ok:true},G[sc.order[i]]);});
      pfilter='ALL';MED=dayStats(mine());
     },{sc,G});
-    for(const [cs,idx,what,want] of CASES.filter(c=>c[0]===name)){
+    for(const [cs,idx,what,lbl,knee,open,h,prep,fin] of CASES.filter(c=>c[0]===name)){
      const got=await page.evaluate(i=>{load(i,false);return Object.fromEntries(['cKnee','cOpen','cHeight','cPrep','cForm1'].map(id=>[id,document.getElementById(id).textContent]));},idx);
+     const want={cKnee:`${lbl} 2D ${knee}°`,cOpen:`${lbl} ${open}%`,cHeight:`${lbl} ${h}`,cPrep:`${lbl} ${prep}s`,cForm1:`；${lbl} ${fin}`};
      for(const [id,exp] of Object.entries(want)){
       const ok=id==='cKnee'||id==='cForm1'?got[id].endsWith(exp):got[id]===exp;
       check(ok,`${engine.name()} ${cs}／${what}／#${id}：要 ${JSON.stringify(exp)}，實際 ${JSON.stringify(got[id])}`);
