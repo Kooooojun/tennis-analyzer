@@ -6,7 +6,7 @@ import re
 import numpy as np
 from platform_util import utf8_stdout
 from trend import NAMES, _entry, compare
-from score import METRICS, _value
+from score import METRICS, MIN_N, _value
 
 utf8_stdout()
 
@@ -66,6 +66,29 @@ def _cite(c, strokes, groups, show_open=False):
         v = float(STATS[st](vals)) if st != "n" else len(vals)
         return None if _match(v, c.get("value")) else f"{c['kind']} {c.get('drill', '')} {f} {st} 實際 {round(v, 2)}，引用 {c.get('value')}"
     return "cite 要有 stroke、metric 或 stat"
+
+
+EVIDENCE_FIELDS = (*METRICS, "knee3d")  # knee3d is the knee metric's other source (score.py picks one per group); id, vis, elbow ... are not measurements to score
+
+
+def _evidenced(cites, strokes, groups, show_open):
+    """True when a problem finding rests on more than one stroke (docs/scoring.md §8):
+    - a metric cite (stat other than n, or a group score such as total), or stat n whose group metric has n >= score.MIN_N;
+    - a stat cite of median / mean (min, max and n say nothing about the spread of strokes) over a scoring field with usable n >= score.MIN_N;
+    - cites of 2+ different strokes.
+    A cite with `stroke` is one stroke whatever else it carries; a cite with `metric` is never read as a stat cite, so a stray `field` on it is ignored."""
+    who = lambda s: s.get("player") or "me"
+    if len({c["stroke"] for c in cites if "stroke" in c}) >= 2: return True
+    for c in cites:
+        if "stroke" in c: continue
+        if "metric" in c:
+            g = next((g for g in groups if g["kind"] == c.get("kind") and g["player"] == (c.get("player") or "me")), None)
+            if c["metric"] in GROUP_KEYS or c.get("stat", "score") != "n": return True
+            if g is not None and (g["metrics"].get(c["metric"]) or {}).get("n", 0) >= MIN_N: return True  # the value _cite just matched, from scores.json
+        elif c.get("stat") in ("median", "mean") and c.get("field") in EVIDENCE_FIELDS:
+            n = sum(_usable(s, c["field"], show_open) is not None for s in strokes if s["kind"] == c.get("kind") and who(s) == (c.get("player") or "me") and c.get("drill", s.get("drill")) == s.get("drill"))
+            if n >= MIN_N: return True
+    return False
 
 
 def _change_errors(finding, scores, runs):
@@ -160,6 +183,8 @@ def check(notes, strokes, scores, runs=()):
         if not isinstance(cites, list): cites = []
         if not cites: errs.append("沒有引用（cite）")
         errs += [r for r in (_cite(c, strokes, scores.get("groups", []), scores.get("show_open") is True) for c in cites) if r]
+        if not errs and not f.get("good") and not f.get("info") and not _evidenced(cites, strokes, scores.get("groups", []), scores.get("show_open") is True):
+            errs.append(f"問題型 finding 至少要有：一個 metric 引用（stat 不是 n，或 n ≥ {MIN_N}）、一個 median／mean 的群組統計引用（量測欄位、可用拍數 ≥ {MIN_N}），或兩個以上不同拍號的單拍引用（單拍、計數、min／max 不能撐起一條問題）")
         errs += _change_errors({**f, "cite": cites}, scores, runs)
         vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
         text = f.get("text", "")

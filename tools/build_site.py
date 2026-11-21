@@ -5,18 +5,12 @@
 # frame counts) folded for the page's method note; null for work dirs made before versions.txt existed (the page says 未記錄).
 import hashlib, json, re, sys
 from check_findings import check
-from common import ROOT, load, work
+from common import ROOT, load, src_fps, work
 from platform_util import read_text, unlink, write_text
 from trend import _score_set
 
 S = ROOT / "web" / "sessions"
 POSE = ("frames", "world")  # per-frame arrays: ~99% of the bytes, only needed for the stroke on screen
-
-
-def src_fps(s):
-    """Lowest source fps prep.sh recorded for the session's videos, or None when unknown (older work dirs)."""
-    fps = [int(t) for p in work(s).glob("*/src_fps.txt") if (t := read_text(p).strip()).isdigit() and int(t) > 0]
-    return min(fps) if fps else None
 
 
 def method_ver(s):
