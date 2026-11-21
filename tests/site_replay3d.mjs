@@ -202,6 +202,7 @@ try{
      check(JSON.stringify(want)===JSON.stringify(got),`${tag}：示意條件不符 ${JSON.stringify({want,got})}`);
      const eligible=Object.keys(want).filter(k=>want[k]!=null).map(Number);
      if(!real)check(JSON.stringify(eligible)==='[10,11]',`${tag}：合成場次應只有 10、11 有示意 ${eligible}`);
+     await page.evaluate(()=>{const m=document.querySelector('#strokes .strokes-more');if(m?.getAttribute('aria-expanded')==='false')m.click();});  // 有 overall 的場次預設只列相關拍，記號要在完整列表上看
      const marked=await page.locator('#strokes button:has(.r3d-mark)').evaluateAll(bs=>bs.map(b=>+b.dataset.id));
      check(JSON.stringify(marked)===JSON.stringify(eligible),`${tag}：列表記號 ${marked} ≠ ${eligible}`);
      const advice=await page.evaluate(()=>{const out=[];for(const p of DAYS[DAY].players){pfilter=p;MED=dayStats(mine());drawChecks();const m=/約 (3D估|2D) (\d+)°/.exec($('checkFH').textContent);out.push({p,shown:m?+m[2]:null,target:ALL.filter(s=>who(s)===p).map(s=>demoTarget(s)?.target).find(x=>x!=null)??null});}pfilter='ALL';MED=dayStats(mine());drawChecks();return out;});

@@ -22,13 +22,15 @@ function contrast(fg, bg) {
 }
 
 async function checkProgressAndFilter(page, label) {
+  // 有 overall 的場次拍子列預設只列相關拍（UI 方案 A 第 2 步）：先展開成完整列表，這支測的是完整列表的進度與篩選
+  await page.evaluate(() => { const m = document.querySelector("#strokes .strokes-more"); if (m?.getAttribute("aria-expanded") === "false") m.click(); });
   // Click the first stroke in the unfiltered list so we start at stroke 1 of N
-  await page.evaluate(() => document.querySelector("#strokes button")?.click());
+  await page.evaluate(() => document.querySelector("#strokes button[data-id]")?.click());
   await page.waitForTimeout(100);
 
   // 1. Unfiltered: title contains "第 1／共 N 拍", N = stroke list length
   const init = await page.evaluate(() => {
-    const total = document.querySelectorAll("#strokes button").length;
+    const total = document.querySelectorAll("#strokes button[data-id]").length;
     return {
       total,
       now: document.getElementById("nowTitle").textContent,
@@ -68,7 +70,7 @@ async function checkProgressAndFilter(page, label) {
     target.click();
     return {
       label: target.textContent,
-      filteredCount: document.querySelectorAll("#strokes button").length,
+      filteredCount: document.querySelectorAll("#strokes button[data-id]").length,
       nowAfterFilter: document.getElementById("nowTitle").textContent,
     };
   });
@@ -79,7 +81,7 @@ async function checkProgressAndFilter(page, label) {
   const afterNext = await page.evaluate(() => ({
     now: document.getElementById("nowTitle").textContent,
     detail: document.getElementById("detailTitle").textContent,
-    filteredCount: document.querySelectorAll("#strokes button").length,
+    filteredCount: document.querySelectorAll("#strokes button[data-id]").length,
   }));
   // After clicking #nextS while filtered, we must be in the filtered list with X / filteredCount
   const parseProg = text => {
