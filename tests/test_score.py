@@ -278,3 +278,38 @@ assert check_session([sv(True, contact_untrusted=False)] * 3)[0]["verified"] is 
 # 不把雙手反拍、其他拍種或缺少單手資訊的舊資料誤列為單手反拍檢查。
 assert check_session([dict(unknown_bh, backhand="two"), dict(unknown_bh, backhand=None), dict(unknown_bh, kind="FH"), dict(unknown_bh, kind="OH")]) == []
 print("untrusted contact check coverage tests ok")
+
+# 下次拍攝建議的依據（PR #144 修正輪，testset/results/findings-rules/pred2.md）：門檻只有 score.shoot_basis 一份
+from score import shoot_basis, VIEW_WARN, FPS_MIN, MIN_N, MIN_COVER
+def fh(i=0, az=90, why=None, **kw):
+    return {**dict(kind="FH", player="p", knee=130 + i, knee3d=None, contact_h=0.5, contact_fwd=0.2, prep=0.4, vis=0.9, elbow=150, open_min=20, open_contact=60,
+                   lean=5, stance=0.3, finish=0.3, wrist_speed=8, leg_load=0.1, drill="feed", cam_az=az, knee_warn=True if why else None, knee_warn_why=why), **kw}
+def basis(S, fps=60, show_open=False): return shoot_basis(S, score_session(S, show_open), fps, show_open)
+assert (VIEW_WARN, FPS_MIN) == (0.3, 50)
+# 沒有觸發：10 拍側面、60 fps -> 照舊（兩個真實場次碰不到，用合成資料）
+lines, trig = basis([fh(i) for i in range(10)])
+assert trig == [] and any("10 拍" in l for l in lines) and lines[-1].startswith("拍攝建議觸發：無"), (lines, trig)
+# 視角：3/10 = 30% 剛好觸發、2/10 不觸發；分母帶出來
+S = [fh(i) for i in range(7)] + [fh(7 + i, az=10, why="view") for i in range(3)]
+lines, trig = basis(S); assert [t[0] for t in trig] == ["view"] and any("3/10" in l and "30%" in l for l in lines), (lines, trig)
+assert basis([fh(i) for i in range(8)] + [fh(8 + i, az=10, why="view") for i in range(2)])[1] == []  # 2/10
+# refine 把不可信的拍改成 knee_warn_why="contact" 且清掉 cam_az：方位未知，不進分母（不算視角擋，也不稀釋比例）
+S = [fh(i) for i in range(4)] + [fh(4 + i, az=10, why="view") for i in range(2)] + [fh(6 + i, az=None, why="contact") for i in range(2)]  # 2/6 = 33% (2/8 = 25% if the unknown were counted)
+lines, trig = basis(S); assert [t[0] for t in trig] == ["view"] and any("2/6" in l and "未知 2" in l for l in lines), (lines, trig)
+# 已被視角擋掉、但 refine 後 knee_warn_why 變 "contact" 而 cam_az 還在（舊 strokes.json）：看 cam_az，仍算視角
+S = [fh(i) for i in range(6)] + [fh(6 + i, az=170, why="contact") for i in range(4)]
+assert [t[0] for t in basis(S)[1]] == ["view"]
+# fps：< 50 觸發、= 50 不觸發、未知不觸發
+assert [t[0] for t in basis([fh(i) for i in range(10)], fps=30)[1]] == ["fps"]
+assert basis([fh(i) for i in range(10)], fps=50)[1] == [] and basis([fh(i) for i in range(10)], fps=None)[1] == []
+# 資料不足分兩種：拍數 < MIN_N（覆蓋率夠，多錄有用）／覆蓋率 < MIN_COVER（被閘門擋，多錄沒用）
+S = [fh(i) for i in range(2)]  # 2 拍：每個指標可用 2 < 3，覆蓋率 100%
+lines, trig = basis(S); assert {t[0] for t in trig} == {"count"} and all(t[2] == "p FH" for t in trig), trig
+S = [fh(i, contact_h=None) for i in range(4)] + [fh(4 + i) for i in range(2)]  # contact_h 可用 2/6 = 33% < 50%
+lines, trig = basis(S); kinds = {t[0] for t in trig}; assert kinds == {"cover"} and any("contact_h" in l and "2/6" in l for l in lines), (lines, trig)
+S = [fh(i, contact_h=None) for i in range(3)] + [fh(3 + i) for i in range(3)]  # 3/6 = 50% 剛好過覆蓋率，n = 3 = MIN_N 過
+assert basis(S)[1] == []
+assert (MIN_N, MIN_COVER) == (3, 0.5)
+# 多個球員各自算
+lines, trig = basis([fh(i) for i in range(10)] + [dict(fh(i), player="q") for i in range(2)]); assert all("q FH" in t[2] for t in trig), trig
+print("shoot_basis tests ok")
