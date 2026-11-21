@@ -1372,7 +1372,7 @@ function bendDirs(Ps){  // one bend direction per leg for a whole stroke: the pe
 }
 // carry a bend direction n measured against leg axis a to this frame's axis b by the rotation taking a to b, so the knee keeps its side of the leg line:
 // a fixed vector projected onto a line that turned past parallel to it (a foot lifted to hip height) lands on the other side. Near-opposite axes (rotation undefined): plain n
-const carry=(n,a,b)=>{ if(!a) return n; const c=V.dot(a,b); if(c<=-.9) return n;
+const carry=(n,a,b)=>{ if(!a||V.len(b)<.5) return n; const c=V.dot(a,b); if(c<=-.9) return n;  // b is [0,0,0] when hip and ankle meet: keep n, as the plain projection did
   const w=[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]], wn=[w[1]*n[2]-w[2]*n[1],w[2]*n[0]-w[0]*n[2],w[0]*n[1]-w[1]*n[0]], k=V.dot(w,n)/(1+c);
   return n.map((x,i)=>x*c+wn[i]+w[i]*k); };  // Rodrigues with w = a×b (|w| = sin, c = cos)
 function kneeIK(P,drop,dirs=rawBends(P)){  // P: 17 [x,y,z] points, y down. Feet stay, everything above the knees moves down by drop, each knee is re-solved with its thigh and shin lengths kept, bent along dirs (per leg; default: where it already bends)
