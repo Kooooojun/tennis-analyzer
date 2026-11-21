@@ -947,8 +947,9 @@ function drawChecks(){
 function drawTabs(){
   $("tabs").innerHTML="";
   const short=shortRow(); $("strokesTitle").textContent=short?"這場先看這幾拍":"全部擊球";
+  if(short) filter="ALL";  // 預設列不分類型，類型分頁藏起來；殘留的篩選會讓上一拍／下一拍只走某一類，跟畫面上的列對不起來
   const tabs=short?[]:[["ALL",`全部 ${mine().length}`],["FH",`正拍 ${byKind("FH").length}`],["BH",`反拍 ${byKind("BH").length}`]];
-  if(byKind("SV").length) tabs.push(["SV",`發球 ${byKind("SV").length}`]);
+  if(!short&&byKind("SV").length) tabs.push(["SV",`發球 ${byKind("SV").length}`]);
   for(const [k,label] of tabs){ const b=document.createElement("button"); b.textContent=label; b.classList.toggle("on",filter===k); b.onclick=()=>{ filter=k; drawTabs(); drawList(); }; $("tabs").append(b); }
   const ps=DAYS[DAY].players; if(ps.length<2) return;
   if(!short) $("tabs").append(Object.assign(document.createElement("span"),{className:"sep"}));
@@ -995,7 +996,7 @@ function moreBtn(collapsed){
 }
 function markList(){
   const box=$("strokes");
-  if(box.dataset.ids!==rowIds()){ fillList(); if(R3D.on) markDemo(); }  // load() 換了拍：目前這拍進出預設列（不走 drawList，免得在 load() 中途預載）
+  if(box.dataset.ids!==rowIds()){ const had=document.activeElement?.closest?.("#strokes button[data-id]")?.dataset.id; fillList(); if(R3D.on) markDemo(); if(had) box.querySelector(`button[data-id="${had}"]`)?.focus(); }  // 按鈕重建了，鍵盤焦點留在同一拍上  // load() 換了拍：目前這拍進出預設列（不走 drawList，免得在 load() 中途預載）
   box.querySelectorAll("button:not(.strokes-more)").forEach(b=>b.classList.toggle("cur",S&&+b.dataset.id===S.id));
   const c=box.classList.contains("short")&&box.querySelector(".cur");
   if(c){ const r=c.getBoundingClientRect(), q=box.getBoundingClientRect(); if(r.left<q.left||r.right>q.right) box.scrollLeft+=r.left-q.left-8; }  // 手機一排放不下時，把目前這拍捲進來

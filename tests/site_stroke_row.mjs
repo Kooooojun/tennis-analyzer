@@ -105,7 +105,8 @@ async function synthetic(browser,engine,label,opts){
   check(same(ids(r),EXPECT.single),`${tag} 收起後回到相關拍（不受反拍篩選影響）：${ids(r)}`);
   check(!(await kindTabs(page)).some(t=>/^(全部|正拍|反拍)/.test(t)),`${tag} 收起後種類篩選又隱藏`);
   // 上一拍／下一拍仍走完整列表（不改控制列）
-  await page.evaluate(()=>{filter='ALL';drawTabs();drawList();load(4);});
+  check(await page.evaluate(()=>filter==='ALL'),`${tag} 收起後殘留的種類篩選要清掉（列看不到它，上一拍／下一拍不能還被它限制）`);
+  await page.evaluate(()=>load(4));
   await page.evaluate(()=>step(1));await page.waitForFunction(()=>S.id===5);
   check(await page.evaluate(()=>S.id===5),`${tag} step(1) 仍走完整列表（#5 → #6）`);
   check(!errors.length,`${tag} 單人頁面錯誤 ${errors}`);
@@ -137,6 +138,11 @@ async function synthetic(browser,engine,label,opts){
   check(await page.evaluate(()=>document.activeElement?.classList.contains('strokes-more')),`${tag} 展開後焦點仍在開關（鍵盤才能直接收起）`);
   await page.keyboard.press('Enter');  // 全頁的 Space 是播放／暫停（原本就這樣），所以只驗 Enter
   check((await more(page))?.exp==='false'&&(await row(page)).length===4,`${tag} 再按 Enter 要收起：${JSON.stringify(await more(page))}`);
+  // 目前這拍不在列內時，鍵盤選列裡的另一拍：列會重建（多出來那顆消失），焦點要留在被選的那拍上
+  await page.evaluate(()=>load(0));await page.waitForFunction(()=>S.id===0);
+  await page.locator('#strokes button[data-id="4"]').focus();
+  await page.keyboard.press('Enter');await page.waitForFunction(()=>S.id===4);
+  check(await page.evaluate(()=>document.activeElement?.dataset?.id==='4')&&same(ids(await row(page)),EXPECT.single),`${tag} 重建列後焦點要留在 #5：${await page.evaluate(()=>document.activeElement?.outerHTML.slice(0,50))}`);
   check(!errors.length,`${tag} 鍵盤頁面錯誤 ${errors}`);
   await context.close();
  });
