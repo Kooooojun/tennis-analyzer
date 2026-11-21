@@ -36,6 +36,40 @@ for env in ({}, {"PYTHONIOENCODING": "cp1252"}):
     man = (T / "web" / "sessions" / "manifest.js").read_text(encoding="utf-8")
     ver = json.loads(re.search(r"SESSION_VER=(\{.*?\});", man).group(1))
     assert ver[s] == h.hexdigest()[:10], (ver, h.hexdigest())
+
+# methodVer (prep's versions.txt -> the page's method note): no file = null (old session, "未記錄"), never a crash
+def built_ver():
+    r = subprocess.run([sys.executable, str(T / "tools" / "build_site.py")], capture_output=True)
+    assert r.returncode == 0, r.stderr.decode("utf-8", "replace")
+    js = (D / "data.js").read_text(encoding="utf-8")
+    return json.loads(js[js.index("push(") + 5:-2])["methodVer"]
+assert built_ver() is None
+vid = lambda n, txt: ((T / "work" / s / n).mkdir(), (T / "work" / s / n / "versions.txt").write_text(txt, encoding="utf-8"))
+base = "mediapipe=1.1.1\npose_model=pose_heavy.task\npose_model_sha256=" + "ab" * 32 + "\npose_model_url=https://example.invalid/m.task\npose_method=4\n"
+vid("v1", base + "pose_frames=100\npose_detected=80\npose_interpolated=10\n")
+(T / "work" / s / "v2").mkdir(); (T / "work" / s / "v2" / "versions.txt").write_text("garbage\n\n=\npose_frames=abc\n", encoding="utf-8")  # unreadable: counts as not recorded
+m = built_ver()
+assert m == dict(mediapipe="1.1.1", model="pose_heavy.task", sha256="ab" * 32, url="https://example.invalid/m.task", method="4",
+                 frames=100, detected=80, interpolated=10, videos=2, recorded=1), m
+vid("v3", base.replace("1.1.1", "1.2.0") + "pose_frames=50\npose_detected=40\npose_interpolated=0\n")
+m = built_ver()
+assert (m["mediapipe"], m["frames"], m["detected"], m["interpolated"], m["videos"], m["recorded"]) == ("1.1.1 / 1.2.0", 150, 120, 10, 3, 2), m
+# a versions.txt that is not UTF-8 (saved by another tool) is "not recorded", never a crash of the whole build; videos.json decides which folders count
+(T / "work" / s / "v2" / "versions.txt").write_bytes(b"\xff\xfem\x00e\x00")
+(T / "work" / s / "old").mkdir(); (T / "work" / s / "videos.json").write_text('["v1", "v2", "v3"]', encoding="utf-8")  # "old" is a folder of a removed video
+m = built_ver()
+assert (m["videos"], m["recorded"]) == (3, 2), m
+# a count that only looks like digits (superscript two: str.isdigit() is True, int() raises) is "not recorded", never a crash of the whole build
+good3 = (T / "work" / s / "v3" / "versions.txt").read_text(encoding="utf-8")
+(T / "work" / s / "v3" / "versions.txt").write_text(good3.replace("pose_interpolated=0", "pose_interpolated=\u00b2"), encoding="utf-8")
+m = built_ver(); assert (m["videos"], m["recorded"], m["frames"]) == (3, 1, 100), m
+(T / "work" / s / "v1" / "versions.txt").write_text(base + "pose_frames=100\npose_detected=\u00b2\npose_interpolated=10\n", encoding="utf-8")
+assert built_ver() is None  # no readable record left
+(T / "work" / s / "v3" / "versions.txt").write_text(good3, encoding="utf-8")
+# an empty or broken videos.json does not stop the build either: the page folders are counted instead (v1 is still unreadable, v2 non-UTF-8, v3 fine)
+for bad in ("", "{not json", "\xff"):
+    (T / "work" / s / "videos.json").write_text(bad, encoding="utf-8", errors="surrogateescape")
+    m = built_ver(); assert (m["videos"], m["recorded"]) == (4, 1), (bad, m)  # v1, v2, v3 and the leftover "old"
 shutil.rmtree(T.parent)
 print("ok")
 
@@ -185,7 +219,9 @@ if os.environ.get("SITE_E2E_URL"):
     subprocess.run(["node", str(R / "tests" / "site_i112_web.mjs")], check=True)
     # Without SITE_E2E_URL these build their own synthetic fixture; with it they expect a real two-session copy.
     # site_card_medians 驗新行為，在 SITE_REF（修改前的網頁）上本來就會失敗，所以只在跑工作區網頁時執行。
-    for name in ["site_advice_uncertainty", "site_score_uncertainty", "site_score_count", "site_knee_estimate"] + ([] if os.environ.get("SITE_REF") else ["site_card_medians"]):
+    # site_method_notes 同理（#146 的做法）：驗方法說明與單拍格數的新行為，舊網頁上必紅。
+    if os.environ.get("SITE_REF"): print("skipped site_card_medians.mjs, site_method_notes.mjs: they check new behaviour, SITE_REF runs the old page")
+    for name in ["site_advice_uncertainty", "site_score_uncertainty", "site_score_count", "site_knee_estimate"] + ([] if os.environ.get("SITE_REF") else ["site_card_medians", "site_method_notes"]):
         subprocess.run(["node", str(R / "tests" / (name + ".mjs"))], check=True,
                        env={**{k: v for k, v in os.environ.items() if k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-" + name))} if os.environ.get("SITE_RESULTS") else {})})
 
