@@ -29,6 +29,8 @@ KINDS = ("FH", "BH", "SV")  # SV group exists only when the session has SV strok
 MIN_N, MIN_N_CONS = 3, 5
 MIN_COVER = 0.5  # usable strokes / strokes in the group; below it the metric says 資料不足 (docs/scoring.md §1)
 BOOTSTRAP_N, BOOTSTRAP_SEED = 1000, 20261116
+MIN_N_DRILL = 10  # per drill, usable strokes (after the quality gates) for drill_diff; docs/scoring.md §7.2
+DRILL_DIFF = dict(contact_fwd="肩髖長", knee="度", contact_h="肩髖長", prep="秒")  # metric -> unit; only adds a field to scores.json, no anchor / gate / formula change, so SCORE_VERSION stays
 VIEW_WARN = 0.3  # 暫定: no source. Share of a group's strokes the view gate drops, from which the next-shoot advice says "film from the side". Margin under 1 - MIN_COVER: at 50% knee is already 資料不足
 FPS_MIN = 50  # same as web/index.html fpsLow: below it the page already warns that speed numbers are unverified
 SCORE_VERSION = 10  # 10: contact_h consistency only; no absolute wrist-height target. 9: lean None for a camera within 30 deg of front/back (a whole front/back session can turn lean into 資料不足), tilt drops frames whose 3D shoulders overlap along the camera axis; old sessions need refine.py re-run for the new values (serve-form-view-gates). 8: prep followed back past 1.0 s when the window start is the minimum; prep_trunc (lower bound) strokes left out of prep; prep along the 3D swing axis for a front / back camera (prep-window-direction). 7: BH knee / open_min consistency only, turn out of the power cap, consistency spread centred per (video, drill) (score-groups-consistency). 6: knee view gate (camera within 30 deg of front/back -> knee_warn) + kinematics get visibility-masked xy (knee-view-gate). 5: power cap (wrist_speed, turn, leg_load) + 2D-knee foreshortening gate (body-kinematics). 4: + finish, reach, tilt, lean, stance and the SV group (serve-finish). 3: + prep, contact_fwd (prep-contact). bump when an anchor, gate or formula changes; trend.py only compares equal versions
@@ -96,10 +98,14 @@ def _explain(cfg, n, total, med, sp, ok, kind="FH"):
                 inputs=dict(median=_r(med, 2), spread=_r(sp, 2), n=n, n_total=total, anchors=list(cfg.get("lin") or cfg.get("band") or []) or None, cons_anchors=list(cfg["cons"]) if "cons" in cfg else None))
 
 
-def score_group(strokes, show_open, kind="FH"):
+def _knee_src(strokes):
     # one knee source per group: 2D shifts 9-19 deg with view angle, so a 2D/3D mix is not comparable
     ok = [s for s in strokes if not s.get("knee_warn")]
-    knee_src = "knee3d" if sum(_num(s.get("knee3d")) for s in ok) > len(ok) / 2 else "knee"
+    return "knee3d" if sum(_num(s.get("knee3d")) for s in ok) > len(ok) / 2 else "knee"
+
+
+def score_group(strokes, show_open, kind="FH"):
+    knee_src = _knee_src(strokes)
     out = {}
     for m, cfg in METRICS.items():
         if kind not in cfg.get("kinds", BASE_KINDS): continue
@@ -145,12 +151,50 @@ def bootstrap_group(strokes, show_open, kind="FH"):
     return group
 
 
+def drill_diff(strokes, kind="FH"):
+    """Same player, same kind: median of 自拋 (drill feed) minus median of 對打 (drill rally), per metric, with a within-video bootstrap 95% interval.
+    Values pass the same quality gates as the score (_value); each drill needs >= MIN_N_DRILL usable strokes, else diff / ci are None and `reason` says why (docs/scoring.md §7.2)."""
+    out = dict(direction="自拋 − 對打（feed − rally）", min_n=MIN_N_DRILL, reason=None, metrics=None)
+    if kind not in BASE_KINDS: return dict(out, reason="發球沒有自拋／對打之分")
+    knee_src = _knee_src(strokes)
+    sides = [[s for s in strokes if s.get("drill") == d] for d in ("feed", "rally")]
+    vals = {m: [np.array([v if _num(v := _value(s, m, knee_src)) else np.nan for s in side]) for side in sides] for m in DRILL_DIFF}
+    clips = []  # per side: index arrays per video, in order of first appearance, so one input always draws the same way
+    for side in sides:
+        by = {}
+        for i, s in enumerate(side): by.setdefault(str(s.get("video")), []).append(i)
+        clips.append([np.array(ix) for ix in by.values()])
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    draws = [[np.concatenate([c[rng.integers(0, len(c), len(c))] for c in side]) if side else np.array([], int) for side in clips] for _ in range(BOOTSTRAP_N)]
+    out["metrics"] = {}
+    for m, unit in DRILL_DIFF.items():
+        sv = [v[~np.isnan(v)] for v in vals[m]]
+        e = dict(unit=unit, feed=dict(median=_r(float(np.median(sv[0])), 3) if len(sv[0]) else None, n=len(sv[0])),
+                 rally=dict(median=_r(float(np.median(sv[1])), 3) if len(sv[1]) else None, n=len(sv[1])), diff=None, ci=None, sem=None, valid=0, samples=BOOTSTRAP_N, reason=None)
+        short = [f"{name}可用 {len(v)} 拍" for name, v in zip(("自拋", "對打"), sv) if len(v) < MIN_N_DRILL]
+        if short: e["reason"] = "；".join(short) + f"，要各 ≥ {MIN_N_DRILL} 拍"
+        else:
+            e["diff"] = _r(float(np.median(sv[0]) - np.median(sv[1])), 3)
+            ds = []
+            for d in draws:
+                a, b = (v[ix] for v, ix in zip(vals[m], d)); a, b = a[~np.isnan(a)], b[~np.isnan(b)]
+                ds.append(float(np.median(a) - np.median(b)) if len(a) and len(b) else np.nan)  # a failed gate is not zero
+            ds = [x for x in ds if math.isfinite(x)]; e["valid"] = len(ds)
+            if len(ds) == BOOTSTRAP_N: e.update(ci=[_r(float(x), 3) for x in np.percentile(ds, [2.5, 97.5])], sem=_r(float(np.std(ds, ddof=1)), 3))
+            else: e["reason"] = f"重抽 {BOOTSTRAP_N} 次裡有 {BOOTSTRAP_N - len(ds)} 次某一邊沒有可用的拍，不給區間"
+        out["metrics"][m] = e
+    return out
+
+
 def score_session(strokes, show_open, with_uncertainty=False):
     who = lambda s: s.get("player") or "me"  # "player": null counts as "me" too
     keys = sorted({(who(s), s["kind"]) for s in strokes if s["kind"] in KINDS})
     scorer = bootstrap_group if with_uncertainty else score_group
-    return [dict(player=p, kind=k, **scorer([s for s in strokes if who(s) == p and s["kind"] == k], show_open, k))
-            for p, k in keys]
+    groups = []
+    for p, k in keys:
+        rows = [s for s in strokes if who(s) == p and s["kind"] == k]
+        groups.append(dict(player=p, kind=k, **scorer(rows, show_open, k), **({"drill_diff": drill_diff(rows, k)} if with_uncertainty else {})))  # drill_diff is a bootstrap too: the plain call stays resample-free
+    return groups
 
 
 # arm shape checks: (kind, field, conf field that is not None when the check applied, 中文名, 規則文字). Pass/fail counts only; docs/scoring.md §9.
