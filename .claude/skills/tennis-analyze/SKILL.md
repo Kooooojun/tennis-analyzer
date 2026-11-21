@@ -107,7 +107,7 @@ Compute what matters from `web/sessions/<s>/strokes.json`. Each stroke has these
 - `knee`: the 10th-percentile knee angle 0.8–0.1 s before contact. Lower means more bent. ≤130 is good, >150 is nearly straight.
 - `contact_h`：擊球時手腕高度（2D），接觸格附近五格（前後各兩格）的中位數。資料以肩髖長為單位，顯示乘以 100：髖＝0、肩＝100（身體傾斜時肩的垂直投影略低）。只評一致性，不給絕對分；保留可見度閘門。30–80 只可標中性色「參考（暫定）」，不能當理想區間或要求打在腰到胸。LTA 正拍教材約膝到腰的建議因來球而異，是教練教材而非實驗結論，且描述球的位置，不能套作手腕高度目標。
 - `knee3d` (same window on the 3D skeleton, null for sessions without `pose_world.npy`) and `knee_warn` (true when the angle is unreliable for that stroke; `knee_warn_why` says why: `"gap"` = |knee3d - knee| > 20°, `"view"` = the camera is within 30° of straight in front or behind, from `cam_az`, the estimated camera azimuth 0 = front, 90 = side, 180 = behind). Neither 2D nor 3D knee angles are view-proof: side-on is the most accurate. Front/back views still get `knee` and `knee3d`, and the page shows them with a warning, but they are not scored and cannot be cited (`knee_warn` excludes them, docs/scoring.md §3). The web page and reel show `knee3d` when present. Thresholds above were set on 2D `knee`; 3D reads about 9° lower on average.
-- `prep`: seconds from backswing end (hitting wrist furthest back relative to the hips, searched 1.0 s before contact; when the furthest-back frame is the window start it is followed back until the wrist moves forward again, up to 1.5 s) to contact. Longer means the racket was ready earlier. On 對牆影片 A it matched hand-picked frames within 2 frames (median). `prep_trunc: true` = still furthest back at the clip start, the time is a lower bound (show it as ≥, left out of the score). Camera within 30° of front / behind: prep uses the 3D swing direction and `contact_fwd` is null.
+- `prep`: seconds from backswing end (hitting wrist furthest back relative to the hips, searched 1.0 s before contact; when the furthest-back frame is the window start it is followed back until the wrist moves forward again, up to 1.5 s) to contact. Longer means the racket was ready earlier. It is not the turn timing: a big looping swing reads short even with an early turn, so a problem finding that cites `prep` needs `look` (3+ stroke numbers you checked on the four-stage picture), and never write 引拍偏晚 without seeing it. On 對牆影片 A it matched hand-picked frames within 2 frames (median). `prep_trunc: true` = still furthest back at the clip start, the time is a lower bound (show it as ≥, left out of the score). Camera within 30° of front / behind: prep uses the 3D swing direction and `contact_fwd` is null.
 - `contact_fwd`: wrist ahead of the hip centre along the swing direction at contact, in torso lengths (same unit as `contact_h`). Its spread across strokes is the contact-point consistency. It moves about 0.1 per frame of contact error, so set refine.json contacts carefully before reading the spread, and compare only same-camera sessions.
 - `serve_arm_straight` (SV) and `bh_elbow_ok` / `bh_front_ok` (one-handed BH: the player's `"backhand": "one"` in `work/<s>/profiles.json`, names it does not list fall back to `work/profiles.json`; a lefty uses the left arm): true / false / null (null = cannot tell from this view). They are checks, not scores, and the page shows them as grey reference only (never pass/fail: no bent arm was caught in test data, so do not cite a null or true as "fine"); rules in docs/scoring.md §9. Forehands get none.
 - Body use, less sensitive to the camera angle than joint angles (docs/scoring.md §11): `trunk_share` (racket-side shoulder peak speed ÷ wrist peak speed, both relative to the hips; low = arm-only swing), `turn` (degrees the shoulder line travels from backswing end to 0.3 s after contact), `leg_load` (shown on the page as 重心降低) / `leg_drive` (hip drop before contact and rise at contact, share of standing hip height; this is how low the body gets, not a knee angle: a wide stance lowers the hip too), `wrist_speed` (torso lengths/s). `knee2d_ok` false = the leg was not side-on, so the 2D `knee` is unreliable (the 3D knee is less affected, but still not view-proof). The score caps a group's total at its power score (wrist speed, leg load = 重心降低) + 1.2, so an upright arm-only swing cannot score high; `scores.json` shows `power`, `uncapped` and `capped`.
@@ -140,8 +140,41 @@ Write `web/sessions/<s>/notes.json`:
 - Every finding needs `cite`: the numbers it states (single stroke, group stat or score), checked by the script below. Formats: `docs/scoring.md` §8.
 - At most 5 findings, each tied to stroke numbers the user can click; with thin evidence write fewer, never add a problem to fill the count. Mark the good ones `good: true`. Use `info: true` for neutral notes. Good and info findings need `cite` too: every finding is checked, with no exemption.
 - A problem finding (neither `good` nor `info`) cannot rest on one stroke. It needs one of: a `metric` cite (any stat except `n`; with `stat: "n"` the group's n must be ≥ 3), a group `stat` cite with `median` or `mean` over a scoring field (`knee`, `knee3d`, `contact_h`, `prep` …, not `id`, `elbow`; `min`, `max`, `n` do not count) whose usable n is ≥ 3, or cites of two or more different strokes. `check_findings.py` enforces it; docs/scoring.md §8.
-- End each problem finding's `text` with one concrete practice action plus how to verify it next time: same camera position, which field to look at. Write the check as a neutral look, e.g. 「下次同一機位拍，看膝蓋是不是接近 135°」. Do not write 進步／改善／變好／變差 in it: `check_findings.py` reads them as a change claim and rejects the finding unless comparable earlier sessions back it. A target number may only be the user's own good strokes or rally median, and it needs its `cite` (as in the first example). No target range without a source. Give no reps or sets: nothing in this repo supports a number. No new notes.json field.
+- End each problem finding's `text` with one concrete practice action plus how to verify it next time: same camera position, which field to look at. Write the check as a neutral look, e.g. 「下次同一機位拍，看膝蓋是不是接近 135°」. Do not write 進步／改善／變好／變差 in it: `check_findings.py` reads them as a change claim and rejects the finding unless comparable earlier sessions back it. A target number may only be the user's own good strokes or rally median, and it needs its `cite` (as in the first example). No target range without a source. Give no reps or sets: nothing in this repo supports a number. No new notes.json field beyond `overall` (below) and a finding's optional `look`.
 - Next-shoot advice: after the analysis, give the user 1–3 lines on how to film next time, in the reply (not notes.json). `score.py` prints the inputs (「拍攝依據」, with numerator/denominator) and its last line 「拍攝建議觸發」 lists which triggers fired; the thresholds live only in `score.py` (`VIEW_WARN` 30%, `FPS_MIN` 50, `MIN_N`, `MIN_COVER`) and are provisional. Triggers: view-gated share of a group ≥ 30% (by `cam_az`, strokes with unknown azimuth left out) → film from the side, about 90°, still, whole body in frame; source fps < 50 → film at 60 fps; a metric 資料不足 with usable/group coverage ≥ 50% but fewer than 3 usable strokes → record more of that stroke; 資料不足 with coverage < 50% → the gate drops them, so more of the same does not help: say which metric and check the view, occlusion or contact first (推論). Nothing fired → say 「這場機位可以，照舊」. Mark anything beyond these inputs as 推論. Do not invent advice. `showOpen` has no trigger of its own (camera height is not measured).
+
+### 整體建議（overall）
+
+After the findings, give each player **one** main thing to practise (at most one second thing), or say plainly that the data are not enough. Rules, the framework table and sources: `docs/advice.md`. Steps per player:
+
+1. Pick one candidate with `docs/advice.md` (the four gates, then the order). Compare two drills with ≥ 10 usable strokes each (`check_findings.py` enforces it for `main`), or cite a scored metric (the check accepts it whatever its n, so make sure the group has ≥ 10 yourself).
+2. Look at it: `python tools/run.py strip.py <s> final "N,N,N,N" --stages` on at least 3 strokes of that player (both sides of a comparison). Put the stroke numbers you looked at in `look`. If the picture does not show it (for example the turn is early although `prep` is short), drop the candidate.
+3. Nothing passes → `insufficient` plus `film_next` (camera at the side about 90°, whole body in the middle of the frame, 30+ strokes of one kind, a stand-still fed set). You may still add a `second`: one strength to keep or one picture observation, marked 看圖觀察.
+
+Add `overall` to `notes.json`:
+
+```json
+{
+ "findings": [],
+ "overall": [
+  {"player": "me",
+   "main": {"title": "自拋時把球打在身前，像對打那樣",
+            "why": "擊球點在髖前的距離，自拋 0.8、對打 1.0（軀幹長）。看 #13、#16：對打時擊球在前腳前；#02、#05 自拋時較靠身體。",
+            "cite": [{"kind": "FH", "drill": "feed", "field": "contact_fwd", "stat": "median", "value": 0.8}, {"kind": "FH", "drill": "rally", "field": "contact_fwd", "stat": "median", "value": 1.0}],
+            "practice": "自拋時把球丟在身體側前方一大步，等球彈起後在前腳前方打；下次同一機位拍，看自拋的擊球點前後中位數是不是接近對打的 1.0。",
+            "cue": "打在前腳前",
+            "jump": [[13, "對打 #13"], [2, "自拋 #02"]]},
+   "look": [2, 5, 13, 16]},
+  {"player": "white",
+   "insufficient": {"title": "white：這場資料不足以給方向", "why": "white 只有 4 拍正拍，全是對打，看不出要先改的地方。", "cite": [{"player": "white", "kind": "FH", "field": "id", "stat": "n", "value": 4}]},
+   "look": [23, 24, 25],
+   "film_next": "手機放在 white 側面約 90°、固定、全身在畫面中間，連續正拍 30 拍以上，加一段站定不跑的自拋。"}
+ ]
+}
+```
+
+- `main` / `second`: `title`, `why` (numbers and stroke numbers, cited as in findings), `cite`, `practice` (one action, then the neutral look at next time), `cue` (optional, an external-focus phrase), `jump` (required for `main`). `insufficient`: `title`, `why`, `cite`. Every number in `title` / `why` / `practice` / `cue` needs a cite; `film_next` is not checked for numbers.
+- One entry per player, `main` or `insufficient` (never both), `look` ≥ 3 of that player's strokes, `film_next` required with `insufficient`. Everything else in `docs/advice.md` (gates, "second is a different field", not claiming more than was measured) is your job, not the checker's.
 
 Then score the session and update the long-term trend:
 
@@ -177,7 +210,7 @@ Open `web/index.html` (`python tools/run.py open web/index.html`) and look at it
 
 After `check_findings.py` passes and you have looked at the page, reply in this order:
 
-1. One sentence: what the session showed.
+1. One sentence per player: the `overall` main thing (or 「這場資料不足以給方向」 plus how to film next time).
 2. A table with the columns 問題／數據／目標／練習, one row per problem finding in `notes.json` (at most 5; fewer is fine). 數據: the numbers its `cite` backs, with the stroke numbers. 目標: only the user's own good strokes or rally median, and only when the finding cites that number; otherwise 「—」. 練習: copy the practice sentence of that finding in `notes.json` word for word (the one concrete action and the neutral look at next time: same camera position, which field; no 進步／改善／變好／變差, no reps or sets). The reply text does not go through `check_findings.py`, so do not reword it. A row needs at least two strokes or an n ≥ 3 group, the same rule as the finding itself.
 3. What went well: the `good: true` findings, with stroke numbers.
 4. Where the result is and how to use it: `web/index.html`, the tabs, the jump buttons, the reel when you made one.

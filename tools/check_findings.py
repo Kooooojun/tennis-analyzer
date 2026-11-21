@@ -1,5 +1,5 @@
 # check_findings.py <session> — every finding in web/sessions/<s>/notes.json must cite numbers that match strokes.json / scores.json.
-# Cite formats and rules: docs/scoring.md §8. Exit 1 and list the failing findings when any check fails.
+# Cite formats and rules: docs/scoring.md §8; the per-player `overall` entries: docs/advice.md. Exit 1 and list the failing findings when any check fails.
 import math
 import sys
 import re
@@ -35,10 +35,19 @@ def _usable(s, field, show_open=False):
     return v if _num(v) else None  # this _num rejects bool, score's does not
 
 
+STR_KEYS = ("metric", "stat", "field", "kind", "player", "drill", "change")
+
+
+def _bad_keys(c):
+    """Cite keys that must be strings (None allowed) but are not: a list or dict would raise TypeError in the lookups below."""
+    return [k for k in STR_KEYS if c.get(k) is not None and not isinstance(c[k], str)]
+
+
 def _cite(c, strokes, groups, show_open=False):
     """None if the cite checks out, else the reason."""
     who = lambda s: s.get("player") or "me"
     if not isinstance(c, dict): return "cite 的每一項要是物件"
+    if _bad_keys(c): return f"cite 的 {'、'.join(_bad_keys(c))} 要是字串"
     if "change" in c and (c["change"] not in ("up", "down") or "stroke" in c or not isinstance(c.get("metric"), str) or c.get("stat", "score") not in ("score", "cons")):
         return "change 只能是 up／down，且須引用分數或分項一致性"
     if "stroke" in c:
@@ -77,7 +86,6 @@ def _evidenced(cites, strokes, groups, show_open):
     - a stat cite of median / mean (min, max and n say nothing about the spread of strokes) over a scoring field with usable n >= score.MIN_N;
     - cites of 2+ different strokes.
     A cite with `stroke` is one stroke whatever else it carries; a cite with `metric` is never read as a stat cite, so a stray `field` on it is ignored."""
-    who = lambda s: s.get("player") or "me"
     if len({c["stroke"] for c in cites if "stroke" in c}) >= 2: return True
     for c in cites:
         if "stroke" in c: continue
@@ -85,10 +93,40 @@ def _evidenced(cites, strokes, groups, show_open):
             g = next((g for g in groups if g["kind"] == c.get("kind") and g["player"] == (c.get("player") or "me")), None)
             if c["metric"] in GROUP_KEYS or c.get("stat", "score") != "n": return True
             if g is not None and (g["metrics"].get(c["metric"]) or {}).get("n", 0) >= MIN_N: return True  # the value _cite just matched, from scores.json
-        elif c.get("stat") in ("median", "mean") and c.get("field") in EVIDENCE_FIELDS:
-            n = sum(_usable(s, c["field"], show_open) is not None for s in strokes if s["kind"] == c.get("kind") and who(s) == (c.get("player") or "me") and c.get("drill", s.get("drill")) == s.get("drill"))
-            if n >= MIN_N: return True
+        elif c.get("stat") in ("median", "mean") and c.get("field") in EVIDENCE_FIELDS and _group_n(c, strokes, show_open) >= MIN_N: return True
     return False
+
+
+def _group_n(c, strokes, show_open):
+    """Usable strokes behind a group stat cite: same kind, player and drill (none = all), past the quality gates."""
+    return sum(_usable(s, c["field"], show_open) is not None for s in strokes if s["kind"] == c.get("kind")
+               and (s.get("player") or "me") == (c.get("player") or "me") and c.get("drill", s.get("drill")) == s.get("drill"))
+
+
+MAIN_MIN_N = 10  # docs/advice.md: an overall main point compares two groups of >= 10 usable strokes each (暫定, same order as the framework's gate)
+
+
+def _main_evidenced(cites, player, strokes, groups, show_open):
+    """True when an overall main point rests on a metric cite of this player (stat other than n, or a group score),
+    or on a comparison: median/mean cites of one field and kind in two different drills, each with >= MAIN_MIN_N usable strokes."""
+    mine = [c for c in cites if isinstance(c, dict) and "stroke" not in c and (c.get("player") or "me") == player]
+    if any("metric" in c and (c["metric"] in GROUP_KEYS or c.get("stat", "score") != "n") for c in mine): return True
+    drills = {}
+    for c in mine:
+        if "metric" in c or c.get("stat") not in ("median", "mean") or c.get("field") not in EVIDENCE_FIELDS or not isinstance(c.get("drill"), str): continue
+        if _group_n(c, strokes, show_open) >= MAIN_MIN_N: drills.setdefault((c["field"], c.get("kind")), set()).add(c["drill"])
+    return any(len(d) >= 2 for d in drills.values())
+
+
+def _look_errs(look, strokes, player=None):
+    """`look` = stroke numbers the analyst checked on the four-stage picture or strip: >= 3 distinct strokes that exist (and are the player's)."""
+    if not isinstance(look, list): return ["look 要是拍號陣列"]
+    ok = [n for n in look if type(n) is int and 1 <= n <= len(strokes)]  # type() so True is not stroke #1
+    errs = [f"look 的拍 #{n} 不存在" for n in look if not (type(n) is int and 1 <= n <= len(strokes))]
+    errs += [f"look 的拍 #{n} 不是 {player} 的" for n in ok if player is not None and (strokes[n - 1].get("player") or "me") != player]
+    if len(set(ok)) < len(ok): errs.append("look 的拍號重複")
+    if len(set(ok)) < 3: errs.append("look 至少要 3 個看過圖的拍號")
+    return errs
 
 
 def _change_errors(finding, scores, runs):
@@ -179,32 +217,76 @@ def check(notes, strokes, scores, runs=()):
     """Return one error string per failing finding ('#<k> <title>: reason; reason')."""
     out = []
     for i, f in enumerate(notes.get("findings", []), 1):
-        cites = f.get("cite") or []; errs = []
-        if not isinstance(cites, list): cites = []
-        if not cites: errs.append("沒有引用（cite）")
-        errs += [r for r in (_cite(c, strokes, scores.get("groups", []), scores.get("show_open") is True) for c in cites) if r]
-        if not errs and not f.get("good") and not f.get("info") and not _evidenced(cites, strokes, scores.get("groups", []), scores.get("show_open") is True):
-            errs.append(f"問題型 finding 至少要有：一個 metric 引用（stat 不是 n，或 n ≥ {MIN_N}）、一個 median／mean 的群組統計引用（量測欄位、可用拍數 ≥ {MIN_N}），或兩個以上不同拍號的單拍引用（單拍、計數、min／max 不能撐起一條問題）")
-        errs += _change_errors({**f, "cite": cites}, scores, runs)
-        vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
-        text = f.get("text", "")
-        U = r"(?:°|%|％|秒)"
-        # target ranges (0.3–0.8, 75%-85%) are not citations, but a degree range (120–130°) cites both ends
-        rng = lambda m: f" {m.group(1)}° {m.group(3)}° " if "°" in (m.group(2) or "") + (m.group(4) or "") else " "
-        # an ASCII '-' joins a range only with no space around it: "0.5 -0.20" is a number and a negative one
-        bare = re.sub(rf"#\d+|\d{{1,3}}(?:,\d{{3}})+(?:\.\d+)?|(\d+(?:\.\d+)?)(?:\s*({U}))?(?:\s*[–~～]\s*|-)(\d+(?:\.\d+)?)\s*({U})?",
-                      lambda m: rng(m) if m.group(1) else " ", text)  # #NN and 1,234.5 (thousands) are not citations
-        for m in re.finditer(rf"(?<![\d.:°%％])([-−]?\d+(?:\.\d+)?)(\s*{U})?", bare):  # 1:04.8 is a time, not a decimal
-            x, u = m.group(1).replace("−", "-"), (m.group(2) or "").strip()
-            if not u and "." not in x: continue  # plain integers (62 拍, 3 次) are counts
-            ok = (lambda v: abs(float(x) - v) <= 0.5 + 1e-9) if u == "°" else \
-                 (lambda v: _match(v, float(x), x) or u in ("%", "％") and _match(v * 100, float(x), x))  # contact_h 0.53 is written as 53%
-            if not any(ok(v) for v in vals): errs.append(f"文字裡的 {m.group(0).strip()} 沒有對應的引用")
-        refs = {int(x) for x in re.findall(r"#(\d+)", text)} | {j[0] for j in (f.get("jump") or []) if isinstance(j, (list, tuple)) and j and isinstance(j[0], int)}
-        errs += [f"拍 #{n} 不存在" for n in sorted(refs) if not 1 <= n <= len(strokes)]
-        errs = list(dict.fromkeys(errs))
+        errs = _finding_errs(f, strokes, scores, runs)
         if errs: out.append(f"#{i} {f.get('title', '')}: " + "；".join(errs))
+    if "overall" in notes: out += _overall_errs(notes["overall"], strokes, scores, runs)
     return out
+
+
+def _finding_errs(f, strokes, scores, runs=()):
+    """Reasons one finding fails ([] = it checks out); overall items are checked through it as info findings."""
+    cites = f.get("cite") or []; errs = []
+    if not isinstance(cites, list): cites = []
+    if not cites: errs.append("沒有引用（cite）")
+    errs += [r for r in (_cite(c, strokes, scores.get("groups", []), scores.get("show_open") is True) for c in cites) if r]
+    if not errs and not f.get("good") and not f.get("info") and not _evidenced(cites, strokes, scores.get("groups", []), scores.get("show_open") is True):
+        errs.append(f"問題型 finding 至少要有：一個 metric 引用（stat 不是 n，或 n ≥ {MIN_N}）、一個 median／mean 的群組統計引用（量測欄位、可用拍數 ≥ {MIN_N}），或兩個以上不同拍號的單拍引用（單拍、計數、min／max 不能撐起一條問題）")
+    if "look" in f: errs += _look_errs(f["look"], strokes)
+    elif not f.get("good") and not f.get("info") and any(isinstance(c, dict) and "prep" in (c.get("field"), c.get("metric")) for c in cites):
+        errs.append("問題型 finding 引用 prep 要有 look（看過圖的拍號，≥ 3）：prep 量的是手腕最後方到擊球，不是轉身時機")
+    errs += _change_errors({**f, "cite": [c for c in cites if isinstance(c, dict) and not _bad_keys(c)]}, scores, runs)  # a malformed cite is already reported
+    vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
+    text = f.get("text", "")
+    U = r"(?:°|%|％|秒)"
+    # target ranges (0.3–0.8, 75%-85%) are not citations, but a degree range (120–130°) cites both ends
+    rng = lambda m: f" {m.group(1)}° {m.group(3)}° " if "°" in (m.group(2) or "") + (m.group(4) or "") else " "
+    # an ASCII '-' joins a range only with no space around it: "0.5 -0.20" is a number and a negative one
+    bare = re.sub(rf"#\d+|\d{{1,3}}(?:,\d{{3}})+(?:\.\d+)?|(\d+(?:\.\d+)?)(?:\s*({U}))?(?:\s*[–~～]\s*|-)(\d+(?:\.\d+)?)\s*({U})?",
+                  lambda m: rng(m) if m.group(1) else " ", text)  # #NN and 1,234.5 (thousands) are not citations
+    for m in re.finditer(rf"(?<![\d.:°%％])([-−]?\d+(?:\.\d+)?)(\s*{U})?", bare):  # 1:04.8 is a time, not a decimal
+        x, u = m.group(1).replace("−", "-"), (m.group(2) or "").strip()
+        if not u and "." not in x: continue  # plain integers (62 拍, 3 次) are counts
+        ok = (lambda v: abs(float(x) - v) <= 0.5 + 1e-9) if u == "°" else \
+             (lambda v: _match(v, float(x), x) or u in ("%", "％") and _match(v * 100, float(x), x))  # contact_h 0.53 is written as 53%
+        if not any(ok(v) for v in vals): errs.append(f"文字裡的 {m.group(0).strip()} 沒有對應的引用")
+    refs = {int(x) for x in re.findall(r"#(\d+)", text)} | {j[0] for j in (f.get("jump") or []) if isinstance(j, (list, tuple)) and j and isinstance(j[0], int)}
+    errs += [f"拍 #{n} 不存在" for n in sorted(refs) if not 1 <= n <= len(strokes)]
+    return list(dict.fromkeys(errs))
+
+
+def _overall_errs(overall, strokes, scores, runs=()):
+    """notes.json `overall` (docs/advice.md): per player at most one entry with one main point or `insufficient`, an optional second, and `look`.
+    Malformed input gives error strings, never an exception: build_site.py checks every session."""
+    if not isinstance(overall, list): return ["overall 要是陣列（每位球員一筆）"]
+    players, seen, out = {s.get("player") or "me" for s in strokes}, set(), []
+    for i, e in enumerate(overall, 1):
+        if not isinstance(e, dict): out.append(f"overall 第 {i} 筆: 要是物件"); continue
+        p, errs = e.get("player"), []
+        if not isinstance(p, str) or p not in players: errs.append(f"球員 {p} 不在這場的拍裡"); p = None
+        elif p in seen: errs.append(f"{p} 有兩筆 overall，每位球員最多一筆")
+        seen.add(p)
+        if ("main" in e) == ("insufficient" in e): errs.append("main 和 insufficient 要剛好有一個")
+        if "insufficient" in e and not (isinstance(e.get("film_next"), str) and e["film_next"].strip()): errs.append("insufficient 一定要有 film_next（下次怎麼拍）")
+        errs += _look_errs(e["look"], strokes, p) if "look" in e else ["沒有 look（看過圖的拍號，≥ 3）"]
+        for key in ("main", "second", "insufficient"):
+            if key in e: errs += [f"{key}: {r}" for r in _item_errs(key, e[key], p, strokes, scores, runs)]
+        if errs: out.append(f"overall {p or f'第 {i} 筆'}: " + "；".join(dict.fromkeys(errs)))
+    return out
+
+
+def _item_errs(key, it, player, strokes, scores, runs=()):
+    """One main / second / insufficient item: required text, cites that match (same rules as a finding's text), and for main the stronger evidence rule."""
+    if not isinstance(it, dict): return ["要是一個物件（每位球員只有一件）"]
+    errs = [f"缺 {k}" for k in ("title", "why") + (() if key == "insufficient" else ("practice",)) if not (isinstance(it.get(k), str) and it[k].strip())]
+    jump = it.get("jump") if isinstance(it.get("jump"), list) else None
+    if "jump" in it and jump is None: errs.append("jump 要是陣列")
+    elif key == "main" and not jump: errs.append("缺 jump（要看的拍號）")
+    if jump and not all(isinstance(j, (list, tuple)) and len(j) == 2 and type(j[0]) is int and isinstance(j[1], str) for j in jump): errs.append("jump 每項要是 [拍號, 標籤]")
+    text = "。".join(it[k] for k in ("title", "why", "practice", "cue") if isinstance(it.get(k), str))
+    errs += _finding_errs(dict(info=True, title="", text=text, cite=it.get("cite"), jump=jump), strokes, scores, runs)
+    if key == "main" and not _main_evidenced(it.get("cite") if isinstance(it.get("cite"), list) else [], player, strokes, scores.get("groups", []), scores.get("show_open") is True):
+        errs.append(f"主要的事要有這位球員的一個 metric 引用（stat 不是 n），或一個比較：同欄位、同拍種、兩種 drill 的 median／mean，各 ≥ {MAIN_MIN_N} 拍可用")
+    return errs
 
 
 if __name__ == "__main__":
@@ -213,6 +295,7 @@ if __name__ == "__main__":
     D = web(session())
     if not (D / "scores.json").exists(): sys.exit(f"缺 scores.json：先跑 .venv/bin/python tools/score.py {D.name}")
     runs = [load(p) for p in D.parent.glob("*/scores.json")]
-    errs = check(load(D / "notes.json"), load(D / "strokes.json"), load(D / "scores.json"), runs=runs)
-    print("\n".join(errs) if errs else f"ok：{len(load(D / 'notes.json').get('findings', []))} 條 findings 的引用都對得上")
+    notes = load(D / "notes.json")
+    errs = check(notes, load(D / "strokes.json"), load(D / "scores.json"), runs=runs)
+    print("\n".join(errs) if errs else f"ok：{len(notes.get('findings', []))} 條 findings、{len(notes.get('overall', []))} 位球員的整體建議都對得上")
     sys.exit(1 if errs else 0)
