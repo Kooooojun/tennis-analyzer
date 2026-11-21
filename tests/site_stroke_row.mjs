@@ -205,10 +205,13 @@ async function synthetic(browser,engine,label,opts){
   check(g.ox==='auto'||g.ox==='scroll',`${tag} 列要可橫向捲動（overflow-x）：${JSON.stringify(g)}`);
   check(g.sw>g.cw,`${tag} 390px 下 5 顆放不下，列要比可視寬：${JSON.stringify(g)}`);
   await noOverflow(page,`${tag} 列捲動不能把整頁撐出水平捲軸`);
-  // 目前這拍（最後一顆相關拍 #16）要在列的可見範圍內
-  await page.evaluate(()=>load(15));await page.waitForFunction(()=>S.id===15);
-  const vis=await page.evaluate(()=>{const b=document.getElementById('strokes'),c=b.querySelector('.cur').getBoundingClientRect(),r=b.getBoundingClientRect();return c.left>=r.left-1&&c.right<=r.right+1;});
-  check(vis,`${tag} 目前這拍要捲進列的可見範圍`);
+  // 每一顆相關拍當目前這拍時都要在列的可見範圍內（從最左邊開始捲）
+  for(const id of [...EXPECT.single].reverse()){
+   await page.evaluate(()=>{document.getElementById('strokes').scrollLeft=0;});
+   await page.evaluate(i=>load(i),id);await page.waitForFunction(i=>S.id===i,id);
+   const vis=await page.evaluate(()=>{const b=document.getElementById('strokes'),c=b.querySelector('.cur').getBoundingClientRect(),r=b.getBoundingClientRect(),m=b.querySelector('.strokes-more').getBoundingClientRect();return c.left>=r.left-1&&c.right<=Math.min(r.right,m.left)+1;});  // 固定在右端的開關會蓋住它左邊那塊，不算可見範圍
+   check(vis,`${tag} #${id+1} 當目前這拍時要捲進列的可見範圍（不能被固定在右端的開關蓋住）`);
+  }
   await page.evaluate(()=>{document.getElementById('strokes').scrollLeft=0;});
   const sl=await page.evaluate(()=>{const b=document.getElementById('strokes');b.scrollLeft=40;return b.scrollLeft;});
   check(sl>0,`${tag} 列真的能橫向捲動：scrollLeft=${sl}`);
