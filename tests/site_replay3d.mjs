@@ -153,6 +153,7 @@ const UNIT=JITTER_EXTRA=>{
 };
 
 const players=async(page)=>page.evaluate(()=>{for(const vid of document.querySelectorAll('video'))vid.muted=true;});
+const viewItem=async(page,sel)=>{if(await page.locator('#viewPanel').isHidden())await page.locator('#viewBtn').click();await page.locator(sel).click();};  // 顯示 ▾ 選單（UI 方案 A 第 3 步）：關著就先打開
 const playState=page=>page.evaluate(()=>({text:$('play').textContent,cmp:$('cmpPlay').textContent,want:!!v._want,wantA:!!vA._want,wantB:!!vB._want}));
 
 try{
@@ -185,12 +186,12 @@ try{
      for(const playing of [true,false]){
       if(playing){await page.evaluate(()=>toggle());await page.waitForFunction(()=>v._want);}
       const before=await playState(page);
-      await page.locator('#r3dBtn').click();const opened=await playState(page);
-      await page.locator('#r3dBtn').click();const closed=await playState(page);
+      await viewItem(page,'#r3dBtn');const opened=await playState(page);
+      await viewItem(page,'#r3dBtn');const closed=await playState(page);
       check(JSON.stringify(before)===JSON.stringify(opened)&&JSON.stringify(before)===JSON.stringify(closed),`${tag}：開關面板改了播放狀態 ${JSON.stringify([before,opened,closed])}`);
       if(playing)await page.evaluate(()=>{if(v._want)toggle();});
      }
-     await page.locator('#r3dBtn').click();
+     await viewItem(page,'#r3dBtn');
      check(await page.evaluate(()=>R3D.on&&!$('r3d').hidden&&$('r3dBtn').getAttribute('aria-pressed')==='true'),`${tag}：按鈕要打開面板`);
      check(await page.evaluate(()=>!!$('r3dCv').getAttribute('aria-label')),`${tag}：canvas 要有 aria-label`);
      const caveats=await page.locator('#r3d').textContent();
@@ -387,7 +388,7 @@ try{
      for(let t=0;t<2;t++){
       const c=await page.evaluate(()=>{const rgb=s=>s.startsWith('#')?[1,3,5].map(i=>parseInt(s.slice(i,i+2),16)):s.match(/[\d.]+/g).slice(0,3).map(Number);const lum=c=>{const [r,g,b]=c.map(x=>{x/=255;return x<=.03928?x/12.92:((x+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;};const ratio=(a,b)=>{const [h,l]=[lum(a),lum(b)].sort((x,y)=>y-x);return (h+.05)/(l+.05);};const bg=rgb(getComputedStyle($('r3dCv')).backgroundColor);return [ratio(rgb(css('--s1')),bg),ratio(rgb(css('--s2')),bg)];});
       check(c.every(x=>x>=3),`${tag}：主題 ${t} 顏色對比不足 ${c}`);
-      await page.locator('#theme').click();
+      await viewItem(page,'#theme');
      }
 
      // 版面：桌機面板在影片旁邊（橫片、直片都是）；手機在影片下方
@@ -402,7 +403,7 @@ try{
       if(eligible.length){await page.evaluate(id=>{load(id,false);},eligible[0]);await page.waitForFunction(()=>S?.frames?.length);await page.evaluate(()=>{R3D.yaw=.6;R3D.pitch=.35;goto(S.contact-20);});}
       await page.screenshot({path:path.join(process.env.SITE_RESULTS,`replay3d-${engine.name()}-${mobile?'400':'desktop'}-${di}.png`)});
      }
-     await page.locator('#r3dBtn').click();
+     await viewItem(page,'#r3dBtn');
      check(await page.evaluate(()=>!R3D.on&&$('r3d').hidden&&!document.querySelector('.r3d-mark')),`${tag}：關掉面板要收乾淨`);
     }
     check(errors.length===0,`${tag}：前端例外 ${errors}`);
