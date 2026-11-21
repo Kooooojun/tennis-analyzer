@@ -33,6 +33,7 @@ const SYNTH=()=>{
   const base=s.kind==='BH'?150:special[s.id]??112+s.id%5,amp=s.drill==='rally'?2:12;  // steady rally knees: a clear median
   s.world=s.id===16?null:Array.from({length:s.n},(_,f)=>body(f,base,s.id,amp));
   s.frames=Array.from({length:s.n},(_,f)=>body(f,base,s.id,amp).map(([x,y])=>[(320+x*200)/640,(180+y*200)/360,.99]));
+  if(s.id===11)s.frames.forEach(fr=>{fr[10][0]=fr[12][0]=fr[8][0];});  // 2D right leg dead straight (a pose clamped at the frame edge): no bend direction
   const k3=s.world?p10(Array.from({length:43},(_,j)=>{const w=s.world[s.contact-48+j];return Math.min(ang(w[7],w[9],w[11]),ang(w[8],w[10],w[12]));})):null;
   s.knee3d=k3==null?null:Math.round(k3*10)/10;s.knee2d=k3==null?140:s.knee3d+1;s.knee=s.knee3d??s.knee2d;
   s.knee_warn=s.id===13;s.knee_warn_why=s.id===13?'gap':null;s.lean=s.id===11?null:8.4;

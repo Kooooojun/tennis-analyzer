@@ -1326,7 +1326,7 @@ const pts3=(s,f)=>s.world?.[f]||null;
 const pts2=(s,f)=>{ const fr=s.frames?.[f], [w,h]=sizeOf(s); return fr?fr.map(p=>[p[0]*w,p[1]*h,0]):null; };  // pixels: equal x/y units, like metrics.py _scale
 const minKnee=P=>Math.min(angle3(P,24,26,28)??180,angle3(P,23,25,27)??180);
 const IK_MIN=60*Math.PI/180;  // tightest knee the demo draws; real targets are 100–130°, so only a foreshortened 2D leg ever reaches it
-function kneeIK(P,drop,fwd=[0,0,-1]){  // P: 17 [x,y,z] points, y down. Feet stay, everything above the knees moves down by drop, each knee is re-solved with its thigh and shin lengths kept
+function kneeIK(P,drop){  // P: 17 [x,y,z] points, y down. Feet stay, everything above the knees moves down by drop, each knee is re-solved with its thigh and shin lengths kept
   const sub=(a,b)=>a.map((x,i)=>x-b[i]), dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2], len=a=>Math.sqrt(dot(a,a));
   for(const [h,k,a] of LEGS){  // cap the drop so neither knee folds past IK_MIN: past |thigh−shin| the leg cannot reach and would stretch (2D thighs can look very short)
     const H=P[K[h]], A=P[K[a]], L1=len(sub(H,P[K[k]])), L2=len(sub(P[K[k]],A)), D2=L1*L1+L2*L2-2*L1*L2*Math.cos(IK_MIN), hz=(H[0]-A[0])**2+(H[2]-A[2])**2, vy=A[1]-H[1];
@@ -1337,7 +1337,7 @@ function kneeIK(P,drop,fwd=[0,0,-1]){  // P: 17 [x,y,z] points, y down. Feet sta
     const H0=P[K[h]], Kn=P[K[k]], A=P[K[a]], L1=len(sub(H0,Kn)), L2=len(sub(Kn,A)), d=sub(Q[K[h]],A), dl=len(d)||1, u=d.map(x=>x/dl);
     const D=Math.max(Math.abs(L1-L2),Math.min(L1+L2,dl)), o=sub(H0,A);
     let n=sub(sub(Kn,A),o.map(x=>x*dot(sub(Kn,A),o)/(dot(o,o)||1)));  // where the knee sits off the original ankle→hip line: it bends the same way, in that plane
-    if(len(n)<1e-9) n=fwd;  // shortcut: a dead-straight leg has no bend direction, so it bends toward the camera; only exact zeros reach this
+    if(len(n)<1e-9) n=[-u[1],u[0],0];  // shortcut: a dead-straight leg (e.g. a pose clamped at the frame edge) has no bend direction; bend it sideways in the image plane, which 2D points also have
     n=sub(n,u.map(x=>x*dot(n,u))); const nl=len(n)||1, along=(L2*L2-L1*L1+D*D)/(2*D), off=Math.sqrt(Math.max(0,L2*L2-along*along));
     Q[K[k]]=A.map((x,i)=>x+u[i]*along+n[i]/nl*off);
   }
