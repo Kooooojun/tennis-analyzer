@@ -225,6 +225,11 @@ if os.environ.get("SITE_E2E_URL"):
     for name in ["site_advice_uncertainty", "site_score_uncertainty", "site_score_count", "site_knee_estimate"] + ([] if os.environ.get("SITE_REF") else ["site_card_medians", "site_method_notes", "site_trend_per_player"]):
         subprocess.run(["node", str(R / "tests" / (name + ".mjs"))], check=True,
                        env={**{k: v for k, v in os.environ.items() if k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-" + name))} if os.environ.get("SITE_RESULTS") else {})})
+    # 3D replay (#145): synthetic skeletons first, then the real session copy at SITE_E2E_URL; like site_card_medians, not on SITE_REF (the page before it).
+    if os.environ.get("SITE_REF"): print("skipped site_replay3d.mjs: it checks new behaviour, SITE_REF runs the old page")
+    for real in () if os.environ.get("SITE_REF") else (False, True):
+        subprocess.run(["node", str(R / "tests" / "site_replay3d.mjs")], check=True,
+                       env={**{k: v for k, v in os.environ.items() if real or k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + ("-replay3d-real" if real else "-replay3d")))} if os.environ.get("SITE_RESULTS") else {})})
     if not os.environ.get("SITE_REF"):  # 真實副本：每張表每一欄的拍數對 data.js（這支另外用 SITE_E2E_URL 跑一次）
         subprocess.run(["node", str(R / "tests" / "site_trend_per_player.mjs")], check=True,
                        env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-site_trend_per_player-real"))} if os.environ.get("SITE_RESULTS") else {})})
