@@ -70,8 +70,8 @@ assert warn["knee"]["feed"]["n"] == 8 and warn["knee"]["diff"] is None and warn[
 # 6: 重抽時某一邊整組被閘門擋光（真資料幾乎不會發生，所以暫時把門檻降到 1 拍來造）：3 拍只有 1 拍可用 → 約 30% 的重抽是空的；有差值，但不給區間，原因寫出來
 score.MIN_N_DRILL = 1
 thin = [dict(stroke(i, "feed", 0.7 + i * 0.01), vis=0.9 if i == 0 else 0.3) for i in range(3)] + rally
-t = drill_diff(thin, "FH")["metrics"]["contact_fwd"]
-score.MIN_N_DRILL = 10
+try: t = drill_diff(thin, "FH")["metrics"]["contact_fwd"]
+finally: score.MIN_N_DRILL = 10
 assert t["feed"]["n"] == 1 and t["diff"] is not None and t["ci"] is None and t["sem"] is None and 0 < t["valid"] < t["samples"] and "重抽" in t["reason"], t
 # 7、10: 不動既有分數；score_session 只在要區間時多一欄 drill_diff，其他欄位逐位相同
 plain = score_session(S, False)
