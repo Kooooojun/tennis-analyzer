@@ -186,6 +186,12 @@ try{
      const MARKS=()=>{const c=$('r3dCv').getBoundingClientRect(),P=S.world[cur],bent=(angle3(P,24,26,28)??180)<=(angle3(P,23,25,27)??180)?26:25;
       const hip=P[K[23]].map((x,i)=>(x+P[K[24]][i])/2),want={knee:R3D.proj(P[K[bent]]),lean:R3D.proj(hip)};
       return R3D.marks.map(m=>{const [x,y,w,h]=m.box,J=want[m.kind];return {text:m.text,inside:x>=0&&y>=0&&x+w<=c.width&&y+h<=c.height,covers:m.joint[0]>=x&&m.joint[0]<=x+w&&m.joint[1]>=y&&m.joint[1]<=y+h,joint:Math.hypot(m.joint[0]-J[0],m.joint[1]-J[1]),line:Math.hypot(m.line[2]-J[0],m.line[3]-J[1])};}).concat(R3D.marks.flatMap((a,i)=>R3D.marks.slice(i+1).map(b=>({overlap:!(a.box[0]+a.box[2]<=b.box[0]||b.box[0]+b.box[2]<=a.box[0]||a.box[1]+a.box[3]<=b.box[1]||b.box[1]+b.box[3]<=a.box[1])}))));};
+     // 弧線畫在關節本身的 3D 平面：張開的角度≈卡片（最接近卡片的那一格），轉了視角也一樣（不是投影後的角度）
+     for(const view of [[0,0],[.9,.6]]){
+      const d=await page.evaluate(([y,p])=>{R3D.yaw=y;R3D.pitch=p;draw3d(cur);return kSrcOf(S)==='3D'&&!S.knee_warn?{arc:R3D.arcDeg,card:S.knee}:null;},view);
+      if(d)check(d.arc!=null&&Math.abs(d.arc-d.card)<3,`${tag}：弧線角度 ${d.arc} 和卡片 ${d.card} 不符（視角 ${view}）`);
+     }
+     await page.evaluate(()=>{R3D.yaw=R3D.pitch=0;draw3d(cur);});
      const km=await page.evaluate(MARKS);
      check(km.length>0&&km.every(m=>m.overlap===false||m.inside&&!m.covers&&m.joint<.5&&m.line<.5),`${tag}：膝角標註位置 ${JSON.stringify(km)}`);
      const warnId=await page.evaluate(()=>ALL.find(s=>s.knee_warn&&s.knee!=null&&s.world!==null)?.id);
