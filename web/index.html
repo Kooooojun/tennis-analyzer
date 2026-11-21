@@ -83,6 +83,7 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:10px 0 2px}
 .strokes button.cur{border-color:var(--ink);background:var(--panel)}
 .strokes.short{display:flex;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}  /* 預設只列相關拍：一排，放不下就橫向捲 */
 .strokes.short button{flex:0 0 96px}
+.strokes.short button.strokes-more{position:sticky;right:0}  /* 相關拍多到要捲動時，開關仍固定在右端看得到 */
 .strokes button.strokes-more{flex:0 0 auto;align-items:center;justify-content:center;flex-direction:row;white-space:nowrap;font-size:13px;color:var(--ink);background:var(--panel);border:1px dashed var(--muted)}
 .strokes button .here{color:var(--ink);font-weight:600}
 .phases{display:flex;flex-wrap:wrap;gap:6px}
