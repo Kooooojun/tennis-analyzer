@@ -289,7 +289,7 @@ try{
      assert.equal(count,1);
      for(let n=2;n<=4;n++){await page.clock.runFor(4500);assert.equal(count,n-1);await page.clock.runFor(1000);await page.waitForFunction(()=>!POSE_WAIT.has(S));assert.equal(count,n);}
      assert.match(await page.locator('#stage .pose-msg').textContent(),/骨架載不到/);await page.clock.runFor(30000);assert.equal(count,4);assert.equal(await page.evaluate(()=>POSE_WAIT.has(S)),false);
-     allow=true;await page.evaluate(()=>go(DAY,'overview'));await page.waitForFunction(()=>TAB==='overview');await page.clock.runFor(5500);
+     allow=true;await page.evaluate(()=>{location.hash='#home';});await page.waitForFunction(()=>!$('home').hidden);await page.clock.runFor(5500);  // 一頁（UI 方案 A 第 5 步）：離開播放器＝回首頁（以前是總覽分頁）
      await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>!!S.frames,null,{timeout:1500});assert.equal(count,5);return {failedRequests:4,reentryRequests:1};
     },
     async poseBackgroundTimeout(page){
@@ -358,6 +358,10 @@ async function leavePose(page,tab){
  const started=page.waitForRequest('**/pose/4.js*');await page.evaluate(()=>load(4,false));await started;
  await page.evaluate(tab=>{if(tab==='home')location.hash='#home';else go(DAY,tab);},tab);
  await page.waitForFunction(tab=>tab==='home'?!$('home').hidden:TAB===tab,tab);
+ if(tab!=='home'){  // 一頁（UI 方案 A 第 5 步）：總覽別名不再藏播放器，骨架照常在抓；離開要回首頁
+  assert(await page.evaluate(()=>!!v.offsetParent&&POSE_WAIT.has(S)),'總覽別名：播放器還在頁面上，骨架不取消');
+  await page.evaluate(()=>{location.hash='#home';});await page.waitForFunction(()=>!$('home').hidden);
+ }
  await page.clock.runFor(20000);assert.equal(await page.evaluate(()=>POSE_WAIT.has(S)||!!S._poseErrAt),false);allow=true;
  await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>!!S.frames,null,{timeout:2000});
  assert.equal(count,2);assert.equal(await page.locator('#stage .pose-msg').isVisible(),false);

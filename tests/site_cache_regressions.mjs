@@ -10,19 +10,19 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   async routeStall(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
    await page.evaluate(()=>{resetClip(v,'route.mp4');Object.defineProperty(v,'currentSrc',{configurable:true,value:'http://example.test/route.mp4'});Object.defineProperty(v,'readyState',{configurable:true,value:0});window.reloads=0;Object.defineProperty(v,'src',{configurable:true,get:()=> 'http://example.test/route.mp4',set:()=>reloads++});});
-   await page.clock.runFor(8000);await page.evaluate(()=>go(DAY,'overview'));await page.waitForFunction(()=>!v.offsetParent);await page.clock.runFor(3000);
+   await page.clock.runFor(8000);await page.evaluate(()=>{location.hash='#home';});await page.waitForFunction(()=>!v.offsetParent);await page.clock.runFor(3000);
    await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>!!v.offsetParent);await page.clock.runFor(2000);assert.equal(await page.evaluate(()=>reloads),0);
   },
   async routeBackoff(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
    await page.evaluate(()=>{resetClip(v,'route-retry.mp4');Object.defineProperty(v,'currentSrc',{configurable:true,value:'http://example.test/route-retry.mp4'});Object.defineProperty(v,'readyState',{configurable:true,value:0});Object.defineProperty(v,'error',{configurable:true,value:{code:2}});window.reloads=0;Object.defineProperty(v,'src',{configurable:true,get:()=> 'http://example.test/route-retry.mp4',set:()=>reloads++});});
-   await page.clock.runFor(4000);await page.evaluate(()=>go(DAY,'overview'));await page.waitForFunction(()=>!v.offsetParent);await page.clock.runFor(20000);
+   await page.clock.runFor(4000);await page.evaluate(()=>{location.hash='#home';});await page.waitForFunction(()=>!v.offsetParent);await page.clock.runFor(20000);
    await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>!!v.offsetParent);await page.clock.runFor(1000);assert.equal(await page.evaluate(()=>reloads),1);
   },
   async routeError(page){
    await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>v.readyState>=2&&!v._fetching);
    await page.evaluate(()=>{resetClip(v,'route-error.mp4');Object.defineProperty(v,'currentSrc',{configurable:true,value:'http://example.test/route-error.mp4'});Object.defineProperty(v,'readyState',{configurable:true,value:0});Object.defineProperty(v,'error',{configurable:true,value:{code:2}});window.reloads=0;Object.defineProperty(v,'src',{configurable:true,get:()=> 'http://example.test/route-error.mp4',set:()=>reloads++});});
-   await page.clock.runFor(1500);await page.evaluate(()=>go(DAY,'overview'));await page.waitForFunction(()=>!v.offsetParent);await page.clock.runFor(3000);
+   await page.clock.runFor(1500);await page.evaluate(()=>{location.hash='#home';});await page.waitForFunction(()=>!v.offsetParent);await page.clock.runFor(3000);
    await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>!!v.offsetParent);await page.clock.runFor(500);assert.equal(await page.evaluate(()=>reloads),0);
   },
   async compareForegroundStill(page){
@@ -116,7 +116,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   async prefetchOrder(page){
    const requests=[];page.on('request',r=>{if(new URL(r.url()).pathname.endsWith('.mp4'))requests.push(r.url());});
    await page.waitForTimeout(200);assert.equal(requests.length,0,'home fetches none');
-   await page.evaluate(()=>go(DAY_KEYS[0],'overview'));await page.waitForTimeout(200);assert.equal(requests.length,0,'overview fetches none');
+   await page.evaluate(()=>go(DAY_KEYS[0],'overview'));await page.waitForFunction(()=>S);const main=await page.evaluate(()=>new URL(S.src,location.href).href);for(let t=0;t<50&&!requests.length;t++)await page.waitForTimeout(100);assert.equal(requests[0],main,'one page (UI A5): the player is always on it, so its own clip is fetched first (was: overview fetches none)');
    await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>{if(!S)return false;const list=visible(),i=list.indexOf(S);return CLIPS.get(list[(i-1+list.length)%list.length].src)?.url;});
    const expected=await page.evaluate(()=>{const list=visible();const i=list.indexOf(S);return [S.src,list[(i+1)%list.length].src,list[(i-1+list.length)%list.length].src].map(u=>new URL(u,location.href).href);});assert.deepEqual([...new Set(requests)].slice(0,3),expected);
   },

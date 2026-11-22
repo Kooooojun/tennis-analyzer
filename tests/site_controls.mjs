@@ -177,27 +177,24 @@ async function view(browser,engine,label,opts){
  });
 }
 
-// ---- 說明：預設收起、展開看得到快捷鍵 ----
+// ---- 說明：預設收起、展開看得到快捷鍵（UI 方案 A 第 5 步起在「長說明」） ----
 async function help(browser,engine,label,opts){
  const tag=`${engine.name()} ${label}`;
  await sect(tag,async()=>{
   const {page,context,errors}=await open(browser,opts);
   await stroke(page,12);
-  if(opts.mobile&&opts.viewport.width<opts.viewport.height){  // 直立手機：說明整個收掉（固定在上方的播放區 ≤ 60% 高；本來這裡也不顯示提示）
-   check(await page.evaluate(()=>!document.querySelector('.player details.help').offsetParent),`${tag} 直立手機不顯示說明`);
-   check(!errors.length,`${tag} 頁面錯誤 ${errors}`);await context.close();return;
-  }
-  const s0=await page.evaluate(()=>{const d=document.querySelector('.player details.help');return d&&{open:d.open,sum:d.querySelector('summary')?.textContent.trim(),kbd:!!document.querySelector('.player details.help .kbd-hint'),touch:!!document.querySelector('.player details.help .touch-hint'),outside:!!document.querySelector('.player > .kbd-hint, .player > .touch-hint')};});
-  check(s0&&!s0.open&&/說明/.test(s0.sum)&&s0.kbd&&s0.touch&&!s0.outside,`${tag} 說明預設收起、鍵盤與觸控提示都在裡面：${JSON.stringify(s0)}`);
-  check(await page.evaluate(()=>{const d=document.querySelector('.player details.help'),h=d.getBoundingClientRect().height,s=d.querySelector('summary').getBoundingClientRect().height;return h<=s+14;}),`${tag} 收起時兩行提示不佔版面（details 高度只有摘要那一行）`);
-  await page.locator('.player details.help summary').focus();await page.keyboard.press('Enter');
-  check(await page.evaluate(()=>document.querySelector('.player details.help').open),`${tag} 摘要按 Enter 要展開`);
-  const sh=await page.evaluate(()=>({kbd:document.querySelector('.player .kbd-hint').getBoundingClientRect().height>0,touch:document.querySelector('.player .touch-hint').getBoundingClientRect().height>0,text:document.querySelector('.player details.help').textContent}));
+  // UI 方案 A 第 5 步：操作說明從播放區搬到「長說明」展開區（預設收起），播放區不再有說明那一排；直立手機也看得到（不在黏頂區了）
+  check(await page.evaluate(()=>!document.querySelector('.player details.help, .player .kbd-hint, .player .touch-hint')),`${tag} 播放區不再放說明`);
+  const s0=await page.evaluate(()=>{const d=$('help'),sec=d?.closest('.sec');return d&&{sec:sec?.id,open:!!d.offsetParent,kbd:!!d.querySelector('.kbd-hint'),touch:!!d.querySelector('.touch-hint'),title:d.querySelector('h3')?.textContent.trim()};});
+  check(s0&&s0.sec==='secLong'&&!s0.open&&/操作說明/.test(s0.title)&&s0.kbd&&s0.touch,`${tag} 說明在長說明裡、預設收起、鍵盤與觸控提示都在：${JSON.stringify(s0)}`);
+  await page.locator('#secLong .sec-btn').focus();await page.keyboard.press('Enter');
+  check(await page.evaluate(()=>!!$('help').offsetParent),`${tag} 長說明按 Enter 要展開`);
+  const sh=await page.evaluate(()=>({kbd:document.querySelector('#help .kbd-hint').getBoundingClientRect().height>0,touch:document.querySelector('#help .touch-hint').getBoundingClientRect().height>0,text:$('help').textContent}));
   if(opts.mobile)check(sh.touch&&/滑動/.test(sh.text),`${tag} 觸控裝置展開要看到觸控提示：${JSON.stringify(sh)}`);
   else check(sh.kbd&&['空白','播放/暫停','逐格','換一拍','寫筆記'].every(w=>sh.text.includes(w)),`${tag} 桌機展開要看到快捷鍵說明：${JSON.stringify(sh)}`);
   await noOverflow(page,`${tag} 展開說明無水平溢出`);
   // 快捷鍵本身不改：空白、←→、↑↓
-  await page.locator('.player details.help summary').evaluate(e=>e.blur());await page.evaluate(()=>load(12));
+  await page.locator('#secLong .sec-btn').evaluate(e=>e.blur());await page.evaluate(()=>load(12));
   await page.keyboard.press('ArrowRight');const a=await page.evaluate(()=>cur);await page.keyboard.press('ArrowLeft');const b=await page.evaluate(()=>cur);
   check(a===b+1,`${tag} ←→ 逐格照舊：${b}→${a}`);
   await page.keyboard.press('ArrowDown');await page.waitForFunction(()=>S.id===13);
@@ -231,7 +228,7 @@ async function layout(browser,engine,label,opts){
   const {page,context,errors}=await open(browser,{...opts,scheme});
   await stroke(page,12);
   await page.locator('#viewBtn').click();
-  const rs=await contrast(page,'#viewBtn, #speed, #toPrep, #toHit, #viewPanel button, .player details.help summary');
+  const rs=await contrast(page,'#viewBtn, #speed, #toPrep, #toHit, #viewPanel button, #secLong .sec-btn, #help .hint');
   const bad=rs.filter(x=>x.ratio<4.5);
   check(rs.length>=8&&bad.length===0,`${tag} ${scheme}：控制項與選單文字對比要 ≥ 4.5：${JSON.stringify(bad)}（共量 ${rs.length}）`);
   await page.locator('#toPrep').evaluate(e=>{e.disabled=true;});  // 停用狀態也要看得到

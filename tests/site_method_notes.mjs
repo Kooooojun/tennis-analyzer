@@ -73,7 +73,7 @@ try{
       check(name==='有版本紀錄'?/3 支中 2 支有紀錄/.test(note):!/支中/.test(note),`${tag} ${name}：只有部分影片有紀錄要講「3 支中 2 支有紀錄」，全有就不講：「${note}」`);
       check(!note.includes('未記錄'),`${tag} ${name}：有紀錄時不寫未記錄：「${note}」`);
      }else check(note.includes('未記錄'),`${tag} ${name}：舊場次要寫「未記錄」：「${note}」`);
-     check(/3D 估計.*單鏡頭.*僅供參考/.test(await page.locator('#overview').textContent()),`${tag} ${name}：總覽原有的 3D 估計說明不能被擠掉`);
+     check(/3D 估計.*單鏡頭.*僅供參考/.test(await page.locator('#limits').textContent()),`${tag} ${name}：原有的 3D 估計說明不能被擠掉（UI 方案 A 第 5 步起在長說明）`);
      check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tag} ${name}：總覽無水平溢出`);
      check(!errors.length,`${tag} ${name}：總覽錯誤 ${errors}`);
      if(process.env.SITE_RESULTS&&methodVer!==null&&(!methodVer||methodVer===METHOD)){fs.mkdirSync(process.env.SITE_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.SITE_RESULTS,`${engine.name()}-${opts.mobile?'mobile':'desktop'}-method-${methodVer?'recorded':'unrecorded'}.png`),fullPage:true});}

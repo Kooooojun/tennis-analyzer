@@ -155,8 +155,8 @@ for(const engine of [chromium,webkit]){
     await fallback.unroute('**/*.mp4*');
     await fallback.route('**/*.mp4*',async route=>{await new Promise(r=>setTimeout(r,1000));await route.continue().catch(()=>{});});
     await fallback.evaluate(()=>step(1)); await fallback.waitForTimeout(100);
-    await fallback.evaluate(()=>{toggle();go(DAY,'advice');}); await fallback.waitForTimeout(1400);
-    assert(await fallback.evaluate(()=>v.paused&&!v._want),'leaving a tab must cancel pending playback before metadata');
+    await fallback.evaluate(()=>{toggle();location.hash='#home';}); await fallback.waitForTimeout(1400);
+    assert(await fallback.evaluate(()=>v.paused&&!v._want),'leaving the session page must cancel pending playback before metadata');  // one page (UI A5): the player only leaves the screen on #home
     await fallback.unroute('**/*.mp4*');
     await fallback.evaluate(()=>go(DAY,'video')); await fallback.locator('#vA').scrollIntoViewIfNeeded();
     await fallback.waitForFunction(()=>vA.readyState>=2&&vB.readyState>=2);
@@ -247,6 +247,11 @@ if os.environ.get("SITE_E2E_URL"):
     for real in () if os.environ.get("SITE_REF") else (False, True):
         subprocess.run(["node", str(R / "tests" / "site_controls.mjs")], check=True,
                        env={**{k: v for k, v in os.environ.items() if real or k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + ("-controls-real" if real else "-controls")))} if os.environ.get("SITE_RESULTS") else {})})
+    # 一場一頁（UI 方案 A 第 5 步）：同上，合成場次先、真實副本後；舊網頁（SITE_REF）還有分頁，必紅，所以跳過。
+    if os.environ.get("SITE_REF"): print("skipped site_one_page.mjs: it checks new behaviour, SITE_REF runs the old page")
+    for real in () if os.environ.get("SITE_REF") else (False, True):
+        subprocess.run(["node", str(R / "tests" / "site_one_page.mjs")], check=True,
+                       env={**{k: v for k, v in os.environ.items() if real or k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + ("-one-page-real" if real else "-one-page")))} if os.environ.get("SITE_RESULTS") else {})})
     if not os.environ.get("SITE_REF"):  # 真實副本：每張表每一欄的拍數對 data.js（這支另外用 SITE_E2E_URL 跑一次）
         subprocess.run(["node", str(R / "tests" / "site_trend_per_player.mjs")], check=True,
                        env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-site_trend_per_player-real"))} if os.environ.get("SITE_RESULTS") else {})})

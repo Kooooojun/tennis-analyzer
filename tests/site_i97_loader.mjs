@@ -166,7 +166,7 @@ async function pendingSource(page,deferred){
   await page.evaluate(()=>{load(4,false,true);Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
   await page.waitForTimeout(60);assert(await page.evaluate(()=>!!mainLoadTimer),'必須仍在 350 ms 延後載入窗口');await page.clock.runFor(400);
  }else{
-  await page.evaluate(()=>go(DAY,'overview'));await page.waitForFunction(()=>TAB==='overview');
+  await page.evaluate(()=>{location.hash='#home';});await page.waitForFunction(()=>!$('home').hidden);  // 一頁（UI 方案 A 第 5 步）：播放器只在首頁時看不到（以前是總覽分頁）
   assert(await page.evaluate(()=>{load(4,false);route();return LATER.has(v)&&(!v._loader||v._loader.state==='suspended');}),'必須真的延後到 LATER');
   await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>TAB==='stroke');
  }

@@ -213,7 +213,7 @@ After `check_findings.py` passes and you have looked at the page, reply in this 
 1. One sentence per player: the `overall` main thing (or 「這場資料不足以給方向」 plus how to film next time).
 2. A table with the columns 問題／數據／目標／練習, one row per problem finding in `notes.json` (at most 5; fewer is fine). 數據: the numbers its `cite` backs, with the stroke numbers. 目標: only the user's own good strokes or rally median, and only when the finding cites that number; otherwise 「—」. 練習: copy the practice sentence of that finding in `notes.json` word for word (the one concrete action and the neutral look at next time: same camera position, which field; no 進步／改善／變好／變差, no reps or sets). The reply text does not go through `check_findings.py`, so do not reword it. A row needs at least two strokes or an n ≥ 3 group, the same rule as the finding itself.
 3. What went well: the `good: true` findings, with stroke numbers.
-4. Where the result is and how to use it: `web/index.html`, the tabs, the jump buttons, the reel when you made one.
+4. Where the result is and how to use it: `web/index.html` (one page per session: the main card, the clip, the stroke row; everything else in the collapsed sections below), the jump buttons, the reel when you made one.
 5. Next-shoot advice (the 1–3 lines from section 4, 推論 marked).
 
 ## Precision and run record

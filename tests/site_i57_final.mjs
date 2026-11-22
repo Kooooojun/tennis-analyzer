@@ -49,7 +49,7 @@ const cases={
   assert.equal(await page.locator('#home .sess a').count(),16,'部分載入失敗仍須顯示可用場次');
   const firstScreen=()=>page.getByRole('alert').evaluate(e=>{const b=e.getBoundingClientRect();return b.top>=0&&b.bottom<=innerHeight;});
   assert(await firstScreen(),'長首頁的失敗提示須在首屏完整可見');
-  await page.evaluate(()=>{go(DAY_KEYS[0],'overview');scrollTo(0,0);});
+  await page.evaluate(()=>{go(DAY_KEYS[0]);scrollTo(0,0);});  // 一頁（UI 方案 A 第 5 步）：場次頁＝#d<場次>，overview 別名會捲到分數區
   await page.waitForFunction(()=>!document.querySelector('main').hidden);
   assert(await firstScreen(),'場次頁的失敗提示須在首屏完整可見');
   const retry=page.getByRole('alert').getByRole('button',{name:'重試'});

@@ -69,7 +69,7 @@ try{
      if(!process.env.SITE_E2E_URL)await page.evaluate(()=>{
       DAYS[DAY].scores={groups:[{player:'me',kind:'FH',n:20,total:7,form:7,consistency:7,knee_src:'knee3d',metrics:{knee3d:{status:'ok',median:128,n:20,score:7,cons:7}}},{player:'me',kind:'SV',n:20,total:7,form:7,consistency:7,metrics:{tilt:{status:'ok',median:32.1,n:20,score:7,cons:7}}}]};drawOverview();
      });
-     check(await page.locator('#overview .caveat:visible').evaluateAll(es=>es.some(e=>/3D 估計.*單鏡頭.*僅供參考/.test(e.textContent)&&e.textContent.includes('不是多機校正'))),`${tag}：總覽須有手機可見的來源說明`);
+     check(await page.locator('#overview .caveat:visible, #limits .caveat:visible').evaluateAll(es=>es.some(e=>/3D 估計.*單鏡頭.*僅供參考/.test(e.textContent)&&e.textContent.includes('不是多機校正'))),`${tag}：總覽須有手機可見的來源說明`);
      if(process.env.SITE_RESULTS)await page.screenshot({path:path.join(process.env.SITE_RESULTS,`${engine.name()}-${mobile?'mobile':'desktop'}-${di}-overview.png`),fullPage:true});
      if(!process.env.SITE_E2E_URL){
       check(/肩膀傾斜.*3D.*估/.test(await page.locator('#overview .bars').last().textContent()),`${tag}：tilt 分數列須標 3D 估計`);
