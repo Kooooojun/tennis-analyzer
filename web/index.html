@@ -1867,7 +1867,7 @@ const drawDays=()=>{ $("otherDays").innerHTML=whoCards(false); };
 $("otherDays").addEventListener("click",e=>{
   const a=e.target.closest("a[data-day]"); if(!a||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey) return;
   e.preventDefault();
-  if(a.dataset.day===DAY) [...$("players").children].find(b=>b.dataset.p===a.dataset.p)?.click();
+  if(a.dataset.day===DAY){ [...$("players").children].find(b=>b.dataset.p===a.dataset.p)?.click(); scrollTo({top:0}); }  // 單人場沒有球員鈕：只回到頂端，不是死連結
   else { pfilter=a.dataset.p; go(a.dataset.day); }
 });
 $("secDaysMeta").textContent=DAY_KEYS.length>1?`${DAY_KEYS.length} 場`:"";
@@ -1903,7 +1903,7 @@ const topPlayer=k=>{ const ps=DAYS[k].players, n=p=>DAYS[k].data.filter(s=>who(s
 function go(day,tab){ const h=`#d${day}`+(tab?`/${tab}`:""); let now=location.hash; try{ now=decodeURIComponent(now); }catch{} if(now===h) route(); else location.hash=h; }  // same alias again (no hashchange) still opens its sections
 function route(){
   let h=location.hash; try{ h=decodeURIComponent(h); }catch{}  // a hand-typed bad %-escape falls back to home
-  if(!h){ h="#d"+LATEST; pfilter=topPlayer(LATEST); try{ history.replaceState(null,"","#d"+encodeURIComponent(LATEST)); }catch{} }  // 沒帶 hash＝最近一場，球員預設拍數最多的；replaceState 不多一筆歷史、也不再觸發 hashchange。有 hash 的舊網址（含 #home）照舊
+  if(!h){ h="#d"+LATEST; if(!S) pfilter=topPlayer(LATEST); try{ history.replaceState(null,"","#d"+encodeURIComponent(LATEST)); }catch{} }  // 沒帶 hash＝最近一場，球員預設拍數最多的；replaceState 不多一筆歷史、也不再觸發 hashchange。有 hash 的舊網址（含 #home）照舊
   const m=h.match(/^#d(.+?)(?:\/(overview|video|charts|stroke|advice))?$/);
   const home=!m||!Object.hasOwn(DAYS,m[1]), wasHome=!$("home").hidden;
   document.querySelector("main").hidden=$("lead").hidden=$("players").hidden=home; $("home").hidden=!home; $("sub").hidden=!home;  // 一場一頁：header 只留一行（回首頁、日期、球員切換），場次說明在「分數與走勢」
