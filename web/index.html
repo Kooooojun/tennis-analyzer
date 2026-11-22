@@ -1901,7 +1901,7 @@ function route(){
   if(TAB) for(const sec of SECS) setOpen(sec,!!sec.querySelector(`[data-tab~="${TAB}"]`),true);  // 舊分頁網址：打開那個分頁原本的區、收起其他區（同以前換分頁）；before setDay, so clips in collapsed sections wait (whenShown)
   if(m[1]!==DAY||!S) setDay(m[1]);
   else if(wasHome){ MED=dayStats(mine()); drawSummary(); drawChecks(); drawTabs(); drawList(); }  // home overwrote #sub and may have set pfilter
-  $("days").querySelector(".on")?.scrollIntoView({block:"nearest",inline:"nearest"});
+  { const d=$("days"), b=d.querySelector(".on"); if(b&&d.offsetParent) d.scrollLeft+=b.getBoundingClientRect().left-d.getBoundingClientRect().left-8; }  // 只橫向捲日期列：scrollIntoView 會把整頁捲到「其他場次」
   $("h1Sub").textContent=" · "+DAYS[DAY].label;
   drawOverall();  // 卡片現在看得到：「看全文」要量「為什麼」有沒有超過兩行
   shownChanged();
