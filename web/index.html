@@ -1826,7 +1826,9 @@ for(const c of [cvA,cvB]) c.addEventListener("click",()=>$("cmpPlay").click());
 
 addEventListener("resize",()=>{ if(!$("lead").hidden) ovFit(); if(S) render(cur); cmpRender(cmpCur); if(isOpen("secCharts")&&$("home").hidden) drawCharts(); });
 addEventListener("keydown",e=>{
-  if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT"||!$("home").hidden||e.key===" "&&e.target.closest?.(".sec-btn,.lead,#oneLine,#players,#secDaysBody")) return;  // 一頁：快捷鍵整頁都有效；空白鍵在展開鈕和主軸卡的按鈕上照常按下它
+  if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT"||!$("home").hidden||e.key===" "&&e.target.closest?.(".sec-btn,.lead,#oneLine,#players,#secDaysBody")) return;  // 一頁：空白鍵在展開鈕和主軸卡的按鈕上照常按下它
+  const pr=document.querySelector(".player").getBoundingClientRect();
+  if(e.key!=="n"&&e.key!=="N"&&!(pr.bottom>0&&pr.top<innerHeight)) return;  // 播放器完全捲出畫面：空白與方向鍵交給瀏覽器捲頁面（有一部分在畫面內才算看得到）；N 照舊
   const st=e.shiftKey?10:1;
   if(e.key===" "){e.preventDefault();toggle();}
   else if(e.key==="ArrowLeft"){e.preventDefault();goto(cur-st);}
