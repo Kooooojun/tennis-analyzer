@@ -44,6 +44,7 @@ async function open(browser,{viewport,mobile,scheme,scen}={}){
   });
  }
  await page.goto(f.url);await page.waitForSelector('body.ready');
+ if(await page.evaluate(()=>pfilter!=='ALL'))await page.evaluate(()=>{[...document.querySelectorAll('#players button')].find(b=>b.dataset.p==='ALL')?.click();});  // UI A6：沒 hash 進來時多人場次預設拍數最多的球員；這支測「所有人」，先切回去
  return {page,context,errors};
 }
 const stroke=async(page,day,id)=>{await page.evaluate(([d,i])=>{go(d??DAY,'stroke');},[day,id]);await page.waitForFunction(()=>TAB==='stroke'&&S);if(id!=null){await page.evaluate(i=>load(i),id);await page.waitForFunction(i=>S.id===i,id);}};

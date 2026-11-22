@@ -13,7 +13,7 @@ try{
    for(const mobile of [false,true]){
     const context=await browser.newContext(mobile?devices['iPhone 13']:{viewport:{width:1280,height:800}});
     const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
-    await page.goto(f.url);await page.waitForSelector('body.ready');
+    await page.goto(f.url+'#home');await page.waitForSelector('body.ready');  // UI A6：沒 hash 會先進最近一場，下面注入的分數就不會重畫；從 #home 開
     if(!process.env.SITE_E2E_URL)await page.evaluate(()=>{
      const d=DAYS[DAY_KEYS[0]],u=(v,s=.3)=>({ci:[v-.6,v+.6],sem:s,valid:1000,samples:1000});
      const g={player:'me',kind:'FH',n:20,total:7,form:7,consistency:7,power:null,uncapped:7,knee_src:'knee',score_version:10,
