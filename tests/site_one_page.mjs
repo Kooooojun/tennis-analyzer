@@ -220,6 +220,12 @@ async function synthetic(browser,engine,label,opts){
   // 審查修正：膝蓋看不準的拍，主軸數字要標出來（同單拍卡、比較說明）
   t=await o.page.evaluate(()=>{S.knee_warn=true;drawAxis();return $('axisLine').textContent;});
   check(/不準/.test(t),`${tag} knee_warn 的拍主軸數字要標「不準」：「${t}」`);
+  // Codex P2：膝蓋中位數只用一種來源（同單拍卡 stats：過半有 3D 就只算 3D）
+  t=await o.page.evaluate(()=>{S.knee_warn=false;const fh=ALL.filter(x=>x.kind===S.kind&&x!==S);fh.forEach((x,i)=>{if(i<fh.length*0.7){x.knee3d=100;x.knee=100;}else{x.knee3d=null;x.knee=170;}});drawAxis();return $('axisLine').textContent;});
+  check(/中位 3D估 100°/.test(t),`${tag} 2D、3D 混在一起時，中位數只算 3D（100°）且標 3D估：「${t}」`);
+  // Codex P2：準備時間被截斷的拍標「≥」，也不算進中位數（同單拍卡 prepLow）
+  t=await o.page.evaluate(()=>{DAYS[DAY].overall=[{player:'me',main:{title:'t',why:'w',cite:[{player:'me',kind:'FH',field:'prep',stat:'median',value:0.5}]}}];const fh=ALL.filter(x=>x.kind===S.kind);fh.forEach((x,i)=>{x.prep=i%3?1.0:0.5;x.prep_trunc=!!(i%3);});S.prep=1.0;S.prep_trunc=true;drawAxis();return $('axisLine').textContent;});
+  check(/準備時間 ≥ 1\.00 秒/.test(t)&&/中位 0\.50 秒/.test(t),`${tag} 截斷的準備時間要標「≥」、中位數不算截斷值（0.50）：「${t}」`);
   // 審查修正：視窗變窄後「為什麼」超過兩行，要出「看全文」（桌機開、縮到手機寬）
   if(!opts.mobile){
    await o.page.evaluate(()=>{DAYS[DAY].overall=[{player:'me',main:{title:'只有為什麼',why:'擊球點在身前一點，'.repeat(11),cite:[]}}];drawOverall();});
