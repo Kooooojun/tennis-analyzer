@@ -113,6 +113,7 @@ async function synthetic(browser,engine,label,opts){
   check(rows[0].rows[0].text.includes('新場')&&rows[0].rows[0].text.includes('15 拍')&&rows[0].rows[1].text.includes('10 拍')&&rows[1].rows[0].text.includes('5 拍'),`${t}：列上有場次名稱與各人拍數：${JSON.stringify(rows)}`);
   check(rows.every(r=>r.rows[0].cur==='page'&&r.rows[1].cur===null),`${t}：目前這場的列標 aria-current=page：${JSON.stringify(rows)}`);
   check(await page.evaluate(()=>[...document.querySelectorAll('#secDaysBody a[aria-current] .sc b')].every(b=>getComputedStyle(b,'::after').content==='none')&&[...document.querySelectorAll('#secDaysBody a[aria-current]>b')].every(b=>getComputedStyle(b,'::after').content.includes('目前'))),`${t}：「（目前）」只標在場次名稱後面，不能標到分數上`);
+  check(await page.evaluate(()=>{const rows=[...document.querySelectorAll('#secDaysBody a[aria-current]')];return rows.length>0&&rows.every(a=>[a,...a.querySelectorAll('*')].filter(e=>getComputedStyle(e,'::after').content.includes('目前')).length===1);}),`${t}：目前這列的「（目前）」只能出現 1 次`);
   const link=body.locator('a.all-link');
   check(await link.count()===1&&(await link.getAttribute('href'))==='#home'&&/所有場次/.test(await link.textContent()),`${t}：要有「所有場次」連結到 #home`);
   // 和首頁同一份：先記下展開區的列，去首頁比
@@ -122,17 +123,25 @@ async function synthetic(browser,engine,label,opts){
   check(!low.length,`${t} 對比不足：${JSON.stringify(low)}`);
   if(phone){const small=await page.evaluate(()=>[...document.querySelectorAll('#secDaysBody a')].filter(a=>a.getBoundingClientRect().height<44).map(a=>a.textContent.trim().slice(0,12)));check(!small.length,`${t} 手機點擊目標 ≥ 44 px：${JSON.stringify(small)}`);}
   if(process.env.SITE_RESULTS&&engine.name()==='chromium'){fs.mkdirSync(process.env.SITE_RESULTS,{recursive:true});await body.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(process.env.SITE_RESULTS,`synthetic-days-${phone?'phone':'desk'}-${opts.scheme||'light'}.png`)});}
-  // 空白鍵在列表連結上不能當播放
-  await body.locator('.sess a').first().focus();await page.keyboard.press(' ');
-  check(await page.evaluate(()=>!v._want),`${t}：在列表連結上按空白鍵不能開始播放`);
   // 點目前這場的另一位球員：就地切（網址不變）
   const amyNow=body.locator('.who .card',{has:page.locator('h2',{hasText:/^amy$/})}).locator('.sess a[href="#dnew"]');
+  await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight));
+  check(await page.evaluate(()=>scrollY>0),`${t}：前提：點之前頁面已捲離頂端`);
   await amyNow.click();
   let st=await state(page);
+  check(await page.evaluate(()=>scrollY===0),`${t}：點目前這場的另一位球員 → 回到頂端：scrollY=${await page.evaluate(()=>scrollY)}`);
   check(st.day==='new'&&st.hash==='#dnew'&&st.pfilter==='amy'&&st.strokes.every(x=>x==='amy')&&st.strokes.length===5,`${t}：點目前這場的 amy → 就地切到 amy：${JSON.stringify(st)}`);
   // 點別場的某位球員：換場、球員跟著
   const zedOld=body.locator('.who .card',{has:page.locator('h2',{hasText:/^zed$/})}).locator('.sess a[href="#dold"]');
-  await zedOld.click();await page.waitForFunction(()=>DAY==='old');
+  await secBtn(page).getAttribute('aria-expanded')==='true'||await secBtn(page).click();
+  await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight));
+  check(await page.evaluate(()=>scrollY>0),`${t}：前提：點別場之前頁面已捲離頂端`);
+  await zedOld.click();await page.waitForFunction(()=>DAY==='old');await page.waitForTimeout(150);
+  check(await page.evaluate(()=>scrollY===0)&&await secBtn(page).getAttribute('aria-expanded')==='false'&&await page.evaluate(()=>document.querySelector('#secDaysBody').hidden),`${t}：點別場 → 換場後回到頂端並收起「其他場次」：${JSON.stringify(await page.evaluate(()=>({y:scrollY,exp:document.querySelector('#secDays .sec-btn').getAttribute('aria-expanded')})))}`);
+  await secBtn(page).click();  // 後面的步驟還要用展開區
+  // 空白鍵在列表連結上不能當播放（放在換場的捲動檢查之後：Chromium 的空白鍵捲頁動畫會把頁面帶離頂端）
+  await body.locator('.sess a').first().focus();await page.keyboard.press(' ');
+  check(await page.evaluate(()=>!v._want),`${t}：在列表連結上按空白鍵不能開始播放`);
   st=await state(page);
   check(st.day==='old'&&st.pfilter==='zed'&&st.strokes.length===10&&st.strokes.every(x=>x==='zed'),`${t}：點 old 的 zed → 換到 old、球員 zed：${JSON.stringify(st)}`);
   // 鍵盤：所有場次連結 Enter → 首頁；首頁的列和展開區同一份

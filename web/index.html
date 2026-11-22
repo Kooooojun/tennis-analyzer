@@ -1863,12 +1863,13 @@ function setDay(k){
   else { const fh=ALL.filter(s=>s.kind==="FH"&&s.knee!=null).sort((x,y)=>x.knee-y.knee); cmpLoad(fh[0]||ALL[0], typicalFH()); }
 }
 // 「其他場次」：首頁的場次列表（同一個 whoCards），目前這場標 aria-current。點別場＝換場並帶球員；點目前這場＝就地切球員（同一個 hash 不會再觸發 hashchange）
+let TOP_AFTER=false;
 const drawDays=()=>{ $("otherDays").innerHTML=whoCards(false); };
 $("otherDays").addEventListener("click",e=>{
   const a=e.target.closest("a[data-day]"); if(!a||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey) return;
   e.preventDefault();
   if(a.dataset.day===DAY){ [...$("players").children].find(b=>b.dataset.p===a.dataset.p)?.click(); scrollTo({top:0}); }  // 單人場沒有球員鈕：只回到頂端，不是死連結
-  else { pfilter=a.dataset.p; go(a.dataset.day); }
+  else { pfilter=a.dataset.p; setOpen($("secDays"),false); TOP_AFTER=true; go(a.dataset.day); }  // 換場：收起展開區；route() 換完場再回到頁面頂端（影片在那裡）。換場時 load()／revealCur 會自己捲動，所以不能在這裡先捲
 });
 $("secDaysMeta").textContent=DAY_KEYS.length>1?`${DAY_KEYS.length} 場`:"";
 
@@ -1918,6 +1919,7 @@ function route(){
   shownChanged();
   if(["overview","charts","advice"].includes(TAB)) toSec(SECS.find(sec=>isOpen(sec.id)));  // 這三個舊分頁沒有播放器，捲到它們的區；影片、每一拍本來就是播放器在最上面
   else if(TAB){ const r=$("stage").getBoundingClientRect(); if(r.top<0||r.bottom>innerHeight) scrollTo({top:Math.max(0,document.querySelector("main").getBoundingClientRect().top+scrollY)}); }  // 影片、每一拍：播放器不在畫面內（橫拿手機被主軸卡擠下去）才捲到它，同 load()
+  if(TOP_AFTER){ TOP_AFTER=false; scrollTo({top:0,behavior:"instant"}); }
 }
 addEventListener("hashchange",route);
 
