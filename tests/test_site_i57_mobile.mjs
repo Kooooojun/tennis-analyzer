@@ -285,7 +285,7 @@ function contrast(fg, bg) {
         const sz = S.size || [9, 16];
         const ar = sz[0] / sz[1];
         const expPlayerW = wide
-          ? Math.min(document.querySelector("main").clientWidth - 32, Math.max(360, (window.innerHeight - 400) * 16 / 9), 900)
+          ? Math.min(parseFloat(getComputedStyle(document.querySelector("main")).gridTemplateColumns), Math.max(360, (window.innerHeight - 400) * 16 / 9), 900)  // the player's own grid column: the whole row, or 3fr beside the resident 3D (UI 方案 A 第 4 步)
           : Math.min(420, Math.max(260, (window.innerHeight - 290) * 9 / 16));
         const expStageW = wide ? expPlayerW : Math.min(expPlayerW, Math.max(200, (window.innerHeight - 460) * 9 / 16));
         const expStageH = expStageW / ar;

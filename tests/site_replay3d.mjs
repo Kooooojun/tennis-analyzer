@@ -1,4 +1,5 @@
 // #145：單拍 3D 回放、膝蓋調整示意、角度弧線。失敗方式清單見 testset/results/replay3d/pred.md。
+// UI 方案 A 第 4 步：桌機 3D 常駐在影片右邊；手機用影片右上角的「影片｜3D」切換（預設影片），3D 蓋在影片那一格。失敗方式見 testset/results/ui-a4/pred.md。
 // 預設用合成場次（site_i93_fixture，骨架由本檔產生，不讀使用者資料）；SITE_E2E_URL 指向私人場次副本時改驗真實資料。
 // PLAYWRIGHT_MODULE 指向本機 playwright-core；SITE_RESULTS 有設時存截圖。
 import assert from 'node:assert/strict';
@@ -154,6 +155,9 @@ const UNIT=JITTER_EXTRA=>{
 
 const players=async(page)=>page.evaluate(()=>{for(const vid of document.querySelectorAll('video'))vid.muted=true;});
 const viewItem=async(page,sel)=>{if(await page.locator('#viewPanel').isHidden())await page.locator('#viewBtn').click();await page.locator(sel).click();};  // 顯示 ▾ 選單（UI 方案 A 第 3 步）：關著就先打開
+const sw=page=>page.evaluate(()=>{const s=$('r3dSwitch'),b=m=>s?.querySelector(`button[data-mode="${m}"]`)?.getAttribute('aria-pressed');return s&&{vis:!!s.getClientRects().length,video:b('video'),d3:b('3d')};});
+const mode3d=(page,on)=>page.locator(`#r3dSwitch button[data-mode="${on?'3d':'video'}"]`).click();  // 手機：影片／3D 切換
+const playerH=page=>page.evaluate(()=>document.querySelector('.player').getBoundingClientRect().height);
 const playState=page=>page.evaluate(()=>({text:$('play').textContent,cmp:$('cmpPlay').textContent,want:!!v._want,wantA:!!vA._want,wantB:!!vB._want}));
 
 try{
@@ -179,20 +183,30 @@ try{
       check(Math.abs(u.svLean-5)<.01,`${tag}：發球前傾弧線 ${u.svLean}° 要和卡片的 5° 一樣（先取絕對值再取中位數）`);
       check(u.degenerate.isNull&&!u.degenerate.nan,`${tag}：髖膝踝重合要不畫示意 ${JSON.stringify(u.degenerate)}`);
      }
-     // 面板預設關著：沒有面板、列表沒有示意記號
-     check(await page.evaluate(()=>!$('r3d')||$('r3d').hidden),`${tag}：面板預設要關著`);
-     check(!(await page.locator('#strokes').textContent()).includes('示意'),`${tag}：關著時列表不能有示意記號`);
-     // 開關面板不動播放狀態（播放中、暫停各一次）
-     for(const playing of [true,false]){
-      if(playing){await page.evaluate(()=>toggle());await page.waitForFunction(()=>v._want);}
-      const before=await playState(page);
-      await viewItem(page,'#r3dBtn');const opened=await playState(page);
-      await viewItem(page,'#r3dBtn');const closed=await playState(page);
-      check(JSON.stringify(before)===JSON.stringify(opened)&&JSON.stringify(before)===JSON.stringify(closed),`${tag}：開關面板改了播放狀態 ${JSON.stringify([before,opened,closed])}`);
-      if(playing)await page.evaluate(()=>{if(v._want)toggle();});
-     }
-     await viewItem(page,'#r3dBtn');
-     check(await page.evaluate(()=>R3D.on&&!$('r3d').hidden&&$('r3dBtn').getAttribute('aria-pressed')==='true'),`${tag}：按鈕要打開面板`);
+     // 預設（UI 方案 A 第 4 步）：顯示 ▾ 沒有 3D 開關；桌機 3D 常駐、看不到切換；手機預設影片、影片右上角有「影片｜3D」
+     check(await page.evaluate(()=>!$('r3dBtn')),`${tag}：顯示 ▾ 不該再有 3D 回放開關`);
+     const sw0=await sw(page);
+     if(mobile){
+      check(await page.evaluate(()=>!R3D.on&&(!$('r3d')||$('r3d').hidden)),`${tag}：手機預設要是影片`);
+      check(sw0?.vis&&sw0.video==='true'&&sw0.d3==='false',`${tag}：手機要有影片／3D 切換、預設影片 ${JSON.stringify(sw0)}`);
+      check(!(await page.locator('#strokes').textContent()).includes('示意'),`${tag}：影片模式列表不能有示意記號`);
+      // 切換不動播放狀態（播放中、暫停各一次）；播放中切到 3D：影片繼續播、3D 跟著換格
+      for(const playing of [true,false]){
+       if(playing){await page.evaluate(()=>toggle());await page.waitForFunction(()=>v._want);}
+       const before=await playState(page);
+       await mode3d(page,true);const opened=await playState(page);
+       if(playing){const f0=await page.evaluate(()=>$('r3dCv').dataset.frame);
+        const adv=await page.waitForFunction(f0=>$('r3dCv').dataset.frame!==f0&&!v.paused,f0,{timeout:3000}).then(()=>true,()=>false);
+        check(adv,`${tag}：播放中切到 3D，影片要繼續播、3D 要跟著換格`);}
+       await mode3d(page,false);const closed=await playState(page);
+       check(JSON.stringify(before)===JSON.stringify(opened)&&JSON.stringify(before)===JSON.stringify(closed),`${tag}：切換影片／3D 改了播放狀態 ${JSON.stringify([before,opened,closed])}`);
+       if(playing)await page.evaluate(()=>{if(v._want)toggle();});
+      }
+      await page.locator('#r3dSwitch button[data-mode="3d"]').focus();await page.keyboard.press('Enter');  // 鍵盤也切得動
+      const sw1=await sw(page);check(sw1.video==='false'&&sw1.d3==='true',`${tag}：切到 3D 後 aria-pressed ${JSON.stringify(sw1)}`);
+      await page.evaluate(()=>document.activeElement.blur());
+     }else check(!sw0?.vis,`${tag}：桌機不該看到影片／3D 切換`);
+     check(await page.evaluate(()=>R3D.on&&!$('r3d').hidden),`${tag}：3D 要開著（桌機預設；手機切到 3D 後）`);
      check(await page.evaluate(()=>!!$('r3dCv').getAttribute('aria-label')),`${tag}：canvas 要有 aria-label`);
      const caveats=await page.locator('#r3d').textContent();
      check(caveats.includes('單鏡頭估計的 3D，轉到影片沒拍到的角度會更不準。'),`${tag}：缺 3D 精度說明`);
@@ -378,33 +392,64 @@ try{
      await page.emulateMedia({colorScheme:null});await page.waitForTimeout(50);
      // 停用的按鈕看起來不能按
      check(await page.evaluate(()=>{const b=$('r3dKnee'),was=b.disabled;b.disabled=true;const o=+getComputedStyle(b).opacity;b.disabled=was;return o<1;}),`${tag}：停用的按鈕要變淡`);
-     if(mobile){  // 矮手機：canvas 不能吃掉黏頂影片下方大部分的可捲動區
+     if(mobile){  // 矮手機：3D 蓋在影片那一格，黏頂播放區不能比影片模式高（不吃掉下方的可捲動區）
       await page.setViewportSize({width:375,height:667});await page.waitForTimeout(100);
-      const ch=await page.evaluate(()=>$('r3dCv').getBoundingClientRect().height);
-      check(ch<=.3*667+1,`${tag}：375×667 canvas 高 ${ch}`);
+      const h3=await playerH(page);await mode3d(page,false);const hv=await playerH(page);await mode3d(page,true);
+      check(Math.abs(h3-hv)<=1,`${tag}：375×667 黏頂區 3D ${h3} ≠ 影片 ${hv}`);
       await page.setViewportSize({width:400,height:860});await page.waitForTimeout(100);
      }
      // 深淺主題都看得清楚：原始、示意兩色對面板背景對比 ≥ 3
      for(let t=0;t<2;t++){
       const c=await page.evaluate(()=>{const rgb=s=>s.startsWith('#')?[1,3,5].map(i=>parseInt(s.slice(i,i+2),16)):s.match(/[\d.]+/g).slice(0,3).map(Number);const lum=c=>{const [r,g,b]=c.map(x=>{x/=255;return x<=.03928?x/12.92:((x+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;};const ratio=(a,b)=>{const [h,l]=[lum(a),lum(b)].sort((x,y)=>y-x);return (h+.05)/(l+.05);};const bg=rgb(getComputedStyle($('r3dCv')).backgroundColor);return [ratio(rgb(css('--s1')),bg),ratio(rgb(css('--s2')),bg)];});
       check(c.every(x=>x>=3),`${tag}：主題 ${t} 顏色對比不足 ${c}`);
+      if(mobile){const r=await page.evaluate(()=>{const rgb=s=>s.match(/[\d.]+/g).slice(0,3).map(Number),lum=c=>{const [r,g,b]=c.map(x=>{x/=255;return x<=.03928?x/12.92:((x+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;};
+        return [...document.querySelectorAll('#r3dSwitch button')].map(b=>{const s=getComputedStyle(b),[h,l]=[lum(rgb(s.color)),lum(rgb(s.backgroundColor))].sort((x,y)=>y-x);return +((h+.05)/(l+.05)).toFixed(2);});});
+       check(r.length===2&&r.every(x=>x>=4.5),`${tag}：主題 ${t} 影片／3D 切換字對比 ${r}`);}
       await viewItem(page,'#theme');
      }
 
-     // 版面：桌機面板在影片旁邊（橫片、直片都是）；手機在影片下方
-     for(const portrait of real?[null]:[false,true]){
-      await page.evaluate(p=>{if(p!=null){ALL.forEach(s=>{s.size=p?[360,640]:[640,360];});load(S.id,false);}scrollTo(0,0);},portrait);
-      const lay=await page.evaluate(()=>{const a=$('stage').getBoundingClientRect(),b=$('r3dCv').getBoundingClientRect();return {beside:b.left>=a.right-1&&b.top<a.bottom,below:b.top>=a.bottom-1};});
-      check(mobile?lay.below:lay.beside,`${tag}：${portrait?'直':'橫'}片面板位置 ${JSON.stringify(lay)}`);
-      check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tag}：${portrait?'直':'橫'}片面板打開時水平溢出`);
+     // 版面：桌機 3D 在影片右邊（橫片、直片都是；直片影片窄、3D 寬）；手機 3D 蓋滿影片那一格、按鈕卡在播放區下面，黏頂區和影片模式一樣高
+     // 真實副本三場都是橫片：直片用強制 S.size 驗版面（影片本身仍是橫的、會 letterbox）
+     for(const portrait of [false,true]){
+      await page.evaluate(([p,real])=>{ALL.forEach(s=>{s._size??=s.size;s.size=p?[360,640]:real?s._size:[640,360];});load(S.id,false);scrollTo(0,0);},[portrait,real]);
+      await page.waitForTimeout(50);
+      const lay=await page.evaluate(()=>{const a=$('stage').getBoundingClientRect(),b=$('r3dCv').getBoundingClientRect(),c=$('r3d').getBoundingClientRect(),n=x=>Math.round(x);
+       return {beside:b.left>=a.right-1&&b.top<a.bottom,inStage:$('r3dCv').parentElement===$('stage')&&[['left','left'],['top','top'],['width','width'],['height','height']].every(([k])=>Math.abs(a[k]-b[k])<=1),cardBelow:c.top>=a.bottom-1,stage:[n(a.width),n(a.height)],cv:[n(b.width),n(b.height)]};});
+      check(mobile?lay.inStage&&lay.cardBelow:lay.beside,`${tag}：${portrait?'直':'橫'}片 3D 位置 ${JSON.stringify(lay)}`);
+      if(portrait&&!mobile)check(lay.stage[0]<lay.cv[0],`${tag}：直片影片要比 3D 窄 ${JSON.stringify(lay)}`);
+      if(mobile){const h3=await playerH(page);await mode3d(page,false);const hv=await playerH(page);await mode3d(page,true);check(Math.abs(h3-hv)<=1,`${tag}：${portrait?'直':'橫'}片黏頂區 3D ${h3} ≠ 影片 ${hv}`);
+       // 點一下 3D 不能漏到影片疊圖（點影片＝播放／暫停）
+       const st=await page.locator('#stage').boundingBox(),ps1=await playState(page);await page.touchscreen.tap(st.x+st.width/2,st.y+st.height/2);await page.waitForTimeout(150);
+       check(JSON.stringify(await playState(page))===JSON.stringify(ps1),`${tag}：點 3D 畫面改了播放狀態`);}
+      if(mobile){  // Codex：影片載入中／載不到的提示會藏影片格裡的疊圖，3D 不能跟著被藏；切換鈕不能蓋住階段標籤
+       const r=await page.evaluate(()=>{const m=$('stage').querySelector('.vid-msg'),was=m.hidden;m.hidden=false;const vis=getComputedStyle($('r3dCv')).visibility;m.hidden=was;
+        const pb=$('phaseBadge'),d=pb.style.display;pb.style.display='block';pb.textContent||='擊球';const a=pb.getBoundingClientRect(),b=$('r3dSwitch').getBoundingClientRect();pb.style.display=d;
+        return {vis,overlap:a.left<b.right&&b.left<a.right&&a.top<b.bottom&&b.top<a.bottom};});
+       check(r.vis==='visible',`${tag}：影片載入提示出現時 3D 被藏 ${r.vis}`);
+       check(!r.overlap,`${tag}：影片／3D 切換蓋到階段標籤`);
+      }
+      check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tag}：${portrait?'直':'橫'}片 3D 打開時水平溢出`);
+      if(di===0)console.log(`${tag}：${portrait?'直':'橫'}片 影片 ${lay.stage.join('×')}、3D ${lay.cv.join('×')}`);
+     }
+     if(real)await page.evaluate(()=>{ALL.forEach(s=>{s.size=s._size;delete s._size;});load(S.id,false);});
+     // 跨斷點（拉窗、轉手機）：手機寬度回到影片模式、canvas 回卡片；再拉寬又並排
+     if(!mobile){
+      await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);
+      const nar=await page.evaluate(()=>({on:R3D.on,hidden:$('r3d').hidden,inStage:$('r3dCv').parentElement===$('stage'),sw:!!$('r3dSwitch').getClientRects().length}));
+      check(!nar.on&&nar.hidden&&!nar.inStage&&nar.sw,`${tag}：拉窄到 390 要回到影片模式 ${JSON.stringify(nar)}`);
+      await page.setViewportSize({width:1280,height:800});await page.waitForTimeout(150);
+      const wide=await page.evaluate(()=>{const a=$('stage').getBoundingClientRect(),b=$('r3dCv').getBoundingClientRect();return {on:R3D.on,beside:b.left>=a.right-1,sw:!!$('r3dSwitch').getClientRects().length};});
+      check(wide.on&&wide.beside&&!wide.sw,`${tag}：拉回 1280 要再並排 ${JSON.stringify(wide)}`);
      }
      if(process.env.SITE_RESULTS){
       fs.mkdirSync(process.env.SITE_RESULTS,{recursive:true});
       if(eligible.length){await page.evaluate(id=>{load(id,false);},eligible[0]);await page.waitForFunction(()=>S?.frames?.length);await page.evaluate(()=>{R3D.yaw=.6;R3D.pitch=.35;goto(S.contact-20);});}
       await page.screenshot({path:path.join(process.env.SITE_RESULTS,`replay3d-${engine.name()}-${mobile?'400':'desktop'}-${di}.png`)});
      }
-     await viewItem(page,'#r3dBtn');
-     check(await page.evaluate(()=>!R3D.on&&$('r3d').hidden&&!document.querySelector('.r3d-mark')),`${tag}：關掉面板要收乾淨`);
+     if(mobile){
+      await mode3d(page,false);
+      check(await page.evaluate(()=>!R3D.on&&$('r3d').hidden&&!document.querySelector('.r3d-mark')&&$('r3dCv').parentElement!==$('stage')),`${tag}：切回影片要收乾淨`);
+     }
     }
     check(errors.length===0,`${tag}：前端例外 ${errors}`);
     console.log(`${tag}：3D 回放驗證完成`);await context.close();
