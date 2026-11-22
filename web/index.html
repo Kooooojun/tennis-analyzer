@@ -1433,7 +1433,7 @@ function axisKey(s){
 function drawAxis(){
   const s=S, [name,get,fmt]=AXIS[axisKey(s)], val=get(s), dn=drillName(s), ok=x=>x!=null&&isFinite(x);
   const m=median(ALL.filter(x=>who(x)===who(s)&&x.kind===s.kind&&!(get===AXIS.knee[1]&&x.knee_warn)).map(get));  // 膝蓋：看不準的拍不算中位數（同單拍卡）
-  $("axisLine").innerHTML=`<b>#${String(s.id+1).padStart(2,"0")} ${esc(NAMES[s.kind]||s.kind)}${dn?"・"+dn:""}</b><span>${name} <b class="axis-v">${ok(val)?fmt(val,s):"–"}</b>${ok(m)?`<span class="axis-m">（${who(s)==="me"?"你的":esc(PN(who(s)))+"的"}${esc(NAMES[s.kind]||"")}中位 ${fmt(m,s)}）</span>`:""}</span>`;
+  $("axisLine").innerHTML=`<b>#${String(s.id+1).padStart(2,"0")} ${esc(NAMES[s.kind]||s.kind)}${dn?"・"+dn:""}</b><span>${name} <b class="axis-v">${ok(val)?fmt(val,s)+(get===AXIS.knee[1]&&s.knee_warn?"（⚠不準）":""):"–"}</b>${ok(m)?`<span class="axis-m">（${who(s)==="me"?"你的":esc(PN(who(s)))+"的"}${esc(NAMES[s.kind]||"")}中位 ${fmt(m,s)}）</span>`:""}</span>`;
 }
 function load(id, scroll, defer=false){
   clearTimeout(mainLoadTimer); mainLoadTimer=null;
@@ -1821,9 +1821,9 @@ $("selA").onchange=()=>cmpLoad(fromKey($("selA").value),B); $("selB").onchange=(
 $("useCurA").onclick=()=>{ if(S) cmpLoad(S,B); }; $("useCurB").onclick=()=>{ if(S) cmpLoad(A,S); };
 for(const c of [cvA,cvB]) c.addEventListener("click",()=>$("cmpPlay").click());
 
-addEventListener("resize",()=>{ if(S) render(cur); cmpRender(cmpCur); if(isOpen("secCharts")&&$("home").hidden) drawCharts(); });
+addEventListener("resize",()=>{ if(!$("lead").hidden) ovFit(); if(S) render(cur); cmpRender(cmpCur); if(isOpen("secCharts")&&$("home").hidden) drawCharts(); });
 addEventListener("keydown",e=>{
-  if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT"||!$("home").hidden||e.key===" "&&e.target.closest?.(".sec-btn,.lead,#oneLine")) return;  // 一頁：快捷鍵整頁都有效；空白鍵在展開鈕和主軸卡的按鈕上照常按下它
+  if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT"||!$("home").hidden||e.key===" "&&e.target.closest?.(".sec-btn,.lead,#oneLine,#players,#days")) return;  // 一頁：快捷鍵整頁都有效；空白鍵在展開鈕和主軸卡的按鈕上照常按下它
   const st=e.shiftKey?10:1;
   if(e.key===" "){e.preventDefault();toggle();}
   else if(e.key==="ArrowLeft"){e.preventDefault();goto(cur-st);}
@@ -1864,7 +1864,7 @@ $("secDaysMeta").textContent=DAY_KEYS.length>1?`${DAY_KEYS.length} 場`:"";
 
 // ---------- views: #home (players) and #d<session> = one session on one page; #d<session>/<tab> = old tab URLs kept as aliases ----------
 // UI 方案 A 第 5 步：分頁拿掉，其他內容收進同頁展開區（.sec，預設收起）。收起＝hidden＝看不到，所以裡面的影片照舊「離開分頁」的規則停下、不抓。
-const TAB_KEYS=["overview","video","charts","stroke","advice"], SECS=[...document.querySelectorAll("main .sec")];
+const SECS=[...document.querySelectorAll("main .sec")];
 let TAB="";  // 最近一次別名的分頁名（舊測試與書籤用）；沒帶分頁＝""
 const secBody=sec=>sec.querySelector(".sec-body"), isOpen=id=>!secBody($(id)).hidden;
 function setOpen(sec,on,quiet=false){
