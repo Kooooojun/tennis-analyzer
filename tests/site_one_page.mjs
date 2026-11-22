@@ -98,6 +98,10 @@ async function synthetic(browser,engine,label,opts){
   check(c.length===1&&c[0].title==='amy：資料不足'&&!c[0].collapsed,`${tag} 選 amy 後只剩她的卡且完整：${JSON.stringify(c)}`);
   check(await page.evaluate(()=>pfilter==='amy'&&[...document.querySelectorAll('#strokes button[data-id]')].every(b=>who(ALL[+b.dataset.id])==='amy')),`${tag} 選 amy 後拍子列只有 amy`);
   await page.locator('#players button',{hasText:'所有人'}).click();c=await cards();
+  // 審查修正：鍵盤在球員按鈕上按空白鍵＝按下按鈕，不是播放
+  await page.locator('#players button',{hasText:/^zed/}).focus();await page.keyboard.press(' ');
+  check(await page.evaluate(()=>pfilter==='zed'&&!v._want),`${tag} 球員按鈕上按空白鍵要切到 zed、不播放：${await page.evaluate(()=>pfilter+' '+v._want)}`);
+  await page.locator('#players button',{hasText:'所有人'}).click();c=await cards();
   check(c.length===2&&!c[0].collapsed&&c[1].collapsed,`${tag} 選回所有人：zed 完整、amy 一行：${JSON.stringify(c)}`);
   await noOverflow(page,`${tag} 一頁無水平溢出`);
   const low=(await contrast(page,'.sec-title, .sec-meta, #players button, #axisLine, #oneLine, .ov-open, .ov-full')).filter(r=>r.ratio<4.5);
@@ -213,6 +217,17 @@ async function synthetic(browser,engine,label,opts){
   t=(await o.page.locator('#axisLine').textContent()).replace(/\s+/g,' ');
   check(/#05/.test(t)&&/膝/.test(t)&&/114°/.test(t),`${tag} 沒有 overall：主軸數字一行退回準備時膝蓋：「${t}」`);
   check(await o.page.locator('#oneLine').isVisible()&&(await o.page.locator('#oneLine').textContent()).includes('練習參考'),`${tag} 沒有 overall 也要有一行免責`);
+  // 審查修正：膝蓋看不準的拍，主軸數字要標出來（同單拍卡、比較說明）
+  t=await o.page.evaluate(()=>{S.knee_warn=true;drawAxis();return $('axisLine').textContent;});
+  check(/不準/.test(t),`${tag} knee_warn 的拍主軸數字要標「不準」：「${t}」`);
+  // 審查修正：視窗變窄後「為什麼」超過兩行，要出「看全文」（桌機開、縮到手機寬）
+  if(!opts.mobile){
+   await o.page.evaluate(()=>{DAYS[DAY].overall=[{player:'me',main:{title:'只有為什麼',why:'擊球點在身前一點，'.repeat(11),cite:[]}}];drawOverall();});
+   const full=()=>o.page.evaluate(()=>{const b=document.querySelector('#overall .ov-full');return !!b&&!!b.offsetParent;});
+   check(!(await full()),`${tag} 前提：桌機寬時「為什麼」兩行內，不出看全文`);
+   await o.page.setViewportSize({width:390,height:844});await o.page.waitForTimeout(300);
+   check(await full(),`${tag} 縮到 390 寬後「為什麼」超過兩行，要出看全文`);
+  }
   await o.context.close();
  });
 }
