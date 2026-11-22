@@ -1431,9 +1431,10 @@ function axisKey(s){
   return "knee";
 }
 function drawAxis(){
-  const s=S, [name,get,fmt]=AXIS[axisKey(s)], val=get(s), dn=drillName(s), ok=x=>x!=null&&isFinite(x);
-  const m=median(ALL.filter(x=>who(x)===who(s)&&x.kind===s.kind&&!(get===AXIS.knee[1]&&x.knee_warn)).map(get));  // 膝蓋：看不準的拍不算中位數（同單拍卡）
-  $("axisLine").innerHTML=`<b>#${String(s.id+1).padStart(2,"0")} ${esc(NAMES[s.kind]||s.kind)}${dn?"・"+dn:""}</b><span>${name} <b class="axis-v">${ok(val)?fmt(val,s)+(get===AXIS.knee[1]&&s.knee_warn?"（⚠不準）":""):"–"}</b>${ok(m)?`<span class="axis-m">（${who(s)==="me"?"你的":esc(PN(who(s)))+"的"}${esc(NAMES[s.kind]||"")}中位 ${fmt(m,s)}）</span>`:""}</span>`;
+  const s=S, [name,get,fmt]=AXIS[axisKey(s)], knee=get===AXIS.knee[1], prep=get===AXIS.prep[1], val=get(s), dn=drillName(s), ok=x=>x!=null&&isFinite(x);
+  const g=ALL.filter(x=>who(x)===who(s)&&x.kind===s.kind), st=knee&&stats(g);  // 同單拍卡：膝蓋只用一種來源、看不準的不算；準備時間的下限值不算
+  const m=knee?st.knee:median(g.filter(x=>!(prep&&prepLow(x))).map(get));
+  $("axisLine").innerHTML=`<b>#${String(s.id+1).padStart(2,"0")} ${esc(NAMES[s.kind]||s.kind)}${dn?"・"+dn:""}</b><span>${name} <b class="axis-v">${ok(val)?(prep&&prepLow(s)?"≥ ":"")+fmt(val,s)+(knee&&s.knee_warn?"（⚠不準）":""):"–"}</b>${ok(m)?`<span class="axis-m">（${who(s)==="me"?"你的":esc(PN(who(s)))+"的"}${esc(NAMES[s.kind]||"")}中位 ${knee?`${KNAME[st.kSrc]} ${Math.round(m)}°`:fmt(m,s)}）</span>`:""}</span>`;
 }
 function load(id, scroll, defer=false){
   clearTimeout(mainLoadTimer); mainLoadTimer=null;
