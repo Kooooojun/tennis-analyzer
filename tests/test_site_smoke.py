@@ -252,6 +252,11 @@ if os.environ.get("SITE_E2E_URL"):
     for real in () if os.environ.get("SITE_REF") else (False, True):
         subprocess.run(["node", str(R / "tests" / "site_one_page.mjs")], check=True,
                        env={**{k: v for k, v in os.environ.items() if real or k != "SITE_E2E_URL"}, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + ("-one-page-real" if real else "-one-page")))} if os.environ.get("SITE_RESULTS") else {})})
+    # 打開直接進最近一場（UI 方案 A 第 6 步）：同上，合成場次先、真實副本後；舊網頁（SITE_REF）停在首頁，必紅，所以跳過。
+    if os.environ.get("SITE_REF"): print("skipped site_latest_entry.mjs: it checks new behaviour, SITE_REF runs the old page")
+    for real in () if os.environ.get("SITE_REF") else (False, True):
+        subprocess.run(["node", str(R / "tests" / "site_latest_entry.mjs")], check=True,
+                       env={k: v for k, v in os.environ.items() if real or k != "SITE_E2E_URL"})
     if not os.environ.get("SITE_REF"):  # 真實副本：每張表每一欄的拍數對 data.js（這支另外用 SITE_E2E_URL 跑一次）
         subprocess.run(["node", str(R / "tests" / "site_trend_per_player.mjs")], check=True,
                        env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-site_trend_per_player-real"))} if os.environ.get("SITE_RESULTS") else {})})

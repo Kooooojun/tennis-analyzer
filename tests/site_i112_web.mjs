@@ -10,7 +10,7 @@ try{
   try{
    const context=await browser.newContext(mobile?devices['iPhone 13']:{viewport:{width:1280,height:800}}),page=await context.newPage(),tag=`${engine.name()} ${mobile?'手機':'桌機'}`,errors=[];
    page.on('pageerror',e=>errors.push(e.message));
-   await page.goto(f.url);await page.waitForSelector('body.ready');
+   await page.goto(f.url+'#home');await page.waitForSelector('body.ready');
    if(part!=='arm'){
     const results=await page.evaluate(()=>{
      const old={session:DAY_KEYS[0],date:'2026-01-01',camera:'側面',knee_src:'knee',score_version:10,items:{total:6,consistency:7}},

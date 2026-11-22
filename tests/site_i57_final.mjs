@@ -11,7 +11,7 @@ const portrait=execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','testsrc2=s
 const history=dates=>dates.map((date,i)=>({session:`sample-${i}`,date,camera:'合成鏡頭',knee_src:'3D',score_version:9,items:{total:7,consistency:6}}));
 async function chart(page,dates,width){
  await page.route('**/trend.js*',route=>route.fulfill({contentType:'text/javascript',body:`window.TREND=[${JSON.stringify({player:'me',kind:'FH',history:history(dates),flags:[]})}];`}));
- await page.goto(f.url);
+ await page.goto(f.url+"#home");
  await page.locator('svg.spark').waitFor();
  if(width)await page.locator('svg.spark').evaluate((svg,width)=>{svg.style.width=width+'px';svg.replaceChildren();drawSpark(svg,TREND[0]);},width);
  return page.locator('svg.spark').evaluate(svg=>({
@@ -26,7 +26,7 @@ const cases={
  async fullLoadFailure(page){
   let broken=true;
   await page.route('**/manifest.js*',route=>broken?route.fulfill({status:503,body:''}):route.continue());
-  await page.goto(f.url);
+  await page.goto(f.url+"#home");
   const alert=page.getByRole('alert');
   assert.equal(await alert.count(),1,'全站腳本失敗須有 alert');
   assert.match(await alert.textContent(),/載入失敗/);
@@ -45,7 +45,7 @@ const cases={
    const response=await route.fetch();
    await route.fulfill({response,body:(await response.text())+`for(let i=0;i<15;i++)window.SESSIONS.push({...window.SESSIONS[0],id:'sample-'+i,label:'合成場次 '+i});`});
   });
-  await page.goto(f.url);
+  await page.goto(f.url+"#all");  // 不認得的 hash＝首頁；#home 會讓瀏覽器捲到 id=home 的區塊，把它前面的失敗提示捲出畫面
   assert.equal(await page.locator('#home .sess a').count(),16,'部分載入失敗仍須顯示可用場次');
   const firstScreen=()=>page.getByRole('alert').evaluate(e=>{const b=e.getBoundingClientRect();return b.top>=0&&b.bottom<=innerHeight;});
   assert(await firstScreen(),'長首頁的失敗提示須在首屏完整可見');
@@ -61,7 +61,7 @@ const cases={
  async trendLoadFailure(page){
   let broken=true;
   await page.route('**/trend.js*',route=>route.fulfill({status:broken?503:200,contentType:'text/javascript',body:broken?'':`window.TREND=[${JSON.stringify({player:'me',kind:'FH',history:history(['2026-01-01','2026-01-02']),flags:[]})}];`}));
-  await page.goto(f.url);
+  await page.goto(f.url+"#home");
   const alert=page.getByRole('alert');
   assert.equal(await alert.count(),1,'走勢腳本失敗須沿用唯一 alert');
   assert.match(await alert.textContent(),/走勢/);

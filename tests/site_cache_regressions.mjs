@@ -217,7 +217,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   if(process.env.SITE_CASES&&!process.env.SITE_CASES.split(',').includes(label))continue;
   const context=await browser.newContext(name==='webkit'?devices['iPhone 13']:{}),page=await context.newPage();
   await page.addInitScript(small=>{if(small)window.CLIP_CACHE_LIMIT=2*1024*1024;window.liveClips=new Map();window.revoked=0;window.revokedActive=0;const create=URL.createObjectURL,revoke=URL.revokeObjectURL;URL.createObjectURL=b=>{const u=create(b);liveClips.set(u,b.size);return u;};URL.revokeObjectURL=u=>{revoked++;if([...document.querySelectorAll('video')].some(v=>v.src===u))revokedActive++;liveClips.delete(u);revoke(u);};},label==='lru');
-  try{if(['hiddenStall','byteProgress','fetchProgress','retryBudget','cancelledReload','foregroundTimerOrder','routeStall','routeBackoff','routeError','compareForegroundStill','byteCeiling','recoveredBudget','compareAutoStill','compareStallPause'].includes(label))await page.clock.install();await page.goto(process.env.SITE_E2E_URL);await test(page);results.push({engine:name,case:label,pass:true});}
+  try{if(['hiddenStall','byteProgress','fetchProgress','retryBudget','cancelledReload','foregroundTimerOrder','routeStall','routeBackoff','routeError','compareForegroundStill','byteCeiling','recoveredBudget','compareAutoStill','compareStallPause'].includes(label))await page.clock.install();await page.goto(process.env.SITE_E2E_URL+(label==='prefetchOrder'?'#home':''));await test(page);results.push({engine:name,case:label,pass:true});}
   catch(error){results.push({engine:name,case:label,pass:false,error:String(error.message)});}
   console.log(name,label,results.at(-1).pass,results.at(-1).error||'');await context.close();
  }

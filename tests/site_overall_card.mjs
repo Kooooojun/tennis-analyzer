@@ -46,6 +46,7 @@ async function open(browser,{viewport,mobile,scheme,scen}={}){
   });
  }
  await page.goto(f.url);await page.waitForSelector('body.ready');
+ if(await page.evaluate(()=>pfilter!=='ALL'))await page.evaluate(()=>{[...document.querySelectorAll('#players button')].find(b=>b.dataset.p==='ALL')?.click();});  // UI 方案 A 第 6 步：沒 hash 進來時多人場次預設拍數最多的球員；這支測「所有人」，先切回去
  return {page,context,errors};
 }
 // UI 方案 A 第 5 步：卡片在一頁的第一屏（.lead），不用再切到總覽分頁；這裡打開沒帶分頁的 #d<場次>
