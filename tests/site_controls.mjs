@@ -194,7 +194,7 @@ async function help(browser,engine,label,opts){
   else check(sh.kbd&&['空白','播放/暫停','逐格','換一拍','寫筆記'].every(w=>sh.text.includes(w)),`${tag} 桌機展開要看到快捷鍵說明：${JSON.stringify(sh)}`);
   await noOverflow(page,`${tag} 展開說明無水平溢出`);
   // 快捷鍵本身不改：空白、←→、↑↓
-  await page.locator('#secLong .sec-btn').evaluate(e=>e.blur());await page.evaluate(()=>load(12));
+  await page.locator('#secLong .sec-btn').evaluate(e=>e.blur());await page.evaluate(()=>{load(12);scrollTo(0,0);});await page.waitForFunction(()=>scrollY===0);  // A5 後續：播放器捲出畫面時快捷鍵放行；展開長說明把頁面捲下去了，先捲回播放器再按
   await page.keyboard.press('ArrowRight');const a=await page.evaluate(()=>cur);await page.keyboard.press('ArrowLeft');const b=await page.evaluate(()=>cur);
   check(a===b+1,`${tag} ←→ 逐格照舊：${b}→${a}`);
   await page.keyboard.press('ArrowDown');await page.waitForFunction(()=>S.id===13);
