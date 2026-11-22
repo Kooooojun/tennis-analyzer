@@ -1,4 +1,4 @@
-// 整體建議第 3 步／UI 方案 A1：總覽最上面「這場先練一件事」卡片、免責收成一行。
+// 整體建議第 3 步／UI 方案 A1：總覽最上面「這場先練一件事」卡片、免責收成一行。UI 方案 A 第 5 步起卡片在一頁的第一屏（不再有總覽分頁）。
 // 事前預測與失敗方式：testset/results/overall-card/pred.md。
 // 合成模式（預設）：用 amy／zed 這種假名，不讀使用者資料；SITE_REF=origin/main 預期紅（找不到卡片）。
 // SITE_E2E_URL＝真實副本：有 overall 的場次顯示卡片（張數、標題對 data.js）、沒有的 0 張；SITE_RESULTS＝另存截圖（私人，不進 git）。
@@ -48,15 +48,16 @@ async function open(browser,{viewport,mobile,scheme,scen}={}){
  await page.goto(f.url);await page.waitForSelector('body.ready');
  return {page,context,errors};
 }
-const overview=async(page,day)=>{await page.evaluate(d=>go(d??DAY,'overview'),day);await page.waitForFunction(()=>TAB==='overview'&&document.querySelector('#overview h2'));};
-const cards=page=>page.evaluate(()=>[...document.querySelectorAll('#overview #overall .ov-card')].map(c=>({
+// UI 方案 A 第 5 步：卡片在一頁的第一屏（.lead），不用再切到總覽分頁；這裡打開沒帶分頁的 #d<場次>
+const overview=async(page,day)=>{await page.evaluate(d=>go(d??DAY),day);await page.waitForFunction(d=>DAY===(d??DAY)&&TAB===''&&S&&!$('lead').hidden,day);};
+const cards=page=>page.evaluate(()=>[...document.querySelectorAll('#overall .ov-card')].map(c=>({
  cls:c.className,name:c.querySelector('.ov-name')?.textContent.trim()??null,title:c.querySelector('.ov-title')?.textContent.trim(),
  why:c.querySelector('.ov-why')?.textContent.replace(/\s+/g,' ').trim()??null,practice:c.querySelector('.ov-practice')?.textContent.replace(/\s+/g,' ').trim()??null,
  cue:c.querySelector('.ov-cue')?.textContent.replace(/\s+/g,' ').trim()??null,film:c.querySelector('.ov-film')?.textContent.replace(/\s+/g,' ').trim()??null,
- jumps:[...c.querySelectorAll(':scope > .ov-jump button')].map(b=>b.textContent.trim()),
+ jumps:[...c.querySelectorAll(':scope > .ov-body > .ov-acts > .ov-jump button')].map(b=>b.textContent.trim()),
  second:(d=>d&&{open:d.open,summary:d.querySelector('summary').textContent.trim(),title:d.querySelector('.ov-title')?.textContent.trim(),jumps:[...d.querySelectorAll('.ov-jump button')].map(b=>b.textContent.trim()),cue:d.querySelector('.ov-cue')?.textContent.trim()??null})(c.querySelector('details.ov-second')),
  text:c.textContent.replace(/\s+/g,' ').trim()})));
-const pick=(page,label)=>page.evaluate(l=>{const b=[...document.querySelectorAll('#tabs button')].find(x=>l instanceof RegExp?x.textContent.startsWith(l):x.textContent.startsWith(l));b.click();},label);
+const pick=(page,label)=>page.evaluate(l=>{const b=[...document.querySelectorAll('#players button')].find(x=>l instanceof RegExp?x.textContent.startsWith(l):x.textContent.startsWith(l));b.click();},label);
 const noOverflow=(page,msg)=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth).then(ok=>check(ok,msg));
 
 // 對比（WCAG）：文字色對它實際看到的背景（往上找第一個不透明背景）
@@ -86,26 +87,27 @@ async function synthetic(browser,engine,label,opts){
    check(k.second&&k.second.open===false&&/次要/.test(k.second.summary),`${tag} second 要是收起的 details、摘要有「次要」：${JSON.stringify(k.second)}`);
    check(k.second?.cue===null,`${tag} second 沒口訣就不顯示口訣`);
    check(!k.text.includes(SECOND.practice)||!(await page.locator('details.ov-second .ov-practice').isVisible()),`${tag} second 預設收起時內文看不到`);
+   await page.locator('#overall .ov-full').first().click();  // 一頁：次要收在「看全文」裡
    await page.locator('details.ov-second summary').click();
    check(await page.locator('details.ov-second .ov-title').isVisible()&&(await page.locator('details.ov-second .ov-title').textContent()).trim()===SECOND.title,`${tag} 展開 second 後看得到它的標題`);
    check(JSON.stringify((await cards(page))[0].second.jumps)===JSON.stringify(['看 #05']),`${tag} second 的 jump 按鈕`);
    // 標題比 second 大
    const sizes=await page.evaluate(()=>[parseFloat(getComputedStyle(document.querySelector('.ov-main .ov-title')).fontSize),parseFloat(getComputedStyle(document.querySelector('details.ov-second .ov-title')).fontSize)]);
    check(sizes[0]>sizes[1],`${tag} second 要小一號：${sizes}`);
-   // 位置：卡片在分數、方法說明之前（總覽最上面）
-   const y=await page.evaluate(()=>{const top=e=>e?e.getBoundingClientRect().top+scrollY:null;return {card:top(document.querySelector('.ov-card')),limits:top(document.querySelector('.ov-disclaimer')),scores:top(document.querySelector('.scores')),h2:top(document.querySelector('#overview h2'))};});
-   check(y.card!=null&&y.card>=y.h2&&(y.scores==null||y.card<y.scores)&&y.card<(y.limits??1e9),`${tag} 卡片要在總覽最上面（標題之下、分數與方法說明之上）：${JSON.stringify(y)}`);
+   // 位置：卡片在一頁最上面（影片、免責一行之上）
+   const y=await page.evaluate(()=>{const top=e=>e?e.getBoundingClientRect().top+scrollY:null;return {card:top(document.querySelector('.ov-card')),limits:top(document.querySelector('#oneLine')),stage:top(document.querySelector('#stage'))};});
+   check(y.card!=null&&y.card<y.stage&&y.card<(y.limits??1e9),`${tag} 卡片要在一頁最上面（影片與免責一行之上）：${JSON.stringify(y)}`);
   }
   // 免責一行與「數字的限制 ›」
-  const line=squash(await page.locator('#overview .ov-disclaimer').first().textContent().catch(()=>''));
+  const line=squash(await page.locator('#oneLine').first().textContent().catch(()=>''));
   check(line.includes(ONE_LINE),`${tag} 卡片下要有一行免責「${ONE_LINE}」，得到「${line}」`);
-  const btn=page.locator('#overview button.ov-limits-btn');
+  const btn=page.locator('#oneLine button.ov-limits-btn');
   check(await btn.count()===1&&/數字的限制/.test(await btn.textContent()),`${tag} 要有「數字的限制 ›」按鈕`);
   check((await btn.getAttribute('aria-expanded'))==='false',`${tag} 按鈕要有 aria-expanded=false`);
-  check(!(await page.locator('#methodNote').isVisible())&&!(await page.locator('#overview .disclaimer',{hasText:DISCLAIMER}).first().isVisible()),`${tag} 收起時方法說明與原本的免責段落看不到`);
+  check(!(await page.locator('#methodNote').isVisible())&&!(await page.locator('#limits .disclaimer',{hasText:DISCLAIMER}).first().isVisible()),`${tag} 收起時方法說明與原本的免責段落看不到`);
   await btn.click();
   check((await btn.getAttribute('aria-expanded'))==='true',`${tag} 展開後 aria-expanded=true`);
-  const full=squash(await page.locator('#overview').innerText());
+  const full=squash(await page.locator('#secLong').innerText());
   check(await page.locator('#methodNote').isVisible()&&/方法說明：/.test(await page.locator('#methodNote').textContent()),`${tag} 展開後方法說明要看得到`);
   check(full.includes(DISCLAIMER)&&/「3D估」為 3D 估計（單鏡頭，僅供參考），是模型從單一鏡頭估出的人體相對座標，不是多機校正的實測角度。/.test(full),`${tag} 展開後原本的免責與 3D 說明要一字不少`);
   await btn.press('Enter');  // 鍵盤也能收
@@ -120,11 +122,11 @@ async function synthetic(browser,engine,label,opts){
   const {page,context,errors}=await open(browser,{...opts,scen:'single'});
   await overview(page);
   await page.locator('#overall .ov-main button',{hasText:'對打 #13'}).click();
-  await page.waitForFunction(()=>TAB==='stroke'&&S?.id===12);
-  check(await page.evaluate(()=>location.hash==='#dsynthetic/stroke'&&S.id===12&&byNo(13)===S),`${tag} 點「對打 #13」要跳到單拍 #13（S.id===12），得到 ${await page.evaluate(()=>location.hash+' '+S?.id)}`);
+  await page.waitForFunction(()=>S?.id===12);  // 一頁：不換分頁，只換拍
+  check(await page.evaluate(()=>S.id===12&&byNo(13)===S),`${tag} 點「對打 #13」要跳到單拍 #13（S.id===12），得到 ${await page.evaluate(()=>location.hash+' '+S?.id)}`);
   await overview(page);
   await page.locator('#overall .ov-main button',{hasText:'自拋 #02'}).click();
-  await page.waitForFunction(()=>TAB==='stroke'&&S?.id===1);
+  await page.waitForFunction(()=>S?.id===1);
   check(await page.evaluate(()=>S.id===1),`${tag} 點「自拋 #02」要跳到單拍 #02`);
   // 鍵盤：從總覽按 Tab 找到 jump 按鈕，Enter 跳拍
   await overview(page);
@@ -133,7 +135,7 @@ async function synthetic(browser,engine,label,opts){
   const TAB_KEY=engine.name()==='webkit'&&process.platform==='darwin'?'Alt+Tab':'Tab';  // macOS 的 Safari／WebKit 預設 Tab 跳過按鈕，要 Option+Tab
   for(let i=0;i<60&&!hit;i++){await page.keyboard.press(TAB_KEY);hit=await page.evaluate(()=>{const a=document.activeElement;return a?.closest('#overall .ov-jump')?a.textContent.trim():null;});}
   check(hit==='對打 #13',`${tag} 鍵盤 Tab 要先到第一顆 jump 按鈕「對打 #13」，得到「${hit}」`);
-  if(hit){await page.keyboard.press('Enter');await page.waitForFunction(()=>TAB==='stroke'&&S?.id===12).catch(()=>{});check(await page.evaluate(()=>TAB==='stroke'&&S.id===12),`${tag} 鍵盤 Enter 要跳到 #13：${await page.evaluate(()=>TAB+' '+S?.id)}`);}
+  if(hit){await page.keyboard.press('Enter');await page.waitForFunction(()=>S?.id===12).catch(()=>{});check(await page.evaluate(()=>S.id===12),`${tag} 鍵盤 Enter 要跳到 #13：${await page.evaluate(()=>TAB+' '+S?.id)}`);}
   check(!errors.length,`${tag} jump 頁面錯誤 ${errors}`);
   await context.close();
  });
@@ -175,14 +177,14 @@ async function synthetic(browser,engine,label,opts){
   c=await cards(page);
   check(c.length===1&&c[0].name==='zed',`${tag} ${scen} 選 zed：只剩 zed 的卡，得到 ${JSON.stringify(c.map(x=>x.name))}`);
   if(scen==='two'&&c.length===1){  // zed 的 jump 對到 zed 的拍（final #13、#16）
-   await page.locator('#overall .ov-main button',{hasText:'zed #16'}).click();await page.waitForFunction(()=>TAB==='stroke'&&S?.id===15);
+   await page.locator('#overall .ov-main button',{hasText:'zed #16'}).click();await page.waitForFunction(()=>S?.id===15);
    check(await page.evaluate(()=>S.player==='zed'),`${tag} zed 的 jump 要到 zed 的拍`);
   }
   await page.evaluate(()=>go(DAY,'stroke'));await pick(page,'所有人');await overview(page);
   check((await cards(page)).length===2,`${tag} ${scen} 選回所有人：2 張`);
   // 已經在總覽時點人也要即時更新（呼叫按鈕 onclick）
   await page.evaluate(()=>{pfilter='ALL';});
-  await page.evaluate(()=>{[...document.querySelectorAll('#tabs button')].find(x=>x.textContent.startsWith('amy ')).click();});
+  await page.evaluate(()=>{[...document.querySelectorAll('#players button')].find(x=>x.textContent.startsWith('amy ')).click();});
   check((await cards(page)).length===1,`${tag} ${scen} 在總覽內改 pfilter 要立刻重畫`);
   check(!errors.length,`${tag} ${scen} 頁面錯誤 ${errors}`);
   await noOverflow(page,`${tag} ${scen} 無水平溢出`);
@@ -192,13 +194,15 @@ async function synthetic(browser,engine,label,opts){
  for(const scen of ['none','missing','nulled'])await sect(tag,async()=>{
   const {page,context,errors}=await open(browser,{...opts,scen});
   await overview(page);
-  check((await page.locator('#overview .ov-card').count())===0&&(await page.locator('#overview #overall .ov-card').count())===0,`${tag} ${scen}：沒有 overall 不能畫卡`);
-  check((await page.locator('#overview').innerText()).indexOf('這場先練一件事')<0,`${tag} ${scen}：不能出現空的「這場先練一件事」框`);
-  const el=page.locator('#overview .disclaimer:visible');
-  check(await el.count()===1&&(await el.textContent()).trim()===DISCLAIMER,`${tag} ${scen}：原本那句免責要維持可見（site_method_notes 的條件）`);
-  check(await page.locator('#methodNote').isVisible(),`${tag} ${scen}：方法說明維持可見`);
-  check(await page.locator('#overview button.ov-limits-btn').count()===0,`${tag} ${scen}：沒有卡就不要「數字的限制 ›」`);
-  check(/3D 估計.*單鏡頭.*僅供參考/.test(await page.locator('#overview').innerText()),`${tag} ${scen}：3D 估計說明維持`);
+  check((await page.locator('.ov-card').count())===0&&(await page.locator('#overall .ov-card').count())===0,`${tag} ${scen}：沒有 overall 不能畫卡`);
+  check((await page.locator('#lead').innerText()).indexOf('這場先練一件事')<0,`${tag} ${scen}：不能出現空的「這場先練一件事」框`);
+  // 一頁（UI 方案 A 第 5 步）：有沒有卡，第一屏都是一行免責＋「數字的限制 ›」，原本那句免責、方法說明、3D 說明在「長說明」
+  check(await page.locator('#oneLine').isVisible()&&squash(await page.locator('#oneLine').textContent()).includes(ONE_LINE)&&await page.locator('#oneLine button.ov-limits-btn').count()===1,`${tag} ${scen}：第一屏要有一行免責與「數字的限制 ›」`);
+  await page.locator('#oneLine button.ov-limits-btn').click();
+  const el=page.locator('#limits .disclaimer:visible');
+  check(await el.count()===1&&(await el.textContent()).trim()===DISCLAIMER,`${tag} ${scen}：打開後原本那句免責看得到（site_method_notes 的條件）`);
+  check(await page.locator('#methodNote').isVisible(),`${tag} ${scen}：打開後方法說明看得到`);
+  check(/3D 估計.*單鏡頭.*僅供參考/.test(await page.locator('#limits').innerText()),`${tag} ${scen}：3D 估計說明維持`);
   check(!errors.length,`${tag} ${scen} 頁面錯誤 ${errors}`);
   await context.close();
  });
@@ -218,8 +222,9 @@ async function synthetic(browser,engine,label,opts){
   for(const scen of ['single','insuf'])await sect(tag,async()=>{
    const {page,context,errors}=await open(browser,{...opts,scheme,scen});
    await overview(page);
+   await page.locator('#overall .ov-full').first().click();
    await page.locator('details.ov-second summary').first().click();
-   const rs=await contrast(page,'#overall .ov-card, #overall .ov-card :is(.ov-name,.ov-kicker,.ov-title,.ov-why,.ov-practice,.ov-cue,.ov-film,summary,button), #overview .ov-disclaimer, #overview .ov-limits-btn');
+   const rs=await contrast(page,'#overall .ov-card, #overall .ov-card :is(.ov-name,.ov-kicker,.ov-title,.ov-why,.ov-practice,.ov-cue,.ov-film,summary,button), #oneLine, #oneLine .ov-limits-btn');
    const bad=rs.filter(r=>r.ratio<4.5);
    check(rs.length>5&&bad.length===0,`${tag} ${scheme} ${scen}：文字對比要 ≥ 4.5：${JSON.stringify(bad)}（共量 ${rs.length} 個）`);
    check(!errors.length,`${tag} ${scheme} ${scen} 頁面錯誤 ${errors}`);
@@ -243,7 +248,7 @@ async function real(browser,engine,label,opts){
   if(!ov.length){
    without++;
    check(c.length===0,`${tag} ${id}：沒有 overall 不能畫卡，得到 ${c.length}`);
-   check(await page.locator('#overview button.ov-limits-btn').count()===0&&await page.locator('#methodNote').isVisible(),`${tag} ${id}：沒有 overall 的場次畫面不變（免責與方法說明仍可見）`);
+   check(await page.locator('#oneLine').isVisible(),`${tag} ${id}：沒有 overall 的場次也有一行免責`);
   }else{
    withCards++;
    check(c.length===ov.length,`${tag} ${id}：卡數要 ${ov.length}，得到 ${c.length}`);
@@ -253,7 +258,7 @@ async function real(browser,engine,label,opts){
    if(mainOnes.length){  // 第一顆 jump 要跳到那一拍
     const [n,lab]=mainOnes[0].main.jump[0];
     await page.locator('#overall .ov-main .ov-jump button',{hasText:lab}).first().click();
-    await page.waitForFunction(()=>TAB==='stroke'&&S);
+    await page.waitForFunction(n=>S?.id===n-1,n).catch(()=>{});
     check(await page.evaluate(n=>S.id===n-1,n),`${tag} ${id}：jump「${lab}」要到 #${n}，得到 id ${await page.evaluate(()=>S.id)}`);
     await overview(page,id);
    }

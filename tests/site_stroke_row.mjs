@@ -161,18 +161,19 @@ async function synthetic(browser,engine,label,opts){
   let r=await row(page);
   check(same(ids(r),EXPECT.two),`${tag} 兩人所有人：兩人的相關拍 ${EXPECT.two}，得到 ${ids(r)}`);
   check((await more(page))?.text==='全部 25 拍 ▾',`${tag} 兩人開關 N 是全部拍數：${(await more(page))?.text}`);
-  check((await kindTabs(page)).some(t=>/^amy /.test(t))&&(await kindTabs(page)).some(t=>/^zed /.test(t)),`${tag} 收起時球員切換仍看得到：${await kindTabs(page)}`);
-  await page.evaluate(()=>[...document.querySelectorAll('#tabs button')].find(b=>b.textContent.startsWith('amy ')).click());
+  const pb=await page.evaluate(()=>[...document.querySelectorAll('#players button')].filter(b=>b.offsetParent).map(b=>b.textContent.trim()));  // UI 方案 A 第 5 步：球員切換搬到 #players（第一屏最上面）
+  check(pb.some(t=>/^amy /.test(t))&&pb.some(t=>/^zed /.test(t)),`${tag} 收起時球員切換仍看得到：${pb}`);
+  await page.evaluate(()=>[...document.querySelectorAll('#players button')].find(b=>b.textContent.startsWith('amy ')).click());
   await page.evaluate(()=>load(0));await page.waitForFunction(()=>S.id===0);
   r=await row(page);
   check(same(ids(r),[0,1,2]),`${tag} 選 amy：只剩 amy 的相關拍 0,1,2：${ids(r)}`);
   check((await more(page))?.text==='全部 10 拍 ▾',`${tag} 選 amy 開關是「全部 10 拍 ▾」：${(await more(page))?.text}`);
-  await page.evaluate(()=>[...document.querySelectorAll('#tabs button')].find(b=>b.textContent.startsWith('zed ')).click());
+  await page.evaluate(()=>[...document.querySelectorAll('#players button')].find(b=>b.textContent.startsWith('zed ')).click());
   await page.evaluate(()=>load(12));await page.waitForFunction(()=>S.id===12);
   r=await row(page);
   check(same(ids(r),[10,11,12,15]),`${tag} 選 zed：只剩 zed 的相關拍 10,11,12,15：${ids(r)}`);
   check(r.every(x=>/zed/.test(x.text)),`${tag} 兩人場次每顆標球員名：${JSON.stringify(r.map(x=>x.text))}`);
-  await page.evaluate(()=>[...document.querySelectorAll('#tabs button')].find(b=>b.textContent.startsWith('所有人')).click());
+  await page.evaluate(()=>[...document.querySelectorAll('#players button')].find(b=>b.textContent.startsWith('所有人')).click());
   check(same(ids(await row(page)),EXPECT.two),`${tag} 選回所有人`);
   check(!errors.length,`${tag} 兩人頁面錯誤 ${errors}`);
   await context.close();
@@ -212,13 +213,13 @@ async function synthetic(browser,engine,label,opts){
    const vis=await page.evaluate(()=>{const b=document.getElementById('strokes'),c=b.querySelector('.cur').getBoundingClientRect(),r=b.getBoundingClientRect(),m=b.querySelector('.strokes-more').getBoundingClientRect();return c.left>=r.left-1&&c.right<=Math.min(r.right,m.left)+1;});  // 固定在右端的開關會蓋住它左邊那塊，不算可見範圍
    check(vis,`${tag} #${id+1} 當目前這拍時要捲進列的可見範圍（不能被固定在右端的開關蓋住）`);
   }
-  // 從總覽的 jump 鈕跳過來：單拍卡那時還是 hidden，量不到位置；切過去之後目前這拍也要在可見範圍
-  await page.evaluate(()=>{load(1);go(DAY,'overview');});await page.waitForFunction(()=>TAB==='overview'&&document.querySelector('#overall .ov-jump button'));
+  // 從主軸卡的 jump 鈕跳過來（一頁：卡片和拍子列在同一頁）：目前這拍也要在可見範圍
+  await page.evaluate(()=>{load(1);});await page.waitForFunction(()=>S?.id===1&&document.querySelector('#overall .ov-jump button'));
   await page.evaluate(()=>{document.getElementById('strokes').scrollLeft=0;});
   await page.locator('#overall .ov-main button',{hasText:'對打 #13'}).click();
-  await page.waitForFunction(()=>TAB==='stroke'&&S?.id===12);
+  await page.waitForFunction(()=>S?.id===12);
   const vis2=await page.evaluate(()=>{const b=document.getElementById('strokes'),c=b.querySelector('.cur').getBoundingClientRect(),r=b.getBoundingClientRect(),m=b.querySelector('.strokes-more').getBoundingClientRect();return c.width>0&&c.left>=r.left-1&&c.right<=Math.min(r.right,m.left)+1;});
-  check(vis2,`${tag} 從總覽 jump 到 #13：目前這拍要捲進列的可見範圍`);
+  check(vis2,`${tag} 從主軸卡 jump 到 #13：目前這拍要捲進列的可見範圍`);
   await page.evaluate(()=>{document.getElementById('strokes').scrollLeft=0;});
   const sl=await page.evaluate(()=>{const b=document.getElementById('strokes');b.scrollLeft=40;return b.scrollLeft;});
   check(sl>0,`${tag} 列真的能橫向捲動：scrollLeft=${sl}`);

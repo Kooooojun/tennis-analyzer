@@ -132,7 +132,7 @@ for(const [engine,type] of Object.entries({chromium,webkit})){
    assert(count>0,'串流片段已完整緩衝時，篩選後必須重新預載鄰拍');
   },
   async tabReturn(page){
-   await page.evaluate(()=>go(DAY,'overview'));await page.waitForFunction(()=>!v.offsetParent);await page.waitForTimeout(700);
+   await page.evaluate(()=>{location.hash='#home';});await page.waitForFunction(()=>!v.offsetParent);await page.waitForTimeout(700);
    const t=Date.now();await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>v.offsetParent&&v.readyState>=2&&!v.seeking);
    assert(Date.now()-t<700,'返回已完整緩衝的片段不得重新下載');
   },

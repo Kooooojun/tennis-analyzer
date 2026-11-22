@@ -60,8 +60,9 @@ async function open(browser,{viewport}){
  await page.goto(f.url);await page.waitForSelector('body.ready');
  return {page,context,errors};
 }
-const goCharts=async(page,day)=>{await page.evaluate(d=>go(d,'charts'),day);try{await page.waitForFunction(d=>DAY===d&&TAB==="charts"&&document.querySelectorAll("table.trend").length>0,day,{timeout:5000});}catch(e){console.log(await page.evaluate(()=>JSON.stringify({DAY,TAB,hash:location.hash,keys:DAY_KEYS,tables:document.querySelectorAll("table.trend").length})));throw e;}};
-const pick=(page,prefix)=>page.evaluate(p=>{const b=[...document.querySelectorAll('#tabs button')].find(x=>x.textContent.startsWith(p));b.click();},prefix);
+// UI 方案 A 第 5 步：比較表從圖表分頁搬到「分數與走勢」展開區（別名 overview）
+const goCharts=async(page,day)=>{await page.evaluate(d=>go(d,'overview'),day);try{await page.waitForFunction(d=>DAY===d&&TAB==="overview"&&document.querySelectorAll("table.trend").length>0,day,{timeout:5000});}catch(e){console.log(await page.evaluate(()=>JSON.stringify({DAY,TAB,hash:location.hash,keys:DAY_KEYS,tables:document.querySelectorAll("table.trend").length})));throw e;}};
+const pick=(page,prefix)=>page.evaluate(p=>{const b=[...document.querySelectorAll('#players button')].find(x=>x.textContent.startsWith(p));b.click();},prefix);
 
 async function synthetic(page,tag,errors){
  // 1) 多人場次 s2、所有人：兩張表，me（20→10 拍）先；pal 第二張。標題加名字。
@@ -81,11 +82,11 @@ async function synthetic(page,tag,errors){
  if(t.length===1)tableMatches(t[0],EXPECT.pal,tag+' s2 選 pal');
  // 3) 已經在圖表分頁時改 pfilter 要立刻重畫（按鈕的 onclick 現場呼叫）
  await page.evaluate(()=>{pfilter='ALL';});
- await page.evaluate(()=>{const b=[...document.querySelectorAll('#tabs button')].find(x=>x.textContent.startsWith('我'));b.click();});
+ await page.evaluate(()=>{const b=[...document.querySelectorAll('#players button')].find(x=>x.textContent.startsWith('我'));b.click();});
  t=await readTables(page);
  check(t.length===1&&t[0].title==='我・3 場比較',`${tag} 圖表分頁內改選「我」要立刻重畫：得到 ${JSON.stringify(t.map(x=>x.title))}`);
  if(t.length===1)tableMatches(t[0],EXPECT.me,tag+' s2 選我（圖表分頁內）');
- await page.evaluate(()=>{const b=[...document.querySelectorAll('#tabs button')].find(x=>x.textContent==='所有人');b.click();});
+ await page.evaluate(()=>{const b=[...document.querySelectorAll('#players button')].find(x=>x.textContent==='所有人');b.click();});
  t=await readTables(page);
  check(t.length===2,`${tag} 圖表分頁內改回所有人要重畫成 2 張，得到 ${t.length}`);
  // 4) 單人場次（s1：沒有 player 欄＝舊場次；s4：player null）：1 張，標題沒有名字，欄位只有 me 的場次
