@@ -1906,6 +1906,7 @@ function route(){
   drawOverall();  // 卡片現在看得到：「看全文」要量「為什麼」有沒有超過兩行
   shownChanged();
   if(["overview","charts","advice"].includes(TAB)) toSec(SECS.find(sec=>isOpen(sec.id)));  // 這三個舊分頁沒有播放器，捲到它們的區；影片、每一拍本來就是播放器在最上面
+  else if(TAB){ const r=$("stage").getBoundingClientRect(); if(r.top<0||r.bottom>innerHeight) scrollTo({top:Math.max(0,document.querySelector("main").getBoundingClientRect().top+scrollY)}); }  // 影片、每一拍：播放器不在畫面內（橫拿手機被主軸卡擠下去）才捲到它，同 load()
 }
 addEventListener("hashchange",route);
 

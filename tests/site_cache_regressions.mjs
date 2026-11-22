@@ -116,7 +116,7 @@ for(const [name,engine] of Object.entries({chromium,webkit})){
   async prefetchOrder(page){
    const requests=[];page.on('request',r=>{if(new URL(r.url()).pathname.endsWith('.mp4'))requests.push(r.url());});
    await page.waitForTimeout(200);assert.equal(requests.length,0,'home fetches none');
-   await page.evaluate(()=>go(DAY_KEYS[0],'overview'));await page.waitForFunction(()=>S);await page.waitForTimeout(200);const main=await page.evaluate(()=>new URL(S.src,location.href).href);assert(requests.every(u=>u===main),'one page (UI A5): the player is always on it, so only its clip is fetched at first (was: overview fetches none)');
+   await page.evaluate(()=>go(DAY_KEYS[0],'overview'));await page.waitForFunction(()=>S);const main=await page.evaluate(()=>new URL(S.src,location.href).href);for(let t=0;t<50&&!requests.length;t++)await page.waitForTimeout(100);assert.equal(requests[0],main,'one page (UI A5): the player is always on it, so its own clip is fetched first (was: overview fetches none)');
    await page.evaluate(()=>go(DAY,'stroke'));await page.waitForFunction(()=>{if(!S)return false;const list=visible(),i=list.indexOf(S);return CLIPS.get(list[(i-1+list.length)%list.length].src)?.url;});
    const expected=await page.evaluate(()=>{const list=visible();const i=list.indexOf(S);return [S.src,list[(i+1)%list.length].src,list[(i-1+list.length)%list.length].src].map(u=>new URL(u,location.href).href);});assert.deepEqual([...new Set(requests)].slice(0,3),expected);
   },
