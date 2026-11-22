@@ -226,6 +226,9 @@ async function synthetic(browser,engine,label,opts){
   // Codex P2：準備時間被截斷的拍標「≥」，也不算進中位數（同單拍卡 prepLow）
   t=await o.page.evaluate(()=>{DAYS[DAY].overall=[{player:'me',main:{title:'t',why:'w',cite:[{player:'me',kind:'FH',field:'prep',stat:'median',value:0.5}]}}];const fh=ALL.filter(x=>x.kind===S.kind);fh.forEach((x,i)=>{x.prep=i%3?1.0:0.5;x.prep_trunc=!!(i%3);});S.prep=1.0;S.prep_trunc=true;drawAxis();return $('axisLine').textContent;});
   check(/準備時間 ≥ 1\.00 秒/.test(t)&&/中位 0\.50 秒/.test(t),`${tag} 截斷的準備時間要標「≥」、中位數不算截斷值（0.50）：「${t}」`);
+  // Codex P2：擊球點、手腕高度的中位數不算手腕看不清楚（vis < 0.5 或沒有）的拍（同 score.py _value）
+  t=await o.page.evaluate(()=>{DAYS[DAY].overall=[{player:'me',main:{title:'t',why:'w',cite:[{player:'me',kind:'FH',field:'contact_fwd',stat:'median',value:0.5}]}}];const fh=ALL.filter(x=>x.kind===S.kind);fh.forEach((x,i)=>{const good=i%3===0;x.contact_fwd=good?0.5:2.0;x.vis=good?0.9:i%3===1?0.2:undefined;});S.vis=0.9;S.contact_fwd=0.7;drawAxis();return $('axisLine').textContent;});
+  check(/擊球點在髖前 0\.70/.test(t)&&/中位 0\.50/.test(t),`${tag} 擊球點中位數只算手腕看得清楚的拍（0.50）：「${t}」`);
   // 審查修正：視窗變窄後「為什麼」超過兩行，要出「看全文」（桌機開、縮到手機寬）
   if(!opts.mobile){
    await o.page.evaluate(()=>{DAYS[DAY].overall=[{player:'me',main:{title:'只有為什麼',why:'擊球點在身前一點，'.repeat(11),cite:[]}}];drawOverall();});
