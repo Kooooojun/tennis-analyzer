@@ -57,6 +57,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45  # CPU ball is ~1 s/frame on runners
+    env:
+      WINDOWS_FFMPEG_VERSION: "8.0.1"
     defaults:
       run:
         shell: bash
@@ -66,14 +68,38 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3
+        id: ffmpeg-cache
+        if: runner.os == 'Windows'
+        with:
+          path: ${{ runner.temp }}/ffmpeg-${{ env.WINDOWS_FFMPEG_VERSION }}-essentials_build
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-gyan-essentials-${{ env.WINDOWS_FFMPEG_VERSION }}
+      - name: Download Windows ffmpeg
+        if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: |
+          cd "$(cygpath -u "$RUNNER_TEMP")"
+          archive="ffmpeg-${WINDOWS_FFMPEG_VERSION}-essentials_build.zip"
+          curl --fail --silent --show-error --location --retry 2 --connect-timeout 15 --max-time 120 \
+            --output "$archive" "https://github.com/GyanD/codexffmpeg/releases/download/${WINDOWS_FFMPEG_VERSION}/${archive}"
+          printf '%s  %s\n' 'e2aaeaa0fdbc397d4794828086424d4aaa2102cef1fb6874f6ffd29c0b88b673' "$archive" | sha256sum --check
+          python -m zipfile -e "$archive" .
+      - name: Add Windows ffmpeg to PATH
+        if: runner.os == 'Windows'
+        run: |
+          bin="$(cygpath -u "$RUNNER_TEMP")/ffmpeg-${WINDOWS_FFMPEG_VERSION}-essentials_build/bin"
+          test -f "$bin/ffmpeg.exe"
+          test -f "$bin/ffprobe.exe"
+          cygpath -w "$bin" >> "$GITHUB_PATH"
       - name: ffmpeg
         run: |
           case "$RUNNER_OS" in
             Linux) sudo apt-get update -q && sudo apt-get install -y -q ffmpeg fonts-noto-cjk libegl1 libgles2 ;;  # CJK font for annotate.py; EGL/GLES for mediapipe
             macOS) brew install ffmpeg ;;
-            Windows) choco install ffmpeg -y --no-progress ;;
           esac
           ffmpeg -version | head -1
+          if [ "$RUNNER_OS" = Windows ]; then
+            ffmpeg -encoders | grep -w libx264
+          fi
       - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3
         with:
           path: models
