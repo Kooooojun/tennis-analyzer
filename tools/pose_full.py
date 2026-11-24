@@ -114,7 +114,7 @@ def describe(lm, img):
     return dict(pos=(hp[0] / H, hp[1] / H), scale=L / H, color=lab)
 
 
-METHOD = "4"  # bump when the pose algorithm changes: prep.py re-runs pose when work/<video>/pose_method.txt differs
+METHOD = "5"  # bump when the pose algorithm changes: prep.py re-runs pose when work/<video>/pose_method.txt differs
 CROP_SIDE, CROP_MIN, TILE, TILE_EVERY = 640, 360, 600, 5  # crop scaled to 640 px; box >= 360 px; 600 px search tiles, searched every 5th frame
 
 
@@ -194,14 +194,146 @@ def jumps(P, aspect, k=0.8):
         return np.hypot(*(h[1:] - h[:-1]).T) > k * np.fmax(L[1:], L[:-1])
 
 
+_LEFT = [1, 2, 3] + list(range(7, 32, 2))
+_RIGHT = [4, 5, 6] + list(range(8, 33, 2))
+_UPPER = np.array([[11, 12], [13, 14], [15, 16], [17, 18], [19, 20], [21, 22]])
+_LOWER = [[23, 24], [25, 26], [27, 28]]
+
+
+def _pair_distance(a, b):
+    return np.linalg.norm(a - b, axis=-1).sum(axis=-1)
+
+
+def _has_nearby_flip(edges, a, b, window):
+    # The boundary flips at a and b belong to this candidate.
+    left = edges.searchsorted(a)
+    right = edges.searchsorted(b, side="right")
+    return (left > 0 and a - edges[left - 1] <= window
+            or right < len(edges) and edges[right] - b <= window)
+
+
+def _profile_swaps(P, W, aspect, fps):
+    """Bounded profile reversals with stable shoulder/hip directions on both sides."""
+    torso = np.array([[11, 12], [23, 24]])
+    q = W[:, torso]
+    horizontal = (q[:, :, 1] - q[:, :, 0])[..., [0, 2]]
+    width = np.linalg.norm(horizontal, axis=-1)
+    direction = horizontal / np.maximum(width[..., None], 1e-6)
+    _, size = hip_torso(P, aspect)
+    projected = (P[:, torso[:, 1], :2] - P[:, torso[:, 0], :2]) * (aspect, 1)
+    profile = (width >= 0.08).all(1) & (np.abs(direction[..., 1]) >= 0.7).all(1)
+    profile &= (np.linalg.norm(projected, axis=2) <= 0.3 * size[:, None]).all(1)
+    profile &= (direction[:, 0] * direction[:, 1]).sum(1) >= 0.75
+    profile &= (P[:, torso, 2].max(2) >= 0.5).all(1) & (size > 0)
+    same = _pair_distance(q[1:], q[:-1])
+    swap = _pair_distance(q[1:, :, ::-1], q[:-1])
+    match = swap < 0.5 * same
+    edges = np.flatnonzero(match.all(1)) + 1
+    cut = jumps(P, aspect)
+    limb_pairs = [[13, 14], [15, 16], [25, 26], [27, 28]]
+    limbs = W[:, limb_pairs]
+    image_limbs = P[:, limb_pairs, :2] * (aspect, 1)
+    anchor = max(2, round(0.08 * fps))
+    limit = round(0.5 * fps)
+    # shortcut: require two clear transitions and nearby anchors; persistent reversals need independent orientation.
+    for a, b in zip(edges[:-1], edges[1:]):
+        if b - a > limit or a < anchor or b + anchor > len(P): continue
+        if _has_nearby_flip(edges, a, b, limit): continue
+        if not profile[a - anchor:b + anchor].all() or cut[a - anchor:b + anchor - 1].any(): continue
+        if match[a:b - 1].any(): continue
+        ref = direction[a - 1]
+        if not ((direction[a - anchor:a] * ref).sum(2) >= 0.85).all(): continue
+        if not ((direction[b:b + anchor] * ref).sum(2) >= 0.85).all(): continue
+        if not ((direction[a:b] * ref).sum(2) <= -0.85).all(): continue
+        # A torso switch alone cannot justify relabeling arms or legs.
+        if not (P[[a - 1, a, b - 1, b]][:, limb_pairs, 2].max(2) >= 0.5).all(): continue
+        segment = limbs[a - 1:b + 1]
+        if not np.isfinite(segment).all(): continue
+        reverse = _pair_distance(segment[:-1], segment[1:, :, ::-1]) < 0.5 * _pair_distance(segment[:-1], segment[1:])
+        if not reverse[[0, -1]].all() or reverse[1:-1].any(): continue
+        edges_xy = image_limbs[[a - 1, b - 1]]
+        keep_xy = _pair_distance(edges_xy, image_limbs[[a, b]])
+        swap_xy = _pair_distance(edges_xy, image_limbs[[a, b], :, ::-1])
+        if ((keep_xy < 0.5 * swap_xy) & (swap_xy > 0.03 * size[[a, b], None])).any(): continue
+        yield a, b
+
+
+def _upper_swaps(P, W, aspect, fps):
+    """Paired shoulder/elbow/hand transitions while the lower body keeps its labels."""
+    q = P[:, _UPPER[:3], :2] * (aspect, 1)
+    z = W[:, _UPPER[:3]]
+    margins = (0.65, 0.5, 0.5)
+    def matching(x, ratio):
+        same = _pair_distance(x[1:], x[:-1])
+        reverse = _pair_distance(x[1:, :, ::-1], x[:-1])
+        return reverse < ratio * same
+    image = matching(q, margins)
+    projected = matching(z[..., :2], margins)
+    edges = np.flatnonzero(image.all(1) & projected.all(1) & ~matching(W[:, _LOWER], 1).any(1)) + 1
+    arm_edges = np.flatnonzero(image[:, 1:].any(1)) + 1
+    cut = jumps(P, aspect)
+    _, L = hip_torso(P, aspect)
+    valid = (P[:, _UPPER[:3], 2].max(2) >= 0.5).all(1) & (L > 0)
+    limit = max(1, round(0.6 * fps))
+    anchor = max(2, round(0.08 * fps))
+    world = matching(z, margins)
+    for a, b in zip(edges[:-1], edges[1:]):
+        if b - a > limit or a < 2 or b + 1 >= len(P): continue
+        if _has_nearby_flip(edges, a, b, limit): continue
+        if b - a < anchor and _has_nearby_flip(arm_edges, a, b, round(0.5 * fps)): continue
+        if not valid[a - 2:b + 2].all() or cut[a - 2:b + 1].any(): continue
+        if not np.isfinite(q[a - 2:b + 2]).all() or not np.isfinite(z[a - 2:b + 2]).all(): continue
+        if image[a - 2:a - 1, 1:].any() or image[b:b + 1, 1:].any() or image[a:b - 1, 1:].any(): continue
+        arms = q[:, 1:]
+        if not (_pair_distance(arms[a - 1], arms[b]) < 0.5 * _pair_distance(arms[a - 1], arms[b, :, ::-1])).all(): continue
+        if not (_pair_distance(arms[a], arms[b - 1]) < 0.5 * _pair_distance(arms[a], arms[b - 1, :, ::-1])).all(): continue
+        yield a, b, world[[a - 1, b - 1]].all() and not matching(z[a:b], 1).any()
+
+
+def _isolated_arm_swaps(P, W, aspect, fps):
+    """Recover an isolated upper-body reversal when one immediate anchor is distorted."""
+    xy = P[:, _UPPER[:3], :2] * (aspect, 1)
+    projected = W[:, _UPPER[:3], :2]
+    lower = (P[:, _LOWER, :2] * (aspect, 1), W[:, _LOWER])
+    shift = max(1, round(fps / 60))
+    span = 4 * shift
+    cut = jumps(P, aspect)
+    window = max(1, round(0.6 * fps))
+    edges = np.flatnonzero((_pair_distance(xy[1:, 1:, ::-1], xy[:-1, 1:]) <
+                            0.5 * _pair_distance(xy[1:, 1:], xy[:-1, 1:])).all(1)) + 1
+    for edge in edges:
+        for f in (edge - 1, edge):
+            if _has_nearby_flip(edges, f, f + 1, window): continue
+            if f < span or f + span >= len(P) or cut[f - span:f + span].any(): continue
+            far = [f - span, f + span]
+            if not (_pair_distance(xy[f, 1:, ::-1], xy[far, 1:]) <
+                    0.5 * _pair_distance(xy[f, 1:], xy[far, 1:])).all(): continue
+            if not (P[[f, *far]][:, _UPPER[:3], 2].max(2) >= 0.5).all(): continue
+            # Each side must yield a close reference even if the nearest frame is distorted.
+            near = np.array([[f - shift, f - 2 * shift], [f + shift, f + 2 * shift]])
+            image_keep = _pair_distance(xy[f], xy[near])
+            image_swap = _pair_distance(xy[f, :, ::-1], xy[near])
+            world_keep = _pair_distance(projected[f], projected[near])
+            world_swap = _pair_distance(projected[f, :, ::-1], projected[near])
+            arms = (image_swap[..., 1:] < 0.5 * image_keep[..., 1:]).all(2)
+            arms &= world_swap[..., 1:].sum(2) < 0.65 * world_keep[..., 1:].sum(2)
+            for x in lower:
+                arms &= (_pair_distance(x[f], x[near]) < _pair_distance(x[f, :, ::-1], x[near])).all(2)
+            shoulders_flip = (image_swap[..., 0] < 0.75 * image_keep[..., 0]) & (world_swap[..., 0] < 0.75 * world_keep[..., 0])
+            shoulders_keep = (image_keep[..., 0] < image_swap[..., 0]) & (world_keep[..., 0] < 0.75 * world_swap[..., 0])
+            if (arms & shoulders_flip).any(1).all():
+                yield f, 0
+            elif (arms & shoulders_keep).any(1).all():
+                yield f, 1
+
+
 def correct_lr(P, W, aspect, fps=60):
-    """Repair brief elbow/hand label reversals with reliable image poses on both sides, before fps interpolation.
-    World labels change only when that independently estimated sequence has no internal switch and fits both boundaries.
-    Long intervals and whole-body reversals have no trustworthy absolute reference and are left alone."""
+    """Repair supported label reversals offline, before fps interpolation when running pose_full."""
     p, w = P.copy(), W.copy()
     limit = max(1, round(0.2 * fps))
+    long_limit = max(limit, round(0.6 * fps))
     _, L = hip_torso(P, aspect); cut = jumps(P, aspect)
-    def distance(a, b): return np.linalg.norm(a - b, axis=-1).sum(axis=-1)
+    distance = _pair_distance
     body_flip = np.zeros(max(0, len(P) - 1), bool)
     for xyz, scale in ((P[:, :, :2] * (aspect, 1), L),
                        (W, np.linalg.norm(W[:, [11, 12]].mean(1) - W[:, [23, 24]].mean(1), axis=1))):
@@ -214,9 +346,9 @@ def correct_lr(P, W, aspect, fps=60):
         gap = np.linalg.norm(q[:, 0] - q[:, 1], axis=1)
         flip = (swap < 0.5 * same) & (gap[:-1] > 0.3 * L[:-1]) & (gap[1:] > 0.3 * L[1:])
         edges = np.flatnonzero(flip) + 1
-        for k, (a, b) in enumerate(zip(edges[:-1], edges[1:])):
-            if b - a > limit or a < 2 or b + 1 >= len(P): continue
-            if (k and a - edges[k - 1] <= limit) or (k + 2 < len(edges) and edges[k + 2] - b <= limit): continue
+        for a, b in zip(edges[:-1], edges[1:]):
+            if b - a > long_limit or a < 2 or b + 1 >= len(P): continue
+            if _has_nearby_flip(edges, a, b, limit): continue
             if cut[a - 1:b].any(): continue
             if body_flip[a - 1:b].any(): continue
             if not np.isfinite(q[a - 1:b + 1]).all() or not np.all(L[a - 1:b + 1] > 0): continue
@@ -225,14 +357,40 @@ def correct_lr(P, W, aspect, fps=60):
             if distance(q[a - 1], q[b]) >= distance(q[a - 1], q[b, ::-1]): continue
             parent = p[a:b, [left[0] - 2, right[0] - 2], :2] * (aspect, 1)
             if not np.isfinite(parent).all(): continue
-            if np.any(distance(parent, q[a:b, ::-1]) > 2 * distance(parent, q[a:b])): continue
-            p[a:b, left + right] = P[a:b, right + left]
+            keep_parent = distance(parent, q[a:b])
+            swap_parent = distance(parent, q[a:b, ::-1])
+            if np.any(swap_parent > 2 * keep_parent): continue
+            if left[0] == 13:
+                hand = P[a:b, [15, 16], :2] * (aspect, 1)
+                keep_arm = keep_parent + distance(hand, q[a:b])
+                swap_arm = swap_parent + distance(hand, q[a:b, ::-1])
+                if np.any(swap_arm > 1.5 * keep_arm): continue
             z = W[:, [left[0], right[0]]]
-            if not np.isfinite(z[a - 1:b + 1]).all(): continue
-            if np.any(distance(z[a + 1:b, ::-1], z[a:b - 1]) < distance(z[a + 1:b], z[a:b - 1])): continue
             # Image and world estimates can disagree about which frames have reversed labels.
-            if all(distance(z[i - 1], z[i, ::-1]) < 0.5 * distance(z[i - 1], z[i]) for i in (a, b)):
+            world_flip = (np.isfinite(z[a - 1:b + 1]).all()
+                          and not np.any(distance(z[a + 1:b, ::-1], z[a:b - 1]) < distance(z[a + 1:b], z[a:b - 1]))
+                          and all(distance(z[i - 1], z[i, ::-1]) < 0.5 * distance(z[i - 1], z[i]) for i in (a, b)))
+            if b - a > limit:
+                if not world_flip or not (P[a:b, [left[0], right[0]], 2].max(1) >= 0.5).all(): continue
+                # For longer intervals insist on anatomical support even in the interior.
+                if not (swap_parent < 0.8 * keep_parent).all(): continue
+                parent3d = w[a:b, [left[0] - 2, right[0] - 2]]
+                if not (distance(parent3d, z[a:b, ::-1]) < 0.8 * distance(parent3d, z[a:b])).all(): continue
+                if left[0] == 13:
+                    wrist = W[a:b, [15, 16]]
+                    if not (distance(wrist, z[a:b, ::-1]) < 0.8 * distance(wrist, z[a:b])).all(): continue
+            p[a:b, left + right] = P[a:b, right + left]
+            if world_flip:
                 w[a:b, left + right] = W[a:b, right + left]
+    for a, b, world_flip in _upper_swaps(P, W, aspect, fps):
+        p[a:b, _UPPER.ravel()] = P[a:b, _UPPER[:, ::-1].ravel()]
+        w[a:b, _UPPER.ravel()] = W[a:b, (_UPPER[:, ::-1] if world_flip else _UPPER).ravel()]
+    for a, b in _profile_swaps(P, W, aspect, fps):
+        p[a:b, _LEFT + _RIGHT] = P[a:b, _RIGHT + _LEFT]
+        w[a:b, _LEFT + _RIGHT] = W[a:b, _RIGHT + _LEFT]
+    for f, first in dict(_isolated_arm_swaps(p, W, aspect, fps)).items():
+        pairs = _UPPER[first:]
+        p[f, pairs.ravel()] = p[f, pairs[:, ::-1].ravel()]
     return p, w
 
 

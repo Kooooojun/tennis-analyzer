@@ -1,4 +1,4 @@
-"""逐機以正式 METHOD 4 重算：ct_lr_run.py <cam> <參考 npz 目錄> <本機輸出目錄>。"""
+"""逐機以目前的正式姿態方法重算：ct_lr_run.py <cam> <參考 npz 目錄> <本機輸出目錄>。"""
 import datetime
 from contextlib import contextmanager
 import json
@@ -42,7 +42,7 @@ def heavy_lock(lock):
 
 def main():
     cam, refdir, outdir = int(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
-    assert cam in (1, 2, 3, 4) and METHOD == "4"
+    assert cam in (1, 2, 3, 4)
     ref = np.load(refdir / f"c{cam}.npz")
     src = next((Path(CAL).parents[1] / Path(CAL).name).glob(f"*_X_{cam}_*.mp4"))
     h, m, s = map(int, src.stem.split("_")[3:6])
