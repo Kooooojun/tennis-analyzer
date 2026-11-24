@@ -45,7 +45,10 @@ class CacheTests(unittest.TestCase):
                     windows = np.load(args[args.index("--windows") + 1])
                     self.assertEqual(windows.tolist(), expected_windows)
                     np.save(d / "ball.npy", np.full((60, 3), np.nan, np.float32))
-                elif script == "events.py": np.save(d / "events.npy", np.empty((0, 3)))
+                elif script == "events.py":
+                    np.save(d / "events.npy", np.empty((0, 3)))
+                    if not np.load(d / "sounds.npy").size:
+                        (d / "lag.txt").write_text("0 pose\n", encoding="utf-8")
                 else: self.fail(script)
 
             with patch.object(prep, "R", root), patch.object(prep, "need_ffmpeg"), \
@@ -82,6 +85,18 @@ class CacheTests(unittest.TestCase):
                     capture.return_value.get.return_value = 0
                     with self.assertRaises(SystemExit) as error: prep.main(["sample", "2"])
                     self.assertIn("cannot read", str(error.exception))
+                # An empty cache from the old silent path is rebuilt using pose windows.
+                np.save(d / "sounds.npy", np.empty((0, 4)))
+                np.save(d / "ball.npy", np.full((60, 3), np.nan))
+                np.save(d / "events.npy", np.empty((0, 3)))
+                (d / "lag.txt").write_text("0 fallback\n", encoding="utf-8")
+                calls.clear()
+                expected_windows = [[3, 60]]
+                prep.main(["sample", "2"])
+                self.assertEqual(calls, ["ball.py", "events.py"])
+                calls.clear()
+                prep.main(["sample", "2"])
+                self.assertEqual(calls, [])
 
 
 if __name__ == "__main__": unittest.main()

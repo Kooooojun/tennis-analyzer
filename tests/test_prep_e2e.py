@@ -87,14 +87,14 @@ def test_empty_audio():
     for value in ("0", "-1", "N/A", None):
         calls, err = audio_commands([{"codec_type": "video", "duration": "1.25"}, {"codec_type": "audio", "duration": value}])
         silent = value in ("0", "-1")
-        assert ("這支影片沒有聲音" in err) == silent, (value, err)
+        assert ("這支影片沒有音軌" in err) == silent, (value, err)
         assert len(calls) == 2 and all(("anullsrc=r=16000:cl=mono" in c) == silent for c in calls), calls
 
 
 def test_duration_fallback():
     for value in ("N/A", None, "0", "nan"):
         calls, err = audio_commands([{"codec_type": "video", "duration": value}])
-        assert "這支影片沒有聲音" in err and len(calls) == 2, (value, err)
+        assert "這支影片沒有音軌" in err and len(calls) == 2, (value, err)
         assert all(c[c.index("-t") + 1] == "1.25" for c in calls), calls
 
 
@@ -254,7 +254,7 @@ subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=6
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", str(silent / "clip.mp4")], check=True)
 os.utime(silent / "clip.mp4", (old, old))
 r = prep("silent", "1")
-assert r.returncode == 0 and r.stderr.count("這支影片沒有聲音：擊球偵測要靠聲音，這支可能抓不到任何擊球") == 1, r.stderr
+assert r.returncode == 0 and r.stderr.count("這支影片沒有音軌：會用姿態與球軌跡找擊球候選，可能漏拍或誤判，請逐拍確認") == 1, r.stderr
 assert "來源比例 4:3" in r.stderr
 D = R / "work" / "silent" / "clip"
 cap = cv2.VideoCapture(str(D / "proxy.mp4")); ok, frame = cap.read(); cap.release()
@@ -271,6 +271,7 @@ for name in ("audio.f32", "audio_hp.f32"):
     audio = np.fromfile(D / name, dtype=np.float32)
     assert len(audio) == 6400 and not audio.any(), (name, audio.shape)
 assert np.load(D / "sounds.npy").shape == (0, 4) and np.load(D / "events.npy").shape == (0, 3)
+assert (D / "lag.txt").read_text(encoding="utf-8").strip() == "0 pose"
 assert np.load(D / "ball.npy").shape == (24, 3) and np.isnan(np.load(D / "ball.npy")).all()
 assert not list(D.glob("*.part"))
 before = {p: p.stat().st_mtime_ns for p in D.iterdir() if p.name not in ALWAYS}
