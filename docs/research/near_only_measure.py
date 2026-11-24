@@ -29,7 +29,7 @@ def gates(d, times):
         i = int(np.argmin(np.abs(S[:, 0] - lag / E.FPS - t))); f = int(round(t * E.FPS))
         win = hand[f - 6:f + 3]; r = raw[f - 20:f + 6]
         print(f"  {t:.2f}s sound {i}: bb {S[i, 3]:.1f} hand {np.nanmax(win) if not np.isnan(win).all() else np.nan:.1f} "
-              f"nan {int(np.isnan(win).sum())}/9 peak {np.nanmax(r):.1f}@{int(np.nanargmax(r)) - 20:+d} "
+              f"nan {int(np.isnan(win).sum())}/9 peak {f'{np.nanmax(r):.1f}@{int(np.nanargmax(r)) - 20:+d}' if not np.isnan(r).all() else 'nan'} "
               f"hip {np.nanmax(hipv[f - 12:f + 13]):.0f} arc {swing(P, f, np.array([a, 1.0])):.2f}")
 
 
