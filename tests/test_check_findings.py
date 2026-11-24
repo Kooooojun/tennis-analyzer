@@ -183,6 +183,9 @@ for text, error in (("下次同一機位拍，看膝蓋是不是接近 130 度",
                     ("下次空揮 20 次再錄影", "次數")):
     bad = dict(findings=[{**ex["findings"][0], "text": text}])
     assert any(error in e for e in check(bad, SX, dict(groups=GX))), text
+# 拍號 #12 後面接「下蹲」「下半身」不是次數
+for text in ("下次同一機位拍，看 #12 下蹲是不是更深。", "看 #3 下半身有沒有先轉。"):
+    assert not any("次數" in e for e in check(dict(findings=[{**ex["findings"][0], "text": text}]), SX, dict(groups=GX))), text
 assert check(dict(findings=[f([dict(stroke=2, field="knee", value=130)], "膝蓋 130 度")]), S, dict(groups=G)) == []
 assert "至少" in ee(pf([s1]))[0]                                             # message says what is missing
 print("ok")

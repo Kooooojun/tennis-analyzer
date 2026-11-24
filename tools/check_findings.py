@@ -13,7 +13,7 @@ utf8_stdout()
 STATS = dict(median=np.median, mean=np.mean, min=np.min, max=np.max, n=len)
 SCORE_STATS = ("median", "spread", "n", "score", "cons")
 GROUP_KEYS = ("total", "form", "consistency", "power", "uncapped")
-PRACTICE_REPS = r"\d+(?:\.\d+)?\s*(?:次|下|組|遍)"
+PRACTICE_REPS = r"(?<![#\d.])\d+(?:\.\d+)?\s*(?:次|下|組|遍)"
 
 
 def _num(v): return isinstance(v, (int, float)) and not isinstance(v, bool) and not math.isnan(v)
