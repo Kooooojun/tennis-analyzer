@@ -230,7 +230,18 @@ try{
      await page.clock.runFor(12000);await page.waitForFunction(()=>!!v.src||v.parentElement.querySelector('.vid-msg').hidden,null,{timeout:1000});
     },
     async rapid(page){return rapid(page,false);},
-    async rapidH2(page){await page.goto(h2);assert.equal(await page.evaluate(()=>performance.getEntriesByType('navigation')[0].nextHopProtocol),'h2');await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>S&&v.readyState>=3);return rapid(page,false);},
+    async rapidH2(page){assert.equal(await page.evaluate(()=>performance.getEntriesByType('navigation')[0].nextHopProtocol),'h2');return rapid(page,false);},
+    async compareSync(page){
+     await page.evaluate(()=>go(DAY_KEYS[0],'video'));
+     await page.locator('#vA').scrollIntoViewIfNeeded();
+     await page.waitForFunction(()=>[vA,vB].every(x=>x.readyState>=3&&!x.seeking));
+     await page.locator('#cmpPlay').click();
+     await page.waitForFunction(()=>[vA,vB].every(x=>x._want&&!x.paused));
+     assert.match(await page.locator('#cmpPlay').textContent(),/⏸/);
+     await page.locator('#cmpPlay').click();
+     await page.waitForFunction(()=>[vA,vB].every(x=>!x._want&&x.paused));
+     assert.match(await page.locator('#cmpPlay').textContent(),/同步播放/);
+    },
     async rapidSlow(page){return rapid(page,true);},
     async single(page){
      await page.evaluate(()=>{cancelPrefetch();const list=visible(),i=list.indexOf(S);list[(i-1+list.length)%list.length].src+='?single';window.singleAt=performance.now();step(-1);});
@@ -330,11 +341,17 @@ try{
     if(name==='rapidH2'&&engine==='webkit')continue;
     if(process.env.SITE_CASES&&!process.env.SITE_CASES.split(',').includes(name))continue;
     const context=await browser.newContext({ignoreHTTPSErrors:true,...(engine==='webkit'?devices['iPhone 13']:{})}),page=await context.newPage(),errors=[];
+    const documents=[];
+    if(name==='rapidH2')page.on('framenavigated',frame=>{
+     const url=frame.url().split('#')[0];
+     if(frame===page.mainFrame()&&url!==documents.at(-1))documents.push(url);
+    });
     page.on('pageerror',e=>errors.push(e.message));await watchPlay(page);
     try{
      if(['poseLongRetryStatus','poseFailure','poseVisibleTime','noSource','poseLeaveOverview','poseLeaveHome','poseCompareVisibleTime','poseCompareRouteRetry','poseScrollRetry','poseRetryBudget','poseBackgroundTimeout'].includes(name))await page.clock.install();
-     await page.goto(f.url);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>S&&v.readyState>=3&&!v.seeking);
+     await page.goto(name==='rapidH2'?h2:f.url);await page.evaluate(()=>go(DAY_KEYS[0],'stroke'));await page.waitForFunction(()=>S&&v.readyState>=3&&!v.seeking);
      await page.waitForTimeout(650);const details=await test(page);assert.deepEqual(errors,[]);
+     if(name==='rapidH2')assert.deepEqual(documents,[h2],'rapidH2 的紀錄從 HTTP/2 文件開始');
      const play=await playMismatch(page);assert.equal(play.count,0,'播放鈕文字必須等於播放意圖：'+JSON.stringify(play.first));
      results.push({engine,case:name,pass:true,playSamples:play.samples,playMode:play.mode,...details});
     }catch(e){results.push({engine,case:name,pass:false,error:e.message,errors});}

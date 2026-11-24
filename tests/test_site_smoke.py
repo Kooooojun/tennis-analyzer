@@ -2,11 +2,10 @@
 # Local E2E requires Node, playwright-core with Chromium/WebKit installed, and private session fixtures.
 # Start: python tests/site_cache_server.py --root "$SITE_FIXTURE_ROOT" --log "$SITE_SERVER_LOG"
 # Run: SITE_E2E_URL="$SITE_URL" PLAYWRIGHT_MODULE="$PW_MODULE" python tests/test_site_smoke.py
-# Manual only (Chromium needs a headed window, so they cannot run unattended):
 # Background: add SITE_SERVER_LOG="$SITE_SERVER_LOG"; run node tests/site_cache_background.mjs,
 # then repeat with SITE_ENGINE=webkit (Chromium needs a headed browser or SITE_CHROMIUM_EXECUTABLE).
-# Playing background: same env plus SITE_CHROMIUM_EXECUTABLE if needed; run
-# node tests/site_cache_playing_background.mjs (25 s per policy and engine, includes native-pause simulation).
+# Playing background: add SITE_PLAYING_BACKGROUND=1 to the runner (25 s per policy and engine).
+# Chromium needs a headed window, with SITE_CHROMIUM_EXECUTABLE if needed.
 # Drip (1 KiB / 2 s native fallback, about 60 s) runs below when SITE_SERVER_LOG is set, because it reads that log.
 # Run: .venv/bin/python tests/test_site_smoke.py   (plain asserts; cases follow testset/results/cross-platform_pred.md)
 # Builds a synthetic session (Chinese name and notes, no real data) with build_site.py in a scratch copy of tools/, under the
@@ -271,3 +270,7 @@ if os.environ.get("SITE_E2E_URL") and os.environ.get("SITE_SERVER_LOG"):
                    env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-drip"))} if os.environ.get("SITE_RESULTS") else {})})
 elif os.environ.get("SITE_E2E_URL"):
     print("skipped site_cache_drip.mjs: set SITE_SERVER_LOG to the log passed to site_cache_server.py")
+
+if os.environ.get("SITE_E2E_URL") and os.environ.get("SITE_PLAYING_BACKGROUND") == "1":
+    subprocess.run(["node", str(R / "tests" / "site_cache_playing_background.mjs")], check=True,
+                   env={**os.environ, **({"SITE_RESULTS": str(Path(os.environ["SITE_RESULTS"]).with_stem(Path(os.environ["SITE_RESULTS"]).stem + "-playing-background"))} if os.environ.get("SITE_RESULTS") else {})})

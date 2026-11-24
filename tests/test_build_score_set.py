@@ -1,5 +1,6 @@
 """真跑建站：每組採計集合來自 scores，未知的舊組明列 null。"""
 import copy
+import ast
 import json
 from pathlib import Path
 import shutil
@@ -45,3 +46,6 @@ with tempfile.TemporaryDirectory() as tmp:
     assert emitted == scores
     for p, data in before: assert p.read_bytes() == data, "來源 JSON 不可被改寫"
 print("建站四組 score_set 與來源 JSON 不變：通過")
+imports = ast.parse((ROOT / "tools" / "build_site.py").read_text(encoding="utf-8"))
+assert not any(alias.name == "read_text" for node in imports.body
+               if isinstance(node, ast.ImportFrom) and node.module == "platform_util" for alias in node.names)

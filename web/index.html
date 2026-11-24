@@ -575,7 +575,7 @@ body:not(.ready)>main{display:none} body.ready>.loading{display:none} .loading{p
 <script>for(const id of window.SESSION_IDS||[]) { const e=encodeURIComponent(id); document.write(`<script src="sessions/${e}/data.js?v=${(window.SESSION_VER||{})[id]||Date.now()}" data-id="${e}" onerror="LOAD_FAIL.push(decodeURIComponent(this.dataset.id))"><\/script>`); }</script>  <!-- content hash: the browser keeps data.js until it is rebuilt -->
 <script>
 document.body.classList.add("ready");  // data.js scripts above have run; before route() so canvases get their real size
-const FPS = 60, NAMES = {FH:"正拍", BH:"反拍", SV:"發球"};
+const FPS = 60, NAMES = {FH:"正拍", BH:"反拍", SV:"發球", OH:"高壓"};
 // one entry per practice session (built by tools/build_site.py); strokes carry their day so compare can mix sessions
 const isoDate = d => { const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d.date||""); return m&&new Date(Date.UTC(+m[1],m[2]-1,+m[3])).toISOString().slice(0,10)===d.date ? d.date : null; };  // a real calendar date; build_site falls back to the slug when notes.json has no date
 const YEARS = new Set((window.SESSIONS||[]).map(isoDate).filter(Boolean).map(x=>x.slice(0,4))), THIS_YEAR = String(new Date().getFullYear());
@@ -1118,7 +1118,12 @@ const bAtLoopEnd=vid=>vid.id==="vB"&&vid.ended&&$("vA")._want;
 const playSafe=(vid,badge)=>{ const token=vid._loadToken, source=vid.src; return vid.play()?.catch(e=>{ if(token!==vid._loadToken||source!==vid.src||e.name!=="NotAllowedError") return; vid._blocked=true; if(!vid.readyState) badge.textContent=TAP; if(vid._want) stopDead(vid); }); };
 // Initial loads prime iOS with play(); an explicit pause must also cancel play() before metadata arrives.
 // The only writer of the play buttons' text: it follows playback intent (_want), never media events. vA is declared later.
-const syncPlay=()=>{ $("play").textContent=v._want?"⏸ 暫停":"▶ 播放"; $("cmpPlay").textContent=$("vA")._want?"⏸ 暫停":"▶ 同步播放"; };
+const syncPlay=()=>{
+  // 比較區以 vA._want 為準，因成對的 hold／reset 都先處理 vA 再處理 vB。
+  const play=$("play"), cmpPlay=$("cmpPlay"), mainText=v._want?"⏸ 暫停":"▶ 播放", cmpText=$("vA")._want?"⏸ 暫停":"▶ 同步播放";
+  if(play.textContent!==mainText) play.textContent=mainText;
+  if(cmpPlay.textContent!==cmpText) cmpPlay.textContent=cmpText;
+};
 const hold=vid=>{ vid._cancelResume?.(); vid._want=false; vid._resume=false; vid.pause(); syncPlay(); };
 // a clip is fetched only once its stage is on screen (home and the overview tab fetch none); route() runs the waiting ones
 const LATER=new Map();
@@ -1436,7 +1441,7 @@ function drawAxis(){
   const s=S, [name,get,fmt]=AXIS[axisKey(s)], knee=get===AXIS.knee[1], prep=get===AXIS.prep[1], val=get(s), dn=drillName(s), ok=x=>x!=null&&isFinite(x);
   const g=ALL.filter(x=>who(x)===who(s)&&x.kind===s.kind), st=knee&&stats(g);  // 同單拍卡：膝蓋只用一種來源、看不準的不算；準備時間的下限值不算
   const vis=get===AXIS.contact_fwd[1]||get===AXIS.contact_h[1], m=knee?st.knee:median(g.filter(x=>!(prep&&prepLow(x))&&!(vis&&!(x.vis>=0.5))).map(get));  // 擊球點、手腕高度：手腕看不清楚的不算（score.py _value）
-  $("axisLine").innerHTML=`<b>#${String(s.id+1).padStart(2,"0")} ${esc(NAMES[s.kind]||s.kind)}${dn?"・"+dn:""}</b><span>${name} <b class="axis-v">${ok(val)?(prep&&prepLow(s)?"≥ ":"")+fmt(val,s)+(knee&&s.knee_warn?"（⚠不準）":""):"–"}</b>${ok(m)?`<span class="axis-m">（${who(s)==="me"?"你的":esc(PN(who(s)))+"的"}${esc(NAMES[s.kind]||"")}中位 ${knee?`${KNAME[st.kSrc]} ${Math.round(m)}°`:fmt(m,s)}）</span>`:""}</span>`;
+  $("axisLine").innerHTML=`<b>#${String(s.id+1).padStart(2,"0")} ${esc(NAMES[s.kind]||s.kind)}${dn?"・"+dn:""}</b><span>${name} <b class="axis-v">${ok(val)?(prep&&prepLow(s)?"≥ ":"")+fmt(val,s)+(knee&&s.knee_warn?"（⚠不準）":""):"–"}</b>${ok(m)?`<span class="axis-m">（${esc(PN(who(s)))}的${esc(NAMES[s.kind]||"")}中位 ${knee?`${KNAME[st.kSrc]} ${Math.round(m)}°`:fmt(m,s)}）</span>`:""}</span>`;
 }
 function load(id, scroll, defer=false){
   clearTimeout(mainLoadTimer); mainLoadTimer=null;
@@ -1451,7 +1456,7 @@ function load(id, scroll, defer=false){
   // one comparison group for every median on this card: same player (so switching the list filter never leaves it stale) + same stroke type + same drill;
   // a drill with fewer than MIN_N_CONS strokes falls back to the player's whole stroke type, and the label says so
   const own=ALL.filter(s=>who(s)===who(S)&&s.kind===S.kind), drilled=S.kind==="FH"&&dn, inDrill=drilled?own.filter(s=>s.drill===S.drill):own, thin=inDrill.length<MIN_N_CONS,
-  grpList=thin?own:inDrill, m=stats(grpList), grp=`${who(S)==="me"?"你":who(S)}的${drilled&&!thin?dn:""}${NAMES[S.kind]||S.kind}中位數${drilled&&thin?`（${dn}不到 ${MIN_N_CONS} 拍）`:""}`;
+  grpList=thin?own:inDrill, m=stats(grpList), grp=`${PN(who(S))}的${drilled&&!thin?dn:""}${NAMES[S.kind]||S.kind}中位數${drilled&&thin?`（${dn}不到 ${MIN_N_CONS} 拍）`:""}`;
   const fmt=(x,u)=>x==null?"–":`${Math.round(x)}<small>${u}</small>`;
   const ks=kSrcOf(S); $("mKnee").innerHTML=fmt(S.knee,"°")+(S.knee==null?"":`<small> ${KNAME[ks]}</small>`); $("mKnee").title=$("cKnee").title=KERR[ks]+"。兩種來源不要直接互比"; $("legKnee").textContent=`較彎的膝蓋（${KNAME[ks]}）`;
   $("cKnee").textContent=`${S.knee==null||S.knee_warn_why==="view"?"":KERR[ks]+" · "}${grp} ${m.knee==null?"–":KNAME[m.kSrc]+" "+Math.round(m.knee)+"°"}`+(S.knee_warn?" · ⚠ "+kneeWarn(S):"")+(S.knee3d==null&&S.knee2d_ok===false?" · 腿沒側對鏡頭，2D 角度參考就好":"");

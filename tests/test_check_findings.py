@@ -134,6 +134,11 @@ assert e10(pf([cg(field="knee", stat="n", value=3)]))                           
 assert e10(pf([cg(field="knee", stat="mean", value=130)])) == []                # mean and median count
 assert e10(pf([cg(field="knee", stat="median", value=130)])) == []
 assert e10(pf([cg(field="elbow", stat="median", value=150)]))                   # never citable
+for field, value in (("id", 2), ("vis", .9)):
+    rows = [st(id=i) for i in (1, 2, 3)]
+    cite = [cg(field=field, stat="median", value=value)]
+    assert check(dict(findings=[f(cite)]), rows, {}) == []  # 數字本身合法
+    assert "至少" in check(dict(findings=[pf(cite)]), rows, {})[0]  # 不能單獨支撐問題
 S11 = [st(knee=120), st(knee=130), st(knee=140)]
 e11 = lambda *fs: check(dict(findings=list(fs)), S11, dict(groups=score_session(S11, False)))
 assert e11(pf([cg(field="knee3d", stat="median", value=130)]))                  # knee3d empty here -> no usable stroke (not a crash)
@@ -154,6 +159,11 @@ assert errs(pf([dict(kind="FH", metric="knee", stat="n", value=G[0]["metrics"]["
 # SKILL.md's notes.json example must pass the checker itself (synthetic strokes shaped like the example)
 import json, re
 md = (Path(__file__).resolve().parent.parent / ".claude/skills/tennis-analyze/SKILL.md").read_text(encoding="utf-8")
+shoot = next(line for line in md.splitlines() if line.startswith("- Next-shoot advice:"))
+evidence = next(line for line in md.splitlines() if line.startswith("- A problem finding"))
+assert all(f"`{name}`" in shoot for name in ("VIEW_WARN", "FPS_MIN", "MIN_N", "MIN_COVER"))
+assert not re.search(r"30%|50%|fps < 50|last line", shoot)
+assert "the cited metric’s usable n" in evidence
 ex = json.loads(re.search(r"Write `web/sessions/<s>/notes.json`:\s*```json\n(.*?)\n```", md, re.S).group(1))
 SX = [st(knee=170, knee3d=150, drill="rally") for _ in range(45)]
 for i in range(33): SX[i].update(drill="feed", knee3d=155)
@@ -168,5 +178,11 @@ ok = check(ex, SX, dict(groups=GX)); assert ok == [], ok
 # a verification sentence written with 進步／改善 words is a change claim and is rejected (the guideline in SKILL.md says to write it neutrally)
 bad = json.loads(json.dumps(ex)); bad["findings"][0]["text"] = bad["findings"][0]["text"].replace("看 knee3d 自拋中位數有沒有往 135° 靠", "看膝蓋是否改善")
 assert check(bad, SX, dict(groups=GX)), "改善 is a change claim: SKILL.md must tell the practice line not to use it"
+for text, error in (("下次同一機位拍，看膝蓋是不是接近 130 度", "130 度"),
+                    ("練習：空揮 20 次", "次數"), ("練習：空揮 3 組", "次數"),
+                    ("下次空揮 20 次再錄影", "次數")):
+    bad = dict(findings=[{**ex["findings"][0], "text": text}])
+    assert any(error in e for e in check(bad, SX, dict(groups=GX))), text
+assert check(dict(findings=[f([dict(stroke=2, field="knee", value=130)], "膝蓋 130 度")]), S, dict(groups=G)) == []
 assert "至少" in ee(pf([s1]))[0]                                             # message says what is missing
 print("ok")

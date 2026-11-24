@@ -13,6 +13,7 @@ utf8_stdout()
 STATS = dict(median=np.median, mean=np.mean, min=np.min, max=np.max, n=len)
 SCORE_STATS = ("median", "spread", "n", "score", "cons")
 GROUP_KEYS = ("total", "form", "consistency", "power", "uncapped")
+PRACTICE_REPS = r"\d+(?:\.\d+)?\s*(?:次|下|組|遍)"
 
 
 def _num(v): return isinstance(v, (int, float)) and not isinstance(v, bool) and not math.isnan(v)
@@ -277,16 +278,19 @@ def _finding_errs(f, strokes, scores, runs=()):
     errs += _change_errors({**f, "cite": [c for c in cites if isinstance(c, dict) and not _bad_keys(c)]}, scores, runs)  # a malformed cite is already reported
     vals = [c["value"] for c in cites if isinstance(c, dict) and _num(c.get("value"))]
     text = f.get("text", "")
-    U = r"(?:°|%|％|秒)"
+    practice = re.search(r"(?:練習\s*[:：]|(?:^|[。；！？\n])\s*(?:下次|下一次))(.*)", text, re.S)
+    if practice and re.search(PRACTICE_REPS, practice[1]):
+        errs.append("練習建議不要指定次數或組數")
+    U = r"(?:°|度|%|％|秒)"
     # target ranges (0.3–0.8, 75%-85%) are not citations, but a degree range (120–130°) cites both ends
-    rng = lambda m: f" {m.group(1)}° {m.group(3)}° " if "°" in (m.group(2) or "") + (m.group(4) or "") else " "
+    rng = lambda m: f" {m.group(1)}° {m.group(3)}° " if {m.group(2), m.group(4)} & {"°", "度"} else " "
     # an ASCII '-' joins a range only with no space around it: "0.5 -0.20" is a number and a negative one
     bare = re.sub(rf"#\d+|\d{{1,3}}(?:,\d{{3}})+(?:\.\d+)?|(\d+(?:\.\d+)?)(?:\s*({U}))?(?:\s*[–~～]\s*|-)(\d+(?:\.\d+)?)\s*({U})?",
                   lambda m: rng(m) if m.group(1) else " ", text)  # #NN and 1,234.5 (thousands) are not citations
     for m in re.finditer(rf"(?<![\d.:°%％])([-−]?\d+(?:\.\d+)?)(\s*{U})?", bare):  # 1:04.8 is a time, not a decimal
         x, u = m.group(1).replace("−", "-"), (m.group(2) or "").strip()
         if not u and "." not in x: continue  # plain integers (62 拍, 3 次) are counts
-        ok = (lambda v: abs(float(x) - v) <= 0.5 + 1e-9) if u == "°" else \
+        ok = (lambda v: abs(float(x) - v) <= 0.5 + 1e-9) if u in ("°", "度") else \
              (lambda v: _match(v, float(x), x) or u in ("%", "％") and _match(v * 100, float(x), x))  # contact_h 0.53 is written as 53%
         if not any(ok(v) for v in vals): errs.append(f"文字裡的 {m.group(0).strip()} 沒有對應的引用")
     refs = {int(x) for x in re.findall(r"#(\d+)", text)} | {j[0] for j in (f.get("jump") or []) if isinstance(j, (list, tuple)) and j and isinstance(j[0], int)}
@@ -323,6 +327,8 @@ def _item_errs(key, it, player, strokes, scores, runs=()):
     elif key == "main" and not jump: errs.append("缺 jump（要看的拍號）")
     if jump and not all(isinstance(j, (list, tuple)) and len(j) == 2 and type(j[0]) is int and isinstance(j[1], str) for j in jump): errs.append("jump 每項要是 [拍號, 標籤]")
     text = "。".join(it[k] for k in ("title", "why", "practice", "cue") if isinstance(it.get(k), str))
+    if isinstance(it.get("practice"), str) and re.search(PRACTICE_REPS, it["practice"]):
+        errs.append("練習建議不要指定次數或組數")
     errs += _finding_errs(dict(info=True, title="", text=text, cite=it.get("cite"), jump=jump), strokes, scores, runs)
     if key == "main" and not _main_evidenced(it.get("cite") if isinstance(it.get("cite"), list) else [], player, strokes, scores.get("groups", []), scores.get("show_open") is True):
         errs.append(f"主要的事要有這位球員的一個 metric 引用（stat 不是 n），或一個比較：同欄位、同拍種、兩種 drill 的 median／mean，各 ≥ {MAIN_MIN_N} 拍可用")

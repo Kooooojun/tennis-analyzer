@@ -12,12 +12,16 @@ import {fileURLToPath} from 'node:url';
 // 假時鐘先裝好時（WebKit）改在每個媒體事件、點擊、分頁切換之後用 MessageChannel 取樣。
 export const watchPlay=page=>page.addInitScript(()=>{
  window.playMismatch={count:0,samples:0,first:[],mode:''};const id=x=>document.getElementById(x);
- const check=()=>{try{playMismatch.samples++;for(const [button,video] of [['play','v'],['cmpPlay','vA']]){const b=id(button),m=id(video);if(!b||!m)continue;const shown=b.textContent.includes('⏸'),want=!!m._want;if(shown!==want){playMismatch.count++;if(playMismatch.first.length<10)playMismatch.first.push({button,text:b.textContent,want,paused:m.paused,readyState:m.readyState,reloading:!!m._reloading,ms:Math.round(performance.now())});}}}catch{}};
+ const check=window.checkPlayMismatch=()=>{try{playMismatch.samples++;for(const [button,video] of [['play','v'],['cmpPlay','vA']]){const b=id(button),m=id(video);if(!b||!m)continue;const shown=b.textContent.includes('⏸'),want=!!m._want;if(shown!==want){playMismatch.count++;if(playMismatch.first.length<10)playMismatch.first.push({button,text:b.textContent,want,paused:m.paused,readyState:m.readyState,reloading:!!m._reloading,ms:Math.round(performance.now())});}}}catch{}};
  if(String(window.requestAnimationFrame).includes('[native code]')){const raf=window.requestAnimationFrame.bind(window),loop=()=>{check();raf(loop);};playMismatch.mode='raf';raf(loop);}
  else {const ch=new MessageChannel();ch.port1.onmessage=check;playMismatch.mode='event';
   for(const type of ['play','playing','pause','waiting','canplay','seeking','seeked','loadedmetadata','emptied','error','timeupdate','click','visibilitychange'])document.addEventListener(type,()=>ch.port2.postMessage(0),true);}
 });
-export const playMismatch=page=>page.evaluate(()=>window.playMismatch);
+export const playMismatch=page=>page.evaluate(()=>{
+ if(!(window.playMismatch.samples>0))throw new Error('播放鈕紀錄器沒有取樣');
+ window.checkPlayMismatch();
+ return window.playMismatch;
+});
 
 export async function fixture(ref=process.env.SITE_REF){
  const seconds=Number(process.env.SITE_CLIP_SECONDS||3);

@@ -131,6 +131,26 @@ with tempfile.TemporaryDirectory() as tmp:
             x, y = (p[0, 0, :2] * (W, H)).astype(int)
             assert frame[y-1:y+2, x-1:x+2].mean() > 180, "輸出圓點須落在原片位置"
 
+# #151：最後輸出的 BGR 影格上，右臂橘、左臂藍。
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp); wd = root / "work" / "clip"; wd.mkdir(parents=True); src = root / "source.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=black:s=640x360:r=60:d=0.05",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(src)], check=True)
+    pose = np.zeros((3, 33, 3), np.float32)
+    for joint, x, y in ((0, .5, .2), (11, .3, .4), (13, .3, .6), (12, .7, .4), (14, .7, .6)):
+        pose[:, joint] = [x, y, 1]
+    np.save(wd / "pose.npy", pose)
+    with patch.object(mod, "work", return_value=root / "work"), patch.object(mod, "web", return_value=root / "web"), \
+         patch.object(mod, "videos", return_value=["clip"]), patch.object(mod, "live_knee", return_value=(None, None)), \
+         patch.object(mod, "h264_args", return_value=["-c:v", "libx264", "-crf", "18"]), contextlib.redirect_stdout(io.StringIO()):
+        mod.annotate("synth", "clip", src)
+    cap = cv2.VideoCapture(str(root / "web" / "annotated_clip.mp4")); ok, frame = cap.read(); cap.release()
+    assert ok
+    h, w = frame.shape[:2]
+    for x, dominant in ((.3, 0), (.7, 2)):
+        bgr = frame[h // 2, round(w * x)].astype(int)
+        assert bgr[dominant] > bgr[2 - dominant] + 100, bgr
+
 # #137：pose_world 長度和 pose 不同（另一輪的 3D）就不畫 3D，跟 measure_full、export 同一條規則；stderr 一行警告，同長不印。
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); wd = root / "work" / "clip"; wd.mkdir(parents=True); src = root / "source.mp4"

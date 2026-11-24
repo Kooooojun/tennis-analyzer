@@ -6,7 +6,7 @@
 import hashlib, json, re, sys
 from check_findings import check
 from common import ROOT, load, src_fps, work
-from platform_util import read_text, unlink, write_text
+from platform_util import unlink, write_text
 from trend import _score_set
 
 S = ROOT / "web" / "sessions"

@@ -33,6 +33,10 @@ strokes = [dict(id=0, src="clips/black.mp4", frames=frames(), **common),
            dict(id=3, src="clips/short.mp4", frames=frames(), **common)]
 (D / "strokes.json").write_text(json.dumps(strokes), encoding="utf-8")
 
+for args in (("0",), ("1,5", "--stages")):
+    result = subprocess.run([sys.executable, str(T / "tools" / "strip.py"), s, "final", *args], capture_output=True, text=True, encoding="utf-8")
+    assert result.returncode != 0 and "拍號" in result.stderr and "1–4" in result.stderr and "Traceback" not in result.stderr, result
+
 
 def run(*args):
     r = subprocess.run([sys.executable, str(T / "tools" / "strip.py"), s, "final", *args], capture_output=True, text=True, encoding="utf-8")

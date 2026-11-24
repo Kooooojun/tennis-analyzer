@@ -82,6 +82,7 @@ assert ok(with_(look=[2, 5, 13, 16]))
 # 7. numbers in main / second / insufficient text need cites, as in findings
 assert bad(main_with(why="擊球點自拋 0.80、對打 0.95。"))
 assert bad(main_with(practice="先蹲到 120° 再出手。"))
+assert bad(main_with(practice="空揮 20 次再出手。"))
 assert ok(main_with(practice="先蹲到 125° 再出手。", cite=CF + [cg(drill="rally", field="knee3d", stat="median", value=125)]))
 assert bad(main_with(cue="手腕 0.5 秒前就側身"))
 assert bad(main_with(title="擊球點差 0.20"))
