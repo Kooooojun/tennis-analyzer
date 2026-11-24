@@ -13,13 +13,9 @@ import events as E
 from attrib import swing
 from common import size
 from eval_hits import read_labels, score
+from eval_thetis_grip import wilson
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
-
-
-def wilson(k, n, z=1.96):
-    p = k / n; d = 1 + z * z / n; c = (p + z * z / (2 * n)) / d; h = z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
-    return max(0.0, c - h), min(1.0, c + h)
 
 
 def gates(d, times):
