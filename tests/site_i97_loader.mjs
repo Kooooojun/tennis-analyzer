@@ -22,15 +22,14 @@ const cases={
   assert(performance.now()-started<11000,'新 GET 必須十一秒內實際播放');
  },
  async splitPrefix(page){
-  const started=performance.now();await select(page,'hang=once&split=1');
+  const started=performance.now(),before=f.events.length;await select(page,'hang=once&split=1');
   await page.waitForFunction(()=>v.src.includes('_retry')&&v.readyState>=3&&!v.seeking,null,{timeout:14000});
-  return {elapsedMs:Math.round(performance.now()-started)};
+  const readyAt=performance.now(),lastByte=Math.max(...f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4')&&!e.query.includes('_retry')).map(e=>e.lastByte||0));
+  // 13 秒上限從最後一次下載進度（最後收到資料）起算，不是從載入起算（#112）。
+  return {elapsedMs:Math.round(readyAt-started),sinceLastByteMs:Math.round(readyAt-lastByte),sinceLoadMs:Math.round(readyAt-started)};
  },
- async earlyStop(page){
-  const started=performance.now();await select(page,'drip=45&dripStop=2000');
-  await page.waitForFunction(()=>v.src.includes('_retry')&&v.readyState>=3&&!v.seeking,null,{timeout:16000});
-  return {elapsedMs:Math.round(performance.now()-started)};
- },
+ async earlyStop(page){return stopRecovery(page,2000);},
+ async lateStop(page){return stopRecovery(page,2800);},
  async blocked(page){
   await page.evaluate(()=>{v.play=()=>Promise.reject(new DOMException('blocked','NotAllowedError'));});
   await select(page,'hang=always');await page.waitForTimeout(100);await page.clock.runFor(35000);
@@ -197,6 +196,13 @@ async function recoverFailure(page,event){
  assert.equal(await page.evaluate(()=>v.src),source,'已恢復影片不得在舊失敗期限自動重載');
  assert.equal(await page.evaluate(()=>recoveryMetadata),0,'恢復過程不得依賴另一個 loadedmetadata');
 }
+// 13 秒上限從最後一次下載進度（最後收到資料）起算，不是從載入起算（#112）。
+async function stopRecovery(page,stopMs){
+ const started=performance.now(),before=f.events.length;await select(page,'drip=45&dripStop='+stopMs);
+ await page.waitForFunction(()=>v.src.includes('_retry')&&v.readyState>=3&&!v.seeking,null,{timeout:16000});
+ const readyAt=performance.now(),lastByte=Math.max(...f.events.slice(before).filter(e=>e.file.endsWith('/4.mp4')&&!e.query.includes('_retry')).map(e=>e.lastByte||0));
+ return {elapsedMs:Math.round(readyAt-started),sinceLastByteMs:Math.round(readyAt-lastByte),sinceLoadMs:Math.round(readyAt-started)};
+}
 async function capacity(page,unknown){
  await page.evaluate(()=>cancelPrefetch());
  // 以真實串流超過既有上限；放大每個收到的 chunk 只用於容量閘門，並不建立大 blob。
@@ -221,7 +227,8 @@ try{
      Object.assign(row,await test(page));const requests=f.events.slice(before).filter(e=>e.method==='GET');
      const retries=requests.filter(e=>e.query.includes('_retry'));
      if(['S8','lateBlob','probingResume'].includes(name))assert.equal(retries.length,0,'持續滴流或完成 blob 不得重試');
-     if(name==='splitPrefix'){const first=retries[0];assert(first&&first.time-started<14500,'不得延長原有停流時限');}
+     if(name==='splitPrefix'){const first=retries[0];assert(first&&first.time-started<14500,'不得延長原有停流時限');assert(row.sinceLastByteMs<=13000,`停流後須在最後一次下載進度起 13 秒內恢復，實際 ${row.sinceLastByteMs} ms`);}
+     if(['earlyStop','lateStop'].includes(name))assert(row.sinceLastByteMs<=13000,`停流後須在最後一次下載進度起 13 秒內恢復，實際 ${row.sinceLastByteMs} ms`);
      if(name==='blocked')assert.equal(requests.filter(e=>!e.range||e.query.includes('_retry')).length,0);
      if(['sharedHiddenResume','scrollDoesNotSuspend'].includes(name))assert.equal(requests.filter(e=>e.file.endsWith('/4.mp4')&&!e.range).length,1);
      if(name==='hiddenNative')assert.equal(requests.filter(e=>e.file.endsWith('/4.mp4')&&(!e.range||!e.range.endsWith('-1'))).length,1);
