@@ -117,9 +117,9 @@ for i, theta in enumerate(np.linspace(0, np.pi, len(p))):
 a, b = correct_lr(p, w, 16 / 9)
 assert np.array_equal(a, p) and np.array_equal(b, w)
 
-# The 0.2 s limit follows source fps before interpolation.
+# The 0.2 s fallback follows source fps when the world estimate cannot anchor a longer repair.
 p, w = body()
-for x in (p, w): exchange(x, [13], [14], 5, 12)
+exchange(p, [13], [14], 5, 12)
 a, _ = correct_lr(p, w, 1, 30)
 assert np.array_equal(a, p)
 a, _ = correct_lr(p, w, 1, 60)
@@ -129,4 +129,71 @@ p, w = body(); p[:] = np.nan; w[:] = np.nan
 a, b = correct_lr(p, w, 1)
 assert np.isnan(a).all() and np.isnan(b).all()
 assert correct_lr(p[:0], w[:0], 1)[0].shape == (0, 33, 3)
+
+# In profile the two image sides nearly overlap, while the world depth separates them.
+left = [1, 2, 3] + list(range(7, 32, 2))
+right = [4, 5, 6] + list(range(8, 33, 2))
+p, w = body(80)
+for l, r in zip(left, right):
+    p[:, [l, r], 0] = (0.49, 0.51)
+    w[:, [l, r], 0] = (0.49, 0.51)
+    w[:, [l, r], 2] = (-0.2, 0.2)
+expected, expectedw = p.copy(), w.copy()
+for x in (p, w): exchange(x, left, right, 23, 43)
+a, b = correct_lr(p, w, 1)
+assert a.tobytes() == expected.tobytes() and b.tobytes() == expectedw.tobytes(), "profile reversal"
+assert all(x.tobytes() == y.tobytes() for x, y in zip(correct_lr(a, b, 1), (a, b)))
+
+# Without a visible torso or a return to the original orientation, leave the labels alone.
+for hidden in (True, False):
+    p, w = expected.copy(), expectedw.copy()
+    for x in (p, w): exchange(x, left, right, 23, 43 if hidden else len(p))
+    if hidden: p[23:43, [11, 12, 23, 24], 2] = 0.1
+    assert all(x.tobytes() == y.tobytes() for x, y in zip(correct_lr(p, w, 1), (p, w)))
+
+# 3D alone cannot justify a whole-body repair when the image labels stay stable.
+p, w = expected.copy(), expectedw.copy()
+exchange(w, left, right, 23, 43)
+assert all(x.tobytes() == y.tobytes() for x, y in zip(correct_lr(p, w, 1), (p, w)))
+
+# A temporarily self-correcting wrist contradicts a whole-body assignment.
+p, w = expected.copy(), expectedw.copy()
+for x in (p, w):
+    exchange(x, left, right, 23, 43)
+    exchange(x, [15, 17, 19, 21], [16, 18, 20, 22], 31, 35)
+assert all(x.tobytes() == y.tobytes() for x, y in zip(correct_lr(p, w, 1), (p, w)))
+
+# The first transition can be outside the contact window. Both elbows must recover throughout.
+p, w = body(80); expected, expectedw = p.copy(), w.copy()
+for x in (p, w): exchange(x, [13], [14], 12, 38)
+a, b = correct_lr(p, w, 1)
+assert a.tobytes() == expected.tobytes() and b.tobytes() == expectedw.tobytes(), "elbows already reversed at contact"
+assert all(x.tobytes() == y.tobytes() for x, y in zip(correct_lr(expected, expectedw, 1), (expected, expectedw)))
+
+# A long interval with coincident shoulders gives no anatomical support for flipping the elbows.
+p, w = body(80)
+for x in (p, w):
+    x[:, 11] = x[:, 12]
+    exchange(x, [13], [14], 12, 38)
+assert all(x.tobytes() == y.tobytes() for x, y in zip(correct_lr(p, w, 1), (p, w)))
+
+# Shoulders, elbows and hands reverse together. World XY agrees, but noisy depth
+# still follows the original labels, so preserve world data when full 3D disagrees.
+left, right = [11, 13, 15, 17, 19, 21], [12, 14, 16, 18, 20, 22]
+p, w = body(80); expected = p.copy()
+exchange(p, left, right, 12, 38)
+exchange(w[:, :, :2], left, right, 12, 38)
+a, b = correct_lr(p, w, 1)
+assert a.tobytes() == expected.tobytes() and b.tobytes() == w.tobytes(), "upper body reversal, mixed world depth"
+
+# The frame immediately after a reversal is unusable as an elbow anchor.
+p, w = body(80)
+exchange(p, left, right, 30, 31)
+exchange(w[:, :, :2], left, right, 30, 31)
+for x in (p, w):
+    x[31, [13, 14]] = x[31, [13, 14]].mean(0)
+expected = p.copy()
+exchange(expected, left, right, 30, 31)
+a, b = correct_lr(p, w, 1)
+assert a.tobytes() == expected.tobytes() and b.tobytes() == w.tobytes(), "one-frame reversal with a weak neighbor"
 print("ok")
