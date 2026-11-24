@@ -131,13 +131,21 @@ assert np.isnan(a).all() and np.isnan(b).all()
 assert correct_lr(p[:0], w[:0], 1)[0].shape == (0, 33, 3)
 
 # In profile the two image sides nearly overlap, while the world depth separates them.
-left = [1, 2, 3] + list(range(7, 32, 2))
-right = [4, 5, 6] + list(range(8, 33, 2))
-p, w = body(80)
-for l, r in zip(left, right):
-    p[:, [l, r], 0] = (0.49, 0.51)
-    w[:, [l, r], 0] = (0.49, 0.51)
-    w[:, [l, r], 2] = (-0.2, 0.2)
+profile_left = [1, 2, 3] + list(range(7, 32, 2))
+profile_right = [4, 5, 6] + list(range(8, 33, 2))
+
+
+def profile_body():
+    p, w = body(80)
+    for l, r in zip(profile_left, profile_right):
+        p[:, [l, r], 0] = (0.49, 0.51)
+        w[:, [l, r], 0] = (0.49, 0.51)
+        w[:, [l, r], 2] = (-0.2, 0.2)
+    return p, w
+
+
+left, right = profile_left, profile_right
+p, w = profile_body()
 expected, expectedw = p.copy(), w.copy()
 for x in (p, w): exchange(x, left, right, 23, 43)
 a, b = correct_lr(p, w, 1)
@@ -196,4 +204,27 @@ expected = p.copy()
 exchange(expected, left, right, 30, 31)
 a, b = correct_lr(p, w, 1)
 assert a.tobytes() == expected.tobytes() and b.tobytes() == w.tobytes(), "one-frame reversal with a weak neighbor"
+
+# A briefly correct run can sit between two reversals. Competing anchors must leave both arrays intact.
+rng = np.random.default_rng(0)
+failures = {}
+for case, make, sides, intervals, noise in (
+    ("A upper", lambda: body(80), (left, right), ((20, 40), (41, 60)), 0.003),
+    ("D profile", profile_body, (profile_left, profile_right), ((23, 33), (35, 45)), 0.001),
+):
+    for sigma, trials in ((0, 1), (noise, 50)):
+        changed = 0
+        for _ in range(trials):
+            p, w = make()
+            if sigma:
+                p[:, :, :2] += rng.normal(0, sigma, p[:, :, :2].shape).astype(p.dtype)
+                w += rng.normal(0, sigma, w.shape).astype(w.dtype)
+            for x in (p, w):
+                for start, end in intervals:
+                    exchange(x, *sides, start, end)
+            before = p.tobytes(), w.tobytes()
+            changed += tuple(x.tobytes() for x in correct_lr(p, w, 1)) != before
+        if changed:
+            failures[case, sigma] = f"{changed}/{trials} changed"
+assert not failures, failures
 print("ok")

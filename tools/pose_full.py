@@ -204,6 +204,14 @@ def _pair_distance(a, b):
     return np.linalg.norm(a - b, axis=-1).sum(axis=-1)
 
 
+def _has_nearby_flip(edges, a, b, window):
+    # The boundary flips at a and b belong to this candidate.
+    left = edges.searchsorted(a)
+    right = edges.searchsorted(b, side="right")
+    return (left > 0 and a - edges[left - 1] <= window
+            or right < len(edges) and edges[right] - b <= window)
+
+
 def _profile_swaps(P, W, aspect, fps):
     """Bounded profile reversals with stable shoulder/hip directions on both sides."""
     torso = np.array([[11, 12], [23, 24]])
@@ -226,9 +234,11 @@ def _profile_swaps(P, W, aspect, fps):
     limbs = W[:, limb_pairs]
     image_limbs = P[:, limb_pairs, :2] * (aspect, 1)
     anchor = max(2, round(0.08 * fps))
+    limit = round(0.5 * fps)
     # shortcut: require two clear transitions and nearby anchors; persistent reversals need independent orientation.
     for a, b in zip(edges[:-1], edges[1:]):
-        if b - a > round(0.5 * fps) or a < anchor or b + anchor > len(P): continue
+        if b - a > limit or a < anchor or b + anchor > len(P): continue
+        if _has_nearby_flip(edges, a, b, limit): continue
         if not profile[a - anchor:b + anchor].all() or cut[a - anchor:b + anchor - 1].any(): continue
         if match[a:b - 1].any(): continue
         ref = direction[a - 1]
@@ -260,6 +270,7 @@ def _upper_swaps(P, W, aspect, fps):
     image = matching(q, margins)
     projected = matching(z[..., :2], margins)
     edges = np.flatnonzero(image.all(1) & projected.all(1) & ~matching(W[:, _LOWER], 1).any(1)) + 1
+    arm_edges = np.flatnonzero(image[:, 1:].any(1)) + 1
     cut = jumps(P, aspect)
     _, L = hip_torso(P, aspect)
     valid = (P[:, _UPPER[:3], 2].max(2) >= 0.5).all(1) & (L > 0)
@@ -268,8 +279,8 @@ def _upper_swaps(P, W, aspect, fps):
     world = matching(z, margins)
     for a, b in zip(edges[:-1], edges[1:]):
         if b - a > limit or a < 2 or b + 1 >= len(P): continue
-        if b - a < anchor and (image[max(0, a - anchor):a - 1, 1:].any()
-                               or image[b:b + anchor - 1, 1:].any()): continue
+        if _has_nearby_flip(edges, a, b, limit): continue
+        if b - a < anchor and _has_nearby_flip(arm_edges, a, b, round(0.5 * fps)): continue
         if not valid[a - 2:b + 2].all() or cut[a - 2:b + 1].any(): continue
         if not np.isfinite(q[a - 2:b + 2]).all() or not np.isfinite(z[a - 2:b + 2]).all(): continue
         if image[a - 2:a - 1, 1:].any() or image[b:b + 1, 1:].any() or image[a:b - 1, 1:].any(): continue
@@ -287,9 +298,12 @@ def _isolated_arm_swaps(P, W, aspect, fps):
     shift = max(1, round(fps / 60))
     span = 4 * shift
     cut = jumps(P, aspect)
-    for i in np.flatnonzero((_pair_distance(xy[1:, 1:, ::-1], xy[:-1, 1:]) <
-                             0.5 * _pair_distance(xy[1:, 1:], xy[:-1, 1:])).all(1)):
-        for f in (i, i + 1):
+    window = max(1, round(0.6 * fps))
+    edges = np.flatnonzero((_pair_distance(xy[1:, 1:, ::-1], xy[:-1, 1:]) <
+                            0.5 * _pair_distance(xy[1:, 1:], xy[:-1, 1:])).all(1)) + 1
+    for edge in edges:
+        for f in (edge - 1, edge):
+            if _has_nearby_flip(edges, f, f + 1, window): continue
             if f < span or f + span >= len(P) or cut[f - span:f + span].any(): continue
             far = [f - span, f + span]
             if not (_pair_distance(xy[f, 1:, ::-1], xy[far, 1:]) <
@@ -332,9 +346,9 @@ def correct_lr(P, W, aspect, fps=60):
         gap = np.linalg.norm(q[:, 0] - q[:, 1], axis=1)
         flip = (swap < 0.5 * same) & (gap[:-1] > 0.3 * L[:-1]) & (gap[1:] > 0.3 * L[1:])
         edges = np.flatnonzero(flip) + 1
-        for k, (a, b) in enumerate(zip(edges[:-1], edges[1:])):
+        for a, b in zip(edges[:-1], edges[1:]):
             if b - a > long_limit or a < 2 or b + 1 >= len(P): continue
-            if (k and a - edges[k - 1] <= limit) or (k + 2 < len(edges) and edges[k + 2] - b <= limit): continue
+            if _has_nearby_flip(edges, a, b, limit): continue
             if cut[a - 1:b].any(): continue
             if body_flip[a - 1:b].any(): continue
             if not np.isfinite(q[a - 1:b + 1]).all() or not np.all(L[a - 1:b + 1] > 0): continue
