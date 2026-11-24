@@ -141,7 +141,7 @@ def annotate(s, name, src, panel="auto"):
             if (bb := pose_bbox(p, W, H)) is not None: bboxes.append(bb)
             P = lambda j: (int(p[j, 0] * W), int(p[j, 1] * H)); ok = lambda j: p[j, 2] >= MINVIS
             for a, c in EDGES:
-                if ok(a) and ok(c): cv2.line(img, P(a), P(c), (255, 140, 70) if a % 2 == 0 and c % 2 == 0 else (90, 180, 255), 3, cv2.LINE_AA)  # BGR: right side (even landmark ids) orange, left blue, like highlights.py
+                if ok(a) and ok(c): cv2.line(img, P(a), P(c), (70, 140, 255) if a % 2 == 0 and c % 2 == 0 else (255, 180, 90), 3, cv2.LINE_AA)  # BGR: right side (even landmark ids) orange, left blue, like highlights.py
             for j in JOINTS:
                 if ok(j): cv2.circle(img, P(j), 4, (255, 255, 255), -1, cv2.LINE_AA)
             wk = worlds[k]; wn = wk[n] if wk is not None and n < len(wk) and not np.isnan(wk[n][0, 0]) else None; a, j = live_knee(p, wn, (W, H))

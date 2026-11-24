@@ -12,6 +12,9 @@ STAGES = "--stages" in sys.argv; sys.argv = [a for a in sys.argv if a != "--stag
 s = session(); which = sys.argv[2]; nos = [int(x) for x in sys.argv[3].split(",")]
 f0, f1, st = (int(x) for x in sys.argv[4:7]) if len(sys.argv) > 6 else (-8, 4, 1)
 D = web(s); d = load(D / ("strokes_raw.json" if which == "raw" else "strokes.json"))
+for n in nos:
+    if not 1 <= n <= len(d):
+        sys.exit(f"拍號 {n} 超出範圍（1–{len(d)}）" if d else f"拍號 {n} 無效（沒有可用拍次）")
 
 if STAGES:
     TH, MINVIS = 320, 0.3  # tile height; landmarks below this visibility are not drawn (annotate.py uses the same)

@@ -313,3 +313,12 @@ assert (MIN_N, MIN_COVER) == (3, 0.5)
 # 多個球員各自算
 lines, trig = basis([fh(i) for i in range(10)] + [dict(fh(i), player="q") for i in range(2)]); assert all("q FH" in t[2] for t in trig), trig
 print("shoot_basis tests ok")
+
+S = [fh(az=10, why="view")] + [fh(az=None) for _ in range(9)]
+assert not any(t[0] == "view" for t in basis(S)[1]), "只有一拍知道方位，不足以建議改機位"
+S = [fh(az=10, why="view")] + [fh() for _ in range(MIN_N - 1)]
+assert any(t[0] == "view" for t in basis(S)[1]), "方位已知剛好達下限時可以觸發"
+S = [fh(why="gap") for _ in range(4)] + [fh() for _ in range(2)]
+assert any(t[0] == "cover" and "2D" in t[1] and "3D" in t[1] and "gap" in t[1] for t in basis(S)[1])
+lines, trig = basis([fh() for _ in range(10)], fps=None)
+assert not trig and "fps 未知" in lines[-1] and "照舊" not in lines[-1]

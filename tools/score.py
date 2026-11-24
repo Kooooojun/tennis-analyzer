@@ -224,7 +224,7 @@ def check_session(strokes):
 
 def shoot_basis(strokes, groups, fps, show_open):
     """Inputs of the 「下次拍攝建議」 (SKILL.md) and which of them fire: (lines to print, triggers [(type, advice, "player kind")]).
-    view: share of a group's strokes whose cam_az is within KNEE_VIEW_MIN of front / behind (metrics._front_back, the gate itself), >= VIEW_WARN.
+    view: at least MIN_N known azimuths, with a share >= VIEW_WARN within KNEE_VIEW_MIN of front / behind (metrics._front_back).
     Not knee_warn_why == "view": refine.py rewrites a stroke it distrusts to "contact" and clears its cam_az, so that stroke's view is unknown, left out of the denominator and printed.
     cover / count: a 資料不足 metric is either gated (usable / group strokes < MIN_COVER: more strokes of the same kind do not fix the gate) or just short (>= MIN_COVER but usable < MIN_N).
     fps: source fps < FPS_MIN. showOpen has no trigger of its own (camera height is not measured); an open_min 資料不足 shows up as cover / count."""
@@ -236,8 +236,8 @@ def shoot_basis(strokes, groups, fps, show_open):
         known = [x for x in gs if x.get("cam_az") is not None]
         view = sum(_front_back(x["cam_az"]) for x in known)
         why = {w: sum(x.get("knee_warn_why") == w for x in gs) for w in ("view", "gap", "contact")}
-        lines.append(f"拍攝依據 {who}：視角擋掉 {view}/{len(known)} 拍（{view / max(len(known), 1):.0%}，門檻 {VIEW_WARN:.0%} 暫定；方位未知 {len(gs) - len(known)} 拍不算）；knee_warn_why：視角 {why['view']}、gap {why['gap']}、contact {why['contact']}")
-        if known and view / len(known) >= VIEW_WARN: trig.append(("view", "側面約 90°、固定、全身入鏡", who))
+        lines.append(f"拍攝依據 {who}：視角擋掉 {view}/{len(known)} 拍（{view / max(len(known), 1):.0%}，門檻 {VIEW_WARN:.0%} 暫定；須至少 {MIN_N} 拍方位已知，方位未知 {len(gs) - len(known)} 拍不算）；knee_warn_why：視角 {why['view']}、gap {why['gap']}、contact {why['contact']}")
+        if len(known) >= MIN_N and view / len(known) >= VIEW_WARN: trig.append(("view", "側面約 90°、固定、全身入鏡", who))
         short = {"cover": [], "count": []}
         for m, x in g["metrics"].items():
             if x["status"] != "資料不足": continue
@@ -245,10 +245,11 @@ def shoot_basis(strokes, groups, fps, show_open):
             short["cover" if n / tot < MIN_COVER else "count"].append(m)
             lines.append(f"拍攝依據 {who}：{m} 資料不足，可用 {n}/{tot} 拍（覆蓋率 {n / tot:.0%}，要 ≥ {MIN_COVER:.0%} 且 ≥ {MIN_N} 拍）→ {'被閘門擋掉，多錄不一定有用' if n / tot < MIN_COVER else '拍數不足，多錄有用'}")
         if short["count"]: trig.append(("count", f"多錄 {g['kind']}（{'、'.join(short['count'])} 可用拍數不到 {MIN_N}）", who))
-        if short["cover"]: trig.append(("cover", f"{'、'.join(short['cover'])} 被閘門擋掉過半，多錄同樣條件不一定有用；先看是視角、遮擋還是接觸點不可信（原因為推論）", who))
+        if short["cover"]: trig.append(("cover", f"{'、'.join(short['cover'])} 被閘門擋掉過半，多錄同樣條件不一定有用；先看是視角、遮擋、接觸點不可信或 2D／3D 膝角差距過大（gap）（原因為推論）", who))
     lines.append(f"拍攝依據：來源 fps {fps if fps else '未知'}（低於 {FPS_MIN} 才建議 60 fps）；showOpen {show_open}")
     if fps and fps < FPS_MIN: trig.append(("fps", "用 60 fps 拍", "來源"))
-    lines.append("拍攝建議觸發：" + ("；".join(f"{who}：{a}" for _, a, who in trig) if trig else "無（這場機位可以，照舊）"))
+    lines.append("拍攝建議觸發：" + ("；".join(f"{who}：{a}" for _, a, who in trig) if trig else
+                                 "無（這場機位可以，照舊）" if fps else "無（來源 fps 未知）"))
     return lines, trig
 
 
