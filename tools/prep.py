@@ -1,5 +1,5 @@
 # usage: python tools/prep.py <session> [people]   e.g. python tools/prep.py 2026-11-05   (people = max people to track, default 2)
-# For every video in videos/<session>/: 60fps proxy (540x960 portrait, 960x540 landscape), high-passed audio, pose (one file per tracked person), hit sounds, ball track, hit events (sound + ball;
+# For every video in videos/<session>/: 60fps proxy (540x960 portrait, 960x540 landscape), high-passed audio, pose (one file per tracked person), hit sounds, ball track, hit events (sound and pose, or pose and ball;
 # the per-video sound lag in lag.txt, events.py's log in events.log).
 # Wrist motion per hit (match.py) runs in candidates.py, once the racket hand of each person is known.
 # Re-running skips finished steps, so it is safe to resume after an interruption; a step re-runs when its output is missing or an input is newer.
@@ -189,7 +189,7 @@ def main(argv):
                 sys.exit(f"ffprobe could not read audio/duration for {V}: {r.stderr.strip() or 'invalid streams or duration'}")
             audio_src = []
             if silent:
-                print("這支影片沒有聲音：擊球偵測要靠聲音，這支可能抓不到任何擊球", file=sys.stderr)
+                print("這支影片沒有音軌：會用姿態與球軌跡找擊球候選，可能漏拍或誤判，請逐拍確認", file=sys.stderr)
                 audio_src = ["-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono", "-map", "1:a:0", "-t", str(duration)]
             for name, filt in (("audio_hp.f32", ["-af", "highpass=f=1500"]), ("audio.f32", [])):
                 if stale(D / name, V): ffmpeg(V, D / name, *audio_src, "-vn", "-ac", "1", "-ar", "16000", *filt, "-f", "f32le")
@@ -222,24 +222,33 @@ def main(argv):
         else: delete(note)
         if stale(D / "sounds.npy", D / "audio_hp.f32", D / "audio.f32"): py("hits.py", D / "audio_hp.f32", D / "audio.f32", D / "sounds.npy")
         poses = [pose, *sorted(D.glob("pose_t*.npy"))]
-        if stale(D / "ball.npy", D / "proxy.mp4", D / "sounds.npy", *poses):
+        sounds, ball, lag = D / "sounds.npy", D / "ball.npy", D / "lag.txt"
+        ball_stale = stale(ball, D / "proxy.mp4", sounds, *poses)
+        old_silent = False
+        if not ball_stale and lag.is_file() and lag.read_text(encoding="utf-8").strip() == "0 fallback":
+            import numpy as np
+            # A current full ball track can still be reused when upgrading old silent events.
+            old_silent = not np.load(sounds, mmap_mode="r").size
+            ball_stale = old_silent and not np.isfinite(np.load(ball, mmap_mode="r")[:, 0]).any()
+        if ball_stale:
             import cv2, numpy as np
             from ball import BATCH, window_mask
             from common import size
-            from events import ball_windows, hands
+            from events import ball_windows, hands, pose_ball_windows
             cap = cv2.VideoCapture(str(D / "proxy.mp4"))
             n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)); cap.release()
             w, h = size(D / "proxy.mp4")
             hand, who = hands([np.load(p).astype(np.float64) for p in poses], w / h, who=True)
-            windows = ball_windows(np.load(D / "sounds.npy").reshape(-1, 4), hand, who, n)
+            rows = np.load(sounds).reshape(-1, 4)
+            windows = ball_windows(rows, hand, who, n) if len(rows) else pose_ball_windows(hand, n)
             mask = window_mask(windows, n)
             frames = sum(min(BATCH, n - i) for i in range(0, n, BATCH) if mask[i:i + BATCH].any())
             ball_note(pw, ph, frames)
             with tempfile.TemporaryDirectory(prefix="ball_windows_") as tmp:
                 wp = Path(tmp) / "windows.npy"; np.save(wp, windows)
                 py("ball.py", D / "proxy.mp4", D / "ball.npy", "--windows", wp, out=D / "ball.log")
-        if stale(D / "events.npy", D / "sounds.npy", D / "ball.npy", *poses):
-            py("events.py", D / "sounds.npy", D / "ball.npy", pose, D / "events.npy", out=D / "events.log")
+        if old_silent or stale(D / "events.npy", sounds, ball, *poses):
+            py("events.py", sounds, ball, pose, D / "events.npy", out=D / "events.log")
     write_text(W / "videos.json", json.dumps(names) + "\n")
     print(f"ready: {len(names)} videos -> work/{S}")
 

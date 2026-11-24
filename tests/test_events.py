@@ -1,5 +1,5 @@
 """Run: .venv/bin/python tests/test_events.py"""
-import sys, subprocess, tempfile, unittest
+import hashlib, sys, subprocess, tempfile, unittest
 from pathlib import Path
 import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
@@ -85,15 +85,11 @@ class CandidateTests(unittest.TestCase):
 
 
 class SourceGateTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.tmp = tempfile.TemporaryDirectory(); cls.d = Path(cls.tmp.name)
-        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=s=64x64:r=60:d=3", "-pix_fmt", "yuv420p", str(cls.d / "proxy.mp4")], check=True)
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup); self.d = Path(tmp.name)
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=s=64x64:r=60:d=3", "-pix_fmt", "yuv420p", str(self.d / "proxy.mp4")], check=True)
         p = pose.copy(); p[:, 16, 0] = .6 + np.interp(np.arange(180), [0, 58, 60, 179], [0, 0, .08, .08])
-        np.save(cls.d / "pose.npy", p); np.save(cls.d / "ball.npy", np.full((180, 3), np.nan)); np.save(cls.d / "sounds.npy", rows[:1])
-
-    @classmethod
-    def tearDownClass(cls): cls.tmp.cleanup()
+        np.save(self.d / "pose.npy", p); np.save(self.d / "ball.npy", np.full((180, 3), np.nan)); np.save(self.d / "sounds.npy", rows[:1])
 
     def cli(self, fps, method):
         for name, value in (("src_fps.txt", fps), ("pose_method.txt", method)):
@@ -108,6 +104,9 @@ class SourceGateTests(unittest.TestCase):
     def test_pose_method_gate_and_source_fps(self):
         r = self.cli(None, None); self.assertEqual(r.returncode, 0, r.stderr); baseline = np.load(self.d / "events.npy")
         self.assertEqual(len(baseline), 1)
+        # SHA-256 from this fixed fixture before the silent path was added.
+        self.assertEqual(hashlib.sha256((self.d / "events.npy").read_bytes()).hexdigest(),
+                         "632ce5fa982e527ef699803276653d6c12a2564425b7a001cf997a6ad6636811")
         # the lag goes next to events.npy: one sound, no ball track -> fallback 0, written and marked
         lag = (self.d / "lag.txt").read_text(encoding="utf-8").split()
         self.assertEqual(lag[0], "0"); self.assertIn("fallback", lag)
@@ -128,5 +127,28 @@ class SourceGateTests(unittest.TestCase):
                 r = self.cli(fps, "2")
                 self.assertNotEqual(r.returncode, 0)
                 self.assertNotIn("Traceback", r.stderr)
+
+    def test_ball_turn_and_trusted_wrist_must_agree(self):
+        p = pose.copy()
+        ball = np.full((len(p), 3), np.nan)
+        frames = np.arange(51, 70)
+        ball[frames] = np.column_stack((.75 + .025 * abs(frames - 60), np.full(len(frames), .6), np.ones(len(frames))))
+        for scenario in ("silent", "missing", "no turn", "opposed swing", "hip jump"):
+            with self.subTest(scenario=scenario):
+                sound = self.d / "sounds.npy"
+                sound.unlink(missing_ok=True)
+                if scenario != "missing": np.save(sound, np.empty((0, 4)))
+                q = p.copy()
+                track = ball.copy()
+                if scenario == "no turn": track[:, 0] = .75 + .02 * (np.arange(len(p)) - 60)
+                if scenario == "opposed swing": q[:, 16, 0] = 1.5 - q[:, 16, 0]
+                if scenario == "hip jump": q[60:, :, 0] += .2
+                np.save(self.d / "pose.npy", q)
+                np.save(self.d / "ball.npy", track)
+                r = self.cli(None, None)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(np.load(self.d / "events.npy")[:, 0].tolist(),
+                                 [1.] if scenario in ("silent", "missing") else [])
+
 
 if __name__ == "__main__": unittest.main()

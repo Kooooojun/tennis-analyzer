@@ -9,6 +9,7 @@
 # For method >=2 poses below 50 source fps, the normal gate may fall to 3; a gate <=HAND_LO deliberately disables the slow tier.
 # Rows are (t, pk, on) like before, t moved back by the sound lag, measured per video from ball turns (estimate_lag);
 # the lag goes to lag.txt next to events.npy: `<frames>`, or `<LAG> fallback` (fewer than 3 matches, or they disagree).
+# Without sound candidates, match ball turns to trusted swings of the nearby wrist. The lag record is `0 pose`.
 # With several tracked people (pose_t1.npy.. next to pose.npy) any tracked person's fast wrist confirms a hit; people the
 # pose model never sees (far doubles players) still cannot confirm theirs. A wrist is not trusted while its person's hip
 # jumps (HIP): the pose model hopping between bodies or body parts makes most false hits at rest.
@@ -31,11 +32,16 @@ GAP, K = 4, 4  # ball turns: fill ball gaps up to 4 frames; velocity compared ov
 DV_MIN = 0.008 # min velocity change, frame heights per frame (~3 m/s; gravity adds ~0.0013 per 4 frames)
 NEAR = 0.15    # ball-to-wrist distance in frame heights
 VIS = 0.3
+# IMG_8460 / IMG_8557 labeled contacts: peak speed p10 8.6 / 10.9, directional turn speed p25 9.3 / 6.7.
+# Labeled peak offsets p10..p90 were -9.3..6 / -11..6.4 frames. Round out for the 60 fps proxy.
+POSE_HAND, POSE_BEFORE, POSE_AFTER = 6.0, 12, 8
+POSE_LAG = "0 pose"
 
 
-def hand_speed(pose, aspect):
+def hand_speed(pose, aspect, details=False):
     """pose (N,33,3) normalized x, y, visibility; aspect = W/H. Fastest wrist relative to the hip mid-point, torso lengths/s.
-    NaN when the shoulders or hips are unseen or outside the frame, and within JUMP_R frames of the hip moving faster than HIP."""
+    NaN when the shoulders or hips are unseen or outside the frame, and within JUMP_R frames of the hip moving faster than HIP.
+    With details, return speed, displacement and normalized position for each wrist in the same tracked order."""
     P = pose[:, :, :2] * [aspect, 1]; vis = pose[:, :, 2]; N = len(P)
     trunk = [11, 12, 23, 24]
     ok = (vis[:, trunk] > VIS).all(1) & (pose[:, trunk, 1] > 0.01).all(1) & (pose[:, trunk, 1] < 0.99).all(1)
@@ -52,10 +58,16 @@ def hand_speed(pose, aspect):
         torso = np.nanmedian(np.lib.stride_tricks.sliding_window_view(pad, 31), 1) if N else L   # walking toward the camera grows it
         prev, nxt = np.roll(r, 1, 0), np.roll(r, -1, 0); prev[:1] = np.nan; nxt[-1:] = np.nan   # no wrap-around at the ends
         r = np.nanmedian(np.stack([prev, r, nxt]), 0)   # drops one-frame jumps
-        v = np.linalg.norm(np.diff(r, axis=0), axis=2) * FPS / torso[1:, None]
+        step = np.diff(r, axis=0)
+        v = np.linalg.norm(step, axis=2) * FPS / torso[1:, None]
+        if N >= 2:
+            hip[~ok] = np.nan; jump = np.nan_to_num(np.linalg.norm(np.diff(hip, axis=0), axis=1) * FPS / torso[1:]) > HIP   # unseen hip is not a jump
+            v[np.convolve(jump, np.ones(2 * JUMP_R + 1))[JUMP_R:JUMP_R + len(jump)] > 0] = np.nan   # "full" sliced: "same" is longer than a clip under 22 frames
+        if details:
+            return (np.pad(v, ((1, 0), (0, 0)), constant_values=np.nan)[:N],
+                    np.pad(step, ((1, 0), (0, 0), (0, 0)), constant_values=np.nan)[:N],
+                    (r + hip[:, None]) / [aspect, 1])
         if N < 2: return np.full(N, np.nan)
-        hip[~ok] = np.nan; jump = np.nan_to_num(np.linalg.norm(np.diff(hip, axis=0), axis=1) * FPS / torso[1:]) > HIP   # unseen hip is not a jump
-        v[np.convolve(jump, np.ones(2 * JUMP_R + 1))[JUMP_R:JUMP_R + len(jump)] > 0] = np.nan   # "full" sliced: "same" is longer than a clip under 22 frames
         return np.r_[np.nan, np.nanmax(v, 1)]
 
 
@@ -92,6 +104,29 @@ def ball_turns(ball, wrists, aspect):
         d = np.linalg.norm(p[f - 3:f + 4, None] - wrists[f - 3:f + 4] * [aspect, 1], axis=2)
         if not np.isnan(d).all() and np.nanmin(d) < NEAR: out.append(int(f))
     return out
+
+
+def pose_hits(ball, poses, aspect):
+    """Contact candidates at ball turns where a nearby wrist swings in the direction of the ball's velocity change."""
+    n = min(len(ball), *(len(q) for q in poses))
+    motion = [hand_speed(q[:n], aspect, details=True) for q in poses]
+    speed, step, wrists = (np.concatenate(parts, axis=1) for parts in zip(*motion))
+    xy = fill(ball[:n, :2]) * [aspect, 1]
+    candidates = []
+    for f in ball_turns(ball[:n], wrists, aspect):
+        change = xy[f + K] - 2 * xy[f] + xy[f - K]
+        distance = np.linalg.norm(wrists[f - 3:f + 4] * [aspect, 1] - xy[f - 3:f + 4, None], axis=2)
+        near = (distance < NEAR).any(axis=0)
+        window = slice(max(0, f - POSE_BEFORE), f + POSE_AFTER + 1)
+        aligned = step[window] @ change > 0
+        peaks = np.where(near & aligned & (speed[window] >= POSE_HAND), speed[window], 0).max(axis=0)
+        wrist = int(peaks.argmax())
+        if peaks[wrist]: candidates.append((f, peaks[wrist], wrist // 2))
+    hits = []
+    for f, peak, person in sorted(candidates, key=lambda row: -row[1]):
+        if all(abs(f - other) > FPS * (PAIR if person == hitter else SAME) for other, hitter in hits):
+            hits.append((f, person))
+    return [(f / FPS, np.nan, np.nan) for f, _ in sorted(hits)]
 
 
 def estimate_lag(hit_t, turns, lo=-3, hi=15, default=LAG):
@@ -150,6 +185,18 @@ def ball_windows(rows, hand, who, n):
         # Turns in -15..+3 also need 6 frames for peaks, 4 for velocity and 4 for gap endpoints.
         start, stop = max(0, int(np.ceil(t * FPS - 29))), min(n, int(np.floor(t * FPS + 17)) + 1)
         if start < stop: intervals.append((start, stop))
+    return merge_windows(intervals)
+
+
+def pose_ball_windows(hand, n):
+    """Track around trusted fast wrists, with enough surrounding frames to measure a ball turn."""
+    pad = 6 + K + GAP
+    edges = np.flatnonzero(np.diff(np.r_[False, hand[:n] >= POSE_HAND, False]))
+    return merge_windows((max(0, a - POSE_AFTER - pad), min(n, b + POSE_BEFORE + pad))
+                         for a, b in edges.reshape(-1, 2))
+
+
+def merge_windows(intervals):
     merged = []
     for start, stop in sorted(intervals):
         if merged and start <= merged[-1][1]: merged[-1][1] = max(merged[-1][1], stop)
@@ -161,7 +208,9 @@ if __name__ == "__main__":
     from platform_util import read_text, utf8_stdout, write_text
     utf8_stdout()
     if len(sys.argv) != 5: sys.exit("usage: events.py <sounds.npy> <ball.npy> <pose.npy> <events.npy>")
-    rows, pp = np.load(sys.argv[1]).reshape(-1, 4), Path(sys.argv[3])
+    pp = Path(sys.argv[3])
+    try: rows = np.load(sys.argv[1]).reshape(-1, 4)
+    except FileNotFoundError: rows = np.empty((0, 4))
     source_fps = FPS
     fps_file = pp.parent / "src_fps.txt"
     if fps_file.exists():
@@ -173,6 +222,11 @@ if __name__ == "__main__":
     if method < 2: source_fps = FPS  # Old duplicated-frame poses require the original peak-speed rule.
     poses = [np.load(q).astype(np.float64) for q in [pp, *sorted(pp.parent.glob(pp.stem + "_t*.npy"))]]
     w, h = size(pp.parent / "proxy.mp4"); ball = np.load(sys.argv[2]); n = min(len(ball), len(poses[0]))
+    if not len(rows):
+        out = np.array(pose_hits(ball, poses, w / h), dtype=np.float64).reshape(-1, 3)
+        write_text(Path(sys.argv[4]).parent / "lag.txt", POSE_LAG + "\n")
+        np.save(sys.argv[4], out)
+        sys.exit(print(f"no sound candidates -> {len(out)} hits from pose and ball"))
     hand, who = hands(poses, w / h, who=True)
     wr = np.concatenate([np.where((q[:n, [15, 16], 2] > 0.2)[..., None], q[:n, [15, 16], :2], np.nan) for q in poses], axis=1)
     lag = estimate_lag([r[0] for r in pick(rows, hand, lag=0, slack=15, who=who, low=False)], ball_turns(ball[:n], wr, w / h),
